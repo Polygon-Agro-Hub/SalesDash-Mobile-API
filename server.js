@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 
+
 require('dotenv').config();
 
 const app = express();
@@ -32,9 +33,12 @@ app.use(bodyParser.json({ limit: '10mb' })); // Adjust the limit as necessary
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
 const userRoutes = require('./routes/user.routes')
-app.use('/api/auth',userRoutes);
+app.use('/api/auth', userRoutes);
 
 
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+
