@@ -6,6 +6,7 @@ const asyncHandler = require("express-async-handler");
 
 exports.login = async (req, res) => {
   const { username, password } = req.body;
+  console.log('req.body', req.body) 
 
   if (!username || !password) {
     return res.status(400).json({ success: false, message: 'Username and password are required' });
@@ -19,7 +20,7 @@ exports.login = async (req, res) => {
 
     // Create JWT token
     const token = jwt.sign(
-      { username: result.username, id: result.id },
+      { username: result.username, id: result.id, passwordUpdate: result.passwordUpdate },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
@@ -27,7 +28,7 @@ exports.login = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      data: { username: result.username, token, id: result.id } // Returning the token
+      data: { username: result.username, token, id: result.id, passwordUpdate: result.passwordUpdate } // Return the token and passwordUpdate status
     });
   } catch (err) {
     return res.status(401).json({ success: false, message: err.message });
@@ -75,3 +76,21 @@ exports.updateUserProfile = asyncHandler(async (req, res) => {
     message: "User profile updated successfully",
   });
 });
+
+
+exports.updatePassword = async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  const userId = req.user.id; // Assuming `id` is available in `req.user` from authentication middleware
+
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Old password and new password are required' });
+  }
+
+  try {
+    const result = await userDao.updatePassword(userId, oldPassword, newPassword);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+};

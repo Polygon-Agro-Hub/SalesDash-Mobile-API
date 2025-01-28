@@ -10,8 +10,7 @@ router.put("/user-updateUser", auth, userAuthEp.updateUserProfile);
 
 router.get('/user/profile', auth, userAuthEp.getUserProfile);
 
-
-
+router.put('/user/update-password', auth, userAuthEp.updatePassword);
 
 
 module.exports = router;
