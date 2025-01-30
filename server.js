@@ -35,6 +35,9 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 const userRoutes = require('./routes/user.routes')
 app.use('/api/auth', userRoutes);
 
+const customerRoutes = require('./routes/customer.routes')
+app.use('/api/customer', customerRoutes);
+
 
 // Start server
 const PORT = process.env.PORT || 3000;
