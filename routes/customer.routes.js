@@ -9,5 +9,13 @@ router.post('/add-customer', customerEp.customerData);
 
 router.get('/get-customers', customerEp.getCustomers);
 
+router.get('/get-customer-data/:cusId', customerEp.getCustomerData);
+
+router.put('/update-customer-data/:cusId', customerEp.updateCustomerData);
+
+router.post("/check-customer", customerEp.checkCustomer);
+
+
+
 
 module.exports = router;
