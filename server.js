@@ -38,6 +38,10 @@ app.use('/api/auth', userRoutes);
 const customerRoutes = require('./routes/customer.routes')
 app.use('/api/customer', customerRoutes);
 
+const complainRoutes = require('./routes/complain.routes')
+app.use("/api/complain", complainRoutes);
+
+
 
 // Start server
 const PORT = process.env.PORT || 3000;

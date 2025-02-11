@@ -6,7 +6,7 @@ const asyncHandler = require("express-async-handler");
 
 exports.login = async (req, res) => {
   const { username, password } = req.body;
-  console.log('req.body', req.body) 
+  console.log('req.body', req.body)
 
   if (!username || !password) {
     return res.status(400).json({ success: false, message: 'Username and password are required' });
@@ -16,6 +16,7 @@ exports.login = async (req, res) => {
     const result = await userDao.loginUser(username, password);
     console.log('====================================');
     console.log(result);
+
     console.log('====================================');
 
     // Create JWT token
