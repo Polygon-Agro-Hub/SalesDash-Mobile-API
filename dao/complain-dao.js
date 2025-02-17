@@ -38,7 +38,7 @@ exports.createComplain = (saId, language, complain, category, status, refNo, rep
             const refNo = `SA${datePrefix}${newNumber}`;
 
             // Insert the complaint with the generated refNo
-            const insertSql = `INSERT INTO dashcomplain (saId, language, complain, complainCategory, status, refNo ,replyTime) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+            const insertSql = `INSERT INTO dashcomplain (saId, language, complain, complainCategory, status, refNo,replyTime ) VALUES (?, ?, ?, ?, ?, ?,?)`;
             db.dash.query(insertSql, [saId, language, complain, category, status, refNo, replyTime], (err, result) => {
                 if (err) {
                     return reject(err);
@@ -93,7 +93,7 @@ exports.createComplain = (saId, language, complain, category, status, refNo, rep
 exports.getAllComplaintsByUserId = async (userId) => {
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo, replyTime
+        SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo,replyTime
         FROM dashcomplain 
         WHERE saId = ?
         ORDER BY createdAt DESC
