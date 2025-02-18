@@ -19,7 +19,7 @@ exports.loginUser = (username, password) => {
         if (!isPasswordValid) {
           return reject(new Error('Invalid password'));
         }
-        resolve({ success: true, username: user.username, id: user.id,passwordUpdate: user.passwordUpdate  });
+        resolve({ success: true, username: user.username, id: user.id, passwordUpdate: user.passwordUpdate });
       } catch (bcryptErr) {
         return reject(new Error('Password comparison error'));
       }

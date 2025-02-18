@@ -41,6 +41,9 @@ app.use('/api/customer', customerRoutes);
 const complainRoutes = require('./routes/complain.routes')
 app.use("/api/complain", complainRoutes);
 
+const packagesRoutes = require('./routes/package.routes')
+app.use("/api/packages", packagesRoutes);
+
 
 
 // Start server
