@@ -15,25 +15,146 @@ const Joi = require('joi');
 //     }
 // });
 
-exports.customerData = asyncHandler(async (req, res) => {
-    let customerData = req.body;  // Extracting customer data from the request body
-    console.log('---data -----', customerData)
+// exports.customerData = asyncHandler(async (req, res) => {
+//     let customerData = req.body;  // Extracting customer data from the request body
+//     console.log('---data -----', customerData)
+
+//     try {
+//         // Step 1: Validate phone number
+//         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+//         if (phoneNumberValidation.error) {
+//             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
+//         }
+
+//         // Step 2: Validate email
+//         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+//         if (emailValidation.error) {
+//             return res.status(400).json({ error: emailValidation.error.details[0].message });
+//         }
+
+//         // Step 3: Proceed with adding the entire customer data to the database
+//         const result = await customerDAO.addCustomer(customerData);  // Send full customer data to DAO
+//         res.status(200).json({
+//             status: "success",
+//             message: "Customer added successfully",
+//             customerId: result.customerId,
+//         });
+
+//     } catch (error) {
+//         console.error("Error while adding customer:", error);
+//         res.status(500).json({ error: error.message });
+//     }
+// });
+
+
+// exports.customerData = asyncHandler(async (req, res) => {
+//     console.log("Decoded user from token:", req.user); // You can access the decoded token here
+
+//     if (!req.user || !req.user.id) {
+//         return res.status(401).json({ error: "Unauthorized: No sales agent ID found" });
+//     }
+
+//     let customerData = req.body;
+//     console.log('--- Received Data -----', customerData);
+
+//     try {
+//         const salesAgentId = req.user.id; // Extract sales agent ID from the decoded token
+
+//         // Validate phone number
+//         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+//         if (phoneNumberValidation.error) {
+//             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
+//         }
+
+//         // Validate email
+//         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+//         if (emailValidation.error) {
+//             return res.status(400).json({ error: emailValidation.error.details[0].message });
+//         }
+
+//         // Add customer with salesAgentId
+//         const result = await customerDAO.addCustomer(customerData, salesAgentId);
+
+//         res.status(200).json({
+//             status: "success",
+//             message: "Customer added successfully",
+//             customerId: result.customerId,
+//         });
+
+//     } catch (error) {
+//         console.error("Error while adding customer:", error);
+//         res.status(500).json({ error: error.message });
+//     }
+// });
+
+// exports.customerData = async (req, res) => {
+//     console.log("Decoded user from token:", req.user); // Make sure user is decoded correctly
+
+//     if (!req.user || !req.user.id) {
+//         return res.status(401).json({ error: "Unauthorized: No sales agent ID found" });
+//     }
+
+//     let customerData = req.body;
+//     console.log('--- Received Data -----', customerData);
+
+//     try {
+//         const salesAgentId = req.user.id;
+
+//         // Validate phone number
+//         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+//         if (phoneNumberValidation.error) {
+//             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
+//         }
+
+//         // Validate email
+//         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+//         if (emailValidation.error) {
+//             return res.status(400).json({ error: emailValidation.error.details[0].message });
+//         }
+
+//         // Add customer
+//         const result = await customerDAO.addCustomer(customerData, salesAgentId);
+
+//         res.status(200).json({
+//             status: "success",
+//             message: "Customer added successfully",
+//             customerId: result.customerId,
+//         });
+
+//     } catch (error) {
+//         console.error("Error while adding customer:", error);
+//         res.status(500).json({ error: error.message });
+//     }
+// };
+
+exports.customerData = async (req, res) => {
+    console.log("Decoded user from token:", req.user);
+
+    if (!req.user || !req.user.id) {
+        return res.status(401).json({ error: "Unauthorized: No sales agent ID found" });
+    }
+
+    const customerData = req.body;
+    console.log('--- Received Data -----', customerData);
 
     try {
-        // Step 1: Validate phone number
+        const salesAgentId = req.user.id;
+
+        // Validate phone number
         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
         if (phoneNumberValidation.error) {
             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
         }
 
-        // Step 2: Validate email
+        // Validate email
         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
         if (emailValidation.error) {
             return res.status(400).json({ error: emailValidation.error.details[0].message });
         }
 
-        // Step 3: Proceed with adding the entire customer data to the database
-        const result = await customerDAO.addCustomer(customerData);  // Send full customer data to DAO
+        // Add customer
+        const result = await customerDAO.addCustomer(customerData, salesAgentId);
+
         res.status(200).json({
             status: "success",
             message: "Customer added successfully",
@@ -44,7 +165,8 @@ exports.customerData = asyncHandler(async (req, res) => {
         console.error("Error while adding customer:", error);
         res.status(500).json({ error: error.message });
     }
-});
+};
+
 
 
 // exports.customerData = asyncHandler(async (req, res) => {

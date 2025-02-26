@@ -1,7 +1,6 @@
 const db = require('../startup/database'); // Assuming db connection
 
-
-exports.addCustomer = (customerData) => {
+exports.addCustomer = (customerData, salesAgentId) => {
     return new Promise(async (resolve, reject) => {
 
         try {
@@ -9,7 +8,7 @@ exports.addCustomer = (customerData) => {
             const newCustomerId = await generateCustomerId();
 
             // Insert into `customer` table
-            const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType) VALUES (?, ?, ?, ?, ?, ?, ?);`;
+            const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgentId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
 
             db.dash.query(sqlCustomer, [
                 newCustomerId,
@@ -19,6 +18,7 @@ exports.addCustomer = (customerData) => {
                 customerData.email,
                 customerData.title,
                 customerData.buildingType,
+                salesAgentId,  // Add the salesAgentId here
             ], (err, customerResult) => {
                 if (err) {
                     return reject(err);  // Reject promise if error occurs
@@ -37,7 +37,7 @@ exports.addCustomer = (customerData) => {
             });
 
         } catch (error) {
-            reject(error);  // Reject promise if an error occurs in the try block
+            reject(error);  // Reject if there's an error in the try block
         }
     });
 };
@@ -53,6 +53,7 @@ const generateCustomerId = async () => {
     }
     return newCustomerId;
 };
+
 
 // Function to insert building-related data
 const insertBuildingData = async (customerId, customerData) => {
@@ -76,12 +77,60 @@ const insertBuildingData = async (customerId, customerData) => {
             customerData.houseNo,
             customerData.streetName,
             customerData.city,
+            salesAgentId,
         ];
     } else {
         throw new Error('Invalid building type');
     }
     await db.dash.promise().query(insertQuery, queryParams);
 };
+
+
+// exports.addCustomer = (customerData, salesAgentId) => {
+//     return new Promise(async (resolve, reject) => {
+//         try {
+//             // Generate customer ID
+//             const newCustomerId = await generateCustomerId();
+
+//             // Insert into `customer` table
+//             const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgentId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
+
+//             db.dash.query(sqlCustomer, [
+//                 newCustomerId,
+//                 customerData.firstName,
+//                 customerData.lastName,
+//                 customerData.phoneNumber,
+//                 customerData.email,
+//                 customerData.title,
+//                 customerData.buildingType,
+//                 salesAgentId, // Pass the sales agent ID
+//             ], (err, customerResult) => {
+//                 if (err) {
+//                     console.error('Error inserting customer:', err);  // Log error if insertion fails
+//                     return reject(err);
+//                 }
+
+//                 console.log('Customer inserted, ID:', customerResult.insertId);  // Log the inserted ID
+
+//                 const customerId = customerResult.insertId;
+
+//                 // Insert building data
+//                 insertBuildingData(customerId, customerData)
+//                     .then(() => {
+//                         resolve({ success: true, customerId });
+//                     })
+//                     .catch((buildingError) => {
+//                         console.error('Error inserting building data:', buildingError);  // Log any error with building data
+//                         reject(buildingError);
+//                     });
+//             });
+
+//         } catch (error) {
+//             console.error('Error while adding customer:', error);  // Log error if the whole process fails
+//             reject(error);
+//         }
+//     });
+// };
 
 
 // Function to retrieve all customers from the database
