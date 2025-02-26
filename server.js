@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 
+
 require('dotenv').config();
 
 const app = express();
@@ -23,11 +24,31 @@ app.options(
         credentials: true,
     })
 );
+
+
+
+
 // Increase the payload limit
 app.use(bodyParser.json({ limit: '10mb' })); // Adjust the limit as necessary
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+
+const userRoutes = require('./routes/user.routes')
+app.use('/api/auth', userRoutes);
+
+const customerRoutes = require('./routes/customer.routes')
+app.use('/api/customer', customerRoutes);
+
+const complainRoutes = require('./routes/complain.routes')
+app.use("/api/complain", complainRoutes);
+
+const packagesRoutes = require('./routes/package.routes')
+app.use("/api/packages", packagesRoutes);
+
 
 
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+
