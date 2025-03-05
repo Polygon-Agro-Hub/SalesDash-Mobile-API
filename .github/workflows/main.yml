@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ECR_REPO_NAME: "aw-salesdash-mobile-api"
+      ECR_REPO_NAME: "agroworld/aw-salesdash-mobile-api"
 
     permissions:
       id-token: write
