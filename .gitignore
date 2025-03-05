@@ -48,9 +48,6 @@ Thumbs.db
 *.mov
 *.wmv
 
-#lock json
-package-lock.json
-
 # Environment files
 .env
 .env.example
