@@ -47,14 +47,14 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::${{ inputs.aws_account_id }}:role/github-actions-rmodi
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-rmodi
           aws-region: ${{ inputs.aws_region }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
-          registries: ${{ inputs.aws_account_id }}
+          registries: ${{ secrets.AWS_ACCOUNT_ID }}
 
       - name: Build, tag, and push image to Amazon ECR
         id: build-publish
