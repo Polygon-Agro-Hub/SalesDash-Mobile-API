@@ -1,54 +1,68 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-
-
-
 require('dotenv').config();
 
 const app = express();
 
+// Base path for all routes
+const BASE_PATH = '/agro-api/salesdash';
+
+// CORS Configuration
+const corsOptions = {
+    origin: process.env.CLIENT_ORIGIN || "http://localhost:8081",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true
+};
+
 // Middleware
-app.use(
-    cors({
-        origin: "http://localhost:8081", // The client origin that is allowed to access the resource
-        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allowed methods
-        credentials: true, // Allow credentials (cookies, auth headers)
-    })
-);
-app.options(
-    "*",
-    cors({
-        origin: "http://localhost:8081", // Allow the client origin for preflight
-        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allowed methods for the preflight response
-        credentials: true,
-    })
-);
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
+// Body Parser Configuration
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ 
+    limit: '10mb', 
+    extended: true 
+}));
 
+// Health Check Endpoint
+app.get([`${BASE_PATH}/health`, `${BASE_PATH}/healthz`], (req, res) => {
+    const healthcheck = {
+        status: 'ok',
+        timestamp: new Date(),
+        uptime: process.uptime(),
+        service: 'SalesDash Mobile API',
+        environment: process.env.NODE_ENV || 'development'
+    };
+    res.status(200).json(healthcheck);
+});
 
+// Routes
+const routes = {
+    auth: require('./routes/user.routes'),
+    customer: require('./routes/customer.routes'),
+    complain: require('./routes/complain.routes'),
+    packages: require('./routes/package.routes')
+};
 
-// Increase the payload limit
-app.use(bodyParser.json({ limit: '10mb' })); // Adjust the limit as necessary
-app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+// Route Registration with base path
+app.use(`${BASE_PATH}/api/auth`, routes.auth);
+app.use(`${BASE_PATH}/api/customer`, routes.customer);
+app.use(`${BASE_PATH}/api/complain`, routes.complain);
+app.use(`${BASE_PATH}/api/packages`, routes.packages);
 
-const userRoutes = require('./routes/user.routes')
-app.use('/api/auth', userRoutes);
-
-const customerRoutes = require('./routes/customer.routes')
-app.use('/api/customer', customerRoutes);
-
-const complainRoutes = require('./routes/complain.routes')
-app.use("/api/complain", complainRoutes);
-
-const packagesRoutes = require('./routes/package.routes')
-app.use("/api/packages", packagesRoutes);
-
-
+// Error Handler
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
+});
 
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
-
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Base Path: ${BASE_PATH}`);
+    console.log(`Health Check URL: ${BASE_PATH}/health`);
+});
