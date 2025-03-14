@@ -215,4 +215,3 @@ checkConnections().then(() => {
         console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
     });
 });
-
