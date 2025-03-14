@@ -1,11 +1,11 @@
 {
-  "name": "salesman-App-Api",
+  "name": "salesman",
   "version": "1.0.0",
   "description": "This README would normally document whatever steps are necessary to get your application up and running.",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
+    "start": "nodemon server.js",
     "dev": "nodemon server.js",
     "seed": "node seed/mainseed.js"
   },
