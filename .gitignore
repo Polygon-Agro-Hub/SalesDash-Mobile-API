@@ -49,4 +49,5 @@ Thumbs.db
 *.wmv
 
 # Environment files
+.env
 .env.example
