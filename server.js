@@ -192,13 +192,15 @@ checkConnections().then(() => {
         auth: require('./routes/user.routes'),
         customer: require('./routes/customer.routes'),
         complain: require('./routes/complain.routes'),
-        packages: require('./routes/package.routes')
+        packages: require('./routes/package.routes'),
+        orders:require('./routes/order.routes'),
     };
 
     app.use(`${BASE_PATH}/api/auth`, routes.auth);
     app.use(`${BASE_PATH}/api/customer`, routes.customer);
     app.use(`${BASE_PATH}/api/complain`, routes.complain);
     app.use(`${BASE_PATH}/api/packages`, routes.packages);
+    app.use(`${BASE_PATH}/api/orders`, routes.orders);
 
     // Error Handler
     app.use((err, req, res, next) => {
