@@ -4,10 +4,10 @@ const Joi = require("joi");
 
 // Login Schema
 const loginSchema = Joi.object({
-    username: Joi.string().trim().min(3).max(30).required().messages({
-        "string.empty": "Username is required",
-        "string.min": "Username must be at least 3 characters long",
-        "string.max": "Username must be at most 30 characters long",
+    empId: Joi.string().trim().min(3).max(50).required().messages({
+        "string.empty": "Employee ID is required",
+        "string.min": "Employee ID must be at least 3 characters long",
+        "string.max": "Employee ID must be at most 50 characters long",
     }),
     password: Joi.string().trim().min(6).max(100).required().messages({
         "string.empty": "Password is required",
@@ -15,6 +15,7 @@ const loginSchema = Joi.object({
         "string.max": "Password must be at most 100 characters long",
     }),
 });
+
 
 // User Profile Update Schema
 const updateUserProfileSchema = Joi.object({
