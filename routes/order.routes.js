@@ -6,6 +6,7 @@ const auth = require('../Middlewares/auth.middleware')
 
 router.post('/create-order',auth ,orderEp.createOrder)
 router.get('/get-orders',orderEp.getAllOrderDetails)
+router.get('/get-order/:orderId',orderEp.getOrderById)
 
 
 module.exports = router;
