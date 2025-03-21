@@ -1,8 +1,8 @@
 exports.validateCustomerData = (req, res, next) => {
-    const { firstName, lastName, phoneNumber, email, buildingType, salesAgentId } = req.body;
+    const { firstName, lastName, phoneNumber, email, buildingType, salesAgent } = req.body;
 
     // Check if all required fields are present
-    if (!firstName || !lastName || !phoneNumber || !email || !buildingType || !salesAgentId) {
+    if (!firstName || !lastName || !phoneNumber || !email || !buildingType || !salesAgent) {
         return res.status(400).json({ error: 'All fields are required' });
     }
 
