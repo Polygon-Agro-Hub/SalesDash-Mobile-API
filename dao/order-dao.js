@@ -360,3 +360,119 @@ exports.getAllOrderDetails = () => {
       });
     });
   };
+
+
+  exports.getOrderById = (orderId) => {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 
+          o.id AS orderId,
+          o.customerId,
+          o.deliveryType,
+          o.scheduleDate,
+          o.selectedDays,
+          o.weeklyDate,
+          o.paymentMethod,
+          o.paymentStatus,
+          o.orderStatus,
+          o.createdAt,
+          o.InvNo,
+          o.fullTotal,
+          o.fullDiscount,
+          c.firstName,
+          c.lastName,
+          c.phoneNumber,
+          c.buildingType
+        FROM orders o
+        JOIN customer c ON o.customerId = c.id
+        WHERE o.id = ?
+      `;
+      
+      db.dash.query(sql, [orderId], (err, orderResults) => {
+        if (err) {
+          return reject(err);
+        }
+        
+        if (orderResults.length === 0) {
+          return resolve({ message: 'No order found with the given ID' });
+        }
+        
+        const order = orderResults[0];
+        const customerId = order.customerId;
+        const buildingType = order.buildingType;
+        
+        if (buildingType === 'House') {
+          const addressSql = `
+            SELECT 
+              houseNo,
+              streetName,
+              city
+            FROM house
+            WHERE customerId = ?
+          `;
+          
+          db.dash.query(addressSql, [customerId], (err, addressResults) => {
+            if (err) {
+              return reject(err);
+            }
+            
+            let formattedAddress = '';
+            if (addressResults[0]) {
+              const addr = addressResults[0];
+              formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+              // Remove any double spaces
+              formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
+            }
+            
+            resolve({
+              ...order,
+              fullAddress: formattedAddress
+            });
+          });
+        } else if (buildingType === 'Apartment') {
+          const addressSql = `
+            SELECT 
+              buildingNo,
+              buildingName,
+              unitNo,
+              floorNo,
+              houseNo,
+              streetName,
+              city
+            FROM apartment
+            WHERE customerId = ?
+          `;
+          
+          db.dash.query(addressSql, [customerId], (err, addressResults) => {
+            if (err) {
+              return reject(err);
+            }
+            
+            let formattedAddress = '';
+            if (addressResults[0]) {
+              const addr = addressResults[0];
+              formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+              // Remove any double spaces and fix formatting
+              formattedAddress = formattedAddress.replace(/\s+/g, ' ')
+                                                .replace(/, Unit ,/, ',')
+                                                .replace(/, Floor ,/, ',')
+                                                .trim();
+              // Remove trailing commas
+              formattedAddress = formattedAddress.replace(/,\s*$/, '');
+            }
+            
+            resolve({
+              ...order,
+              fullAddress: formattedAddress
+            });
+          });
+        } else {
+          // If building type is not specified or is something else
+          resolve({
+            ...order,
+            fullAddress: ''
+          });
+        }
+      });
+    });
+  };

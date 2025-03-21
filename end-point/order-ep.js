@@ -45,3 +45,45 @@ exports.getAllOrderDetails = (req, res) => {
         });
       });
   }
+
+
+  exports.getOrderById = async (req, res) => {
+    try {
+      const orderId = req.params.orderId;
+      
+      // Validate orderId
+      if (!orderId || isNaN(parseInt(orderId))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid order ID'
+        });
+      }
+      
+      const order = await orderDao.getOrderById(orderId);
+      
+      if (order.message) {
+        return res.status(404).json({
+          success: false,
+          message: order.message
+        });
+      }
+      
+      // Get order items if needed
+      // This is an example of how you might include order items
+      // const orderItems = await orderItemDao.getOrderItemsByOrderId(orderId);
+      
+      res.status(200).json({
+        success: true,
+        data: order
+        // data: { ...order, items: orderItems } // Uncomment if you want to include order items
+      });
+    } catch (error) {
+      console.error('Error fetching order by ID:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch order details',
+        error: error.message
+      });
+    }
+  };
+  

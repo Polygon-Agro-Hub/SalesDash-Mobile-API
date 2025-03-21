@@ -1,0 +1,41 @@
+# Exclude version control files
+.git
+.gitignore
+
+# Exclude node modules and npm cache
+node_modules
+npm-debug.log
+.npm
+
+# Exclude development and test files
+*.test.js
+*.spec.js
+test/
+coverage/
+
+# Exclude environment files
+.env
+.env.*
+*.env
+
+# Exclude IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude Docker files
+Dockerfile
+.dockerignore
+
+# Exclude documentation
+README.md
+docs/
+
+# Exclude logs
+logs/
+*.log
+
+# Exclude temporary files
+.tmp/
+.temp/
