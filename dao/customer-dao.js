@@ -1,6 +1,6 @@
 const db = require('../startup/database'); // Assuming db connection
 
-exports.addCustomer = (customerData, salesAgentId) => {
+exports.addCustomer = (customerData, salesAgent) => {
     return new Promise(async (resolve, reject) => {
 
         try {
@@ -8,7 +8,10 @@ exports.addCustomer = (customerData, salesAgentId) => {
             const newCustomerId = await generateCustomerId();
 
             // Insert into `customer` table
-            const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgentId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
+            const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgent) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
+
+
 
             db.dash.query(sqlCustomer, [
                 newCustomerId,
@@ -18,7 +21,7 @@ exports.addCustomer = (customerData, salesAgentId) => {
                 customerData.email,
                 customerData.title,
                 customerData.buildingType,
-                salesAgentId,  // Add the salesAgentId here
+                salesAgent,  // Ensure this is the correct variable
             ], (err, customerResult) => {
                 if (err) {
                     return reject(err);  // Reject promise if error occurs
@@ -77,7 +80,7 @@ const insertBuildingData = async (customerId, customerData) => {
             customerData.houseNo,
             customerData.streetName,
             customerData.city,
-            salesAgentId,
+            salesAgent,
         ];
     } else {
         throw new Error('Invalid building type');
