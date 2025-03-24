@@ -9,7 +9,7 @@ exports.createComplain = Joi.object({
     complain: Joi.string().required().messages({
         "string.empty": "Complain description is required.",
     }),
-    category: Joi.string().required().messages({
+    category: Joi.number().required().messages({
         "string.empty": "Category is required.",
     }),
     saId: Joi.number().integer().required().messages({
