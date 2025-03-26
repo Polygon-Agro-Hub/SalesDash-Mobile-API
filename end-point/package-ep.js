@@ -184,3 +184,27 @@ exports.getAllCrops = asyncHandler(async (req, res) => {
         res.status(500).json({ message: "Failed to fetch crops", error: error.message });
     }
 });
+
+exports.getCropById = async (req, res) => {
+    const cropId = req.params.cropId;  // Extract cropId from URL parameters
+    console.log("Fetching details for cropId:", cropId);
+
+    try {
+        // Fetch crop details from the DAO method
+        const crop = await packageDAO.getCropById(cropId);
+
+        if (!crop) {
+            console.log("🚨 Crop not found");
+            return res.status(404).json({ message: "Crop not found" });  // If no crop found, send 404
+        }
+
+        console.log("✅ Crop details fetched:", crop);
+        res.status(200).json({
+            message: "Crop fetched successfully",
+            data: crop,  // Return the crop data in the response
+        });
+    } catch (error) {
+        console.error("❌ Error fetching crop:", error);
+        res.status(500).json({ message: "Failed to fetch crop", error: error.message });  // If error occurs, send 500
+    }
+};

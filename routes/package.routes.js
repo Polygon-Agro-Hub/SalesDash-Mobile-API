@@ -16,6 +16,6 @@ router.get("/marketplace-item/:mpItemId", auth, packagesEp.getMarketplaceItemDet
 router.get('/crops/all', auth, packagesEp.getAllCrops);
 
 
-
+router.get("/crops/:cropId", auth, packagesEp.getCropById);
 
 module.exports = router;
