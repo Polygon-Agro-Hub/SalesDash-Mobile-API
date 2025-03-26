@@ -277,4 +277,24 @@ exports.getAllCrops = async () => {
 
 
 
+exports.getCropById = async (cropId) => {
+    try {
+        const query = `
+            SELECT 
+                id, cropId, displayName, category, 
+                normalPrice, discountedPrice, discount, 
+                promo, unitType, startValue, changeby, displayType 
+            FROM marketplaceitems 
+            WHERE cropId = ?;
+        `;  // SQL query to fetch the crop with the specific cropId
 
+        console.log("Executing query:", query);  // Debugging SQL query
+        const [results] = await db.marketPlace.promise().query(query, [cropId]);  // Run the query with cropId as a parameter
+
+        console.log("Result fetched from DB:", results); // Check what the query returns
+        return results[0];  // Return the first result (single crop)
+    } catch (error) {
+        console.error("Error fetching crop by ID:", error);
+        throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+    }
+};
