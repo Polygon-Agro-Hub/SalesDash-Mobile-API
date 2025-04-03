@@ -121,3 +121,40 @@ exports.getOrderByCustomerId = async (req, res) => {
     });
   }
 };
+
+
+exports.getCustomerDetailsCustomerId = async (req, res) => {
+  try {
+    const customerId = req.params.id;
+
+    // Validate customerId
+    if (!customerId || isNaN(parseInt(customerId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid customer ID'
+      });
+    }
+
+    // Make sure to import orderDao correctly
+    const customerData = await orderDao.getDataCustomerId(customerId);
+
+    if (customerData.message) {
+      return res.status(404).json({
+        success: false,
+        message: customerData.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: customerData
+    });
+  } catch (error) {
+    console.error('Error fetching customer details by ID:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch customer details',
+      error: error.message
+    });
+  }
+};

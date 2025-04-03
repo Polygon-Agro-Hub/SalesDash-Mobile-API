@@ -244,17 +244,20 @@ exports.getAllOrderDetails = () => {
         SELECT 
           o.id AS orderId,
           o.customerId,
+          o.salesAgentId,
+          o.InvNo,
+          o.customPackage,
+          o.selectedPackage,
           o.deliveryType,
           o.scheduleDate,
-          o.selectedDays,
-          o.weeklyDate,
+          o.scheduleTimeSlot,
           o.paymentMethod,
           o.paymentStatus,
           o.orderStatus,
           o.createdAt,
-          o.InvNo,
           o.fullTotal,
           o.fullDiscount,
+          o.fullSubTotal,
           c.firstName,
           c.lastName,
           c.phoneNumber,
@@ -297,7 +300,6 @@ exports.getAllOrderDetails = () => {
               if (addressResults[0]) {
                 const addr = addressResults[0];
                 formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-                // Remove any double spaces
                 formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
               }
 
@@ -329,12 +331,10 @@ exports.getAllOrderDetails = () => {
               if (addressResults[0]) {
                 const addr = addressResults[0];
                 formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-                // Remove any double spaces and fix formatting
                 formattedAddress = formattedAddress.replace(/\s+/g, ' ')
                   .replace(/, Unit ,/, ',')
                   .replace(/, Floor ,/, ',')
                   .trim();
-                // Remove trailing commas
                 formattedAddress = formattedAddress.replace(/,\s*$/, '');
               }
 
@@ -344,7 +344,6 @@ exports.getAllOrderDetails = () => {
               });
             });
           } else {
-            // If building type is not specified or is something else
             resolveOrder({
               ...order,
               fullAddress: ''
@@ -353,14 +352,12 @@ exports.getAllOrderDetails = () => {
         });
       });
 
-      // Resolve all order promises
       Promise.all(orderPromises)
         .then(results => resolve(results))
         .catch(error => reject(error));
     });
   });
 };
-
 
 exports.getOrderById = (orderId) => {
   return new Promise((resolve, reject) => {
@@ -370,8 +367,7 @@ exports.getOrderById = (orderId) => {
           o.customerId,
           o.deliveryType,
           o.scheduleDate,
-          o.selectedDays,
-          o.weeklyDate,
+          o.scheduleTimeSlot,  
           o.paymentMethod,
           o.paymentStatus,
           o.orderStatus,
@@ -379,6 +375,7 @@ exports.getOrderById = (orderId) => {
           o.InvNo,
           o.fullTotal,
           o.fullDiscount,
+          o.fullSubTotal,  
           c.firstName,
           c.lastName,
           c.phoneNumber,
@@ -420,7 +417,6 @@ exports.getOrderById = (orderId) => {
           if (addressResults[0]) {
             const addr = addressResults[0];
             formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-            // Remove any double spaces
             formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
           }
 
@@ -452,12 +448,10 @@ exports.getOrderById = (orderId) => {
           if (addressResults[0]) {
             const addr = addressResults[0];
             formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-            // Remove any double spaces and fix formatting
             formattedAddress = formattedAddress.replace(/\s+/g, ' ')
               .replace(/, Unit ,/, ',')
               .replace(/, Floor ,/, ',')
               .trim();
-            // Remove trailing commas
             formattedAddress = formattedAddress.replace(/,\s*$/, '');
           }
 
@@ -467,7 +461,6 @@ exports.getOrderById = (orderId) => {
           });
         });
       } else {
-        // If building type is not specified or is something else
         resolve({
           ...order,
           fullAddress: ''
@@ -485,15 +478,15 @@ exports.getOrderByCustomerId = (customerId) => {
         customerId,
         deliveryType,
         scheduleDate,
-        selectedDays,
-        weeklyDate,
+        scheduleTimeSlot,  
         paymentMethod,
         paymentStatus,
         orderStatus,
         createdAt,
         InvNo,
         fullTotal,
-        fullDiscount
+        fullDiscount,
+        fullSubTotal  
       FROM orders
       WHERE customerId = ?
     `;
@@ -508,6 +501,61 @@ exports.getOrderByCustomerId = (customerId) => {
       }
 
       resolve(orderResults);
+    });
+  });
+};
+
+
+
+exports.getDataCustomerId = (customerId) => {
+  return new Promise((resolve, reject) => {
+    // First query to get basic customer info
+    const customerSql = `
+      SELECT 
+        id,
+        cusId,
+        salesAgent,
+        title,
+        firstName,
+        lastName,
+        phoneNumber,
+        email,
+        buildingType
+      FROM customer
+      WHERE id = ?
+    `;
+
+    db.dash.query(customerSql, [customerId], (err, customerResults) => {
+      if (err) {
+        return reject(err);
+      }
+
+      if (customerResults.length === 0) {
+        return resolve({ message: 'No customer found with this ID' });
+      }
+
+      const customer = customerResults[0];
+      const buildingType = customer.buildingType.toLowerCase();
+
+      // Second query to get building details based on building type
+      const buildingSql = `
+        SELECT * FROM ${buildingType}
+        WHERE customerId = ?
+      `;
+
+      db.dash.query(buildingSql, [customerId], (err, buildingResults) => {
+        if (err) {
+          return reject(err);
+        }
+
+        // Combine customer info with building info
+        const result = {
+          ...customer,
+          buildingDetails: buildingResults.length > 0 ? buildingResults[0] : null
+        };
+
+        resolve(result);
+      });
     });
   });
 };

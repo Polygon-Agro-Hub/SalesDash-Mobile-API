@@ -21,7 +21,7 @@ const db = require("../startup/database");
 exports.getAllPackages = async () => {
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, name, status, total, created_at AS createdAt, description, portion, period
+        SELECT id, displayName, status, total, created_at AS createdAt, description, discount, subTotal
         FROM marketplacepackages
         `;
 
@@ -258,10 +258,11 @@ exports.getAllCrops = async () => {
     try {
         const query = `
         SELECT 
-            id, cropId, displayName, category, 
+            id, varietyId, displayName, category, 
             normalPrice, discountedPrice, discount, 
-            promo, unitType, startValue, changeby, displayType 
+            promo, unitType, startValue, changeby
         FROM marketplaceitems;
+       
         `;  // SQL query to fetch crops from the marketplaceitems table
 
         console.log("Executing query:", query);  // Debugging SQL query
