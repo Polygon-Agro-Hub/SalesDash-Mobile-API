@@ -59,6 +59,35 @@ const generateCustomerId = async () => {
 
 
 // Function to insert building-related data
+// const insertBuildingData = async (customerId, customerData) => {
+//     let insertQuery;
+//     let queryParams;
+
+//     if (customerData.buildingType === 'House') {
+//         insertQuery = `INSERT INTO house (customerId, houseNo, streetName, city) VALUES (?, ?, ?, ?)`;
+//         queryParams = [customerId, customerData.houseNo, customerData.streetName, customerData.city];
+//     } else if (customerData.buildingType === 'Apartment') {
+//         if (!customerData.buildingNo || !customerData.buildingName || !customerData.unitNo || !customerData.floorNo || !customerData.houseNo || !customerData.streetName || !customerData.city) {
+//             throw new Error('Missing required fields for apartment');
+//         }
+//         insertQuery = `INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+//         queryParams = [
+//             customerId,
+//             customerData.buildingNo,
+//             customerData.buildingName,
+//             customerData.unitNo,
+//             customerData.floorNo,
+//             customerData.houseNo,
+//             customerData.streetName,
+//             customerData.city,
+//             salesAgent,
+//         ];
+//     } else {
+//         throw new Error('Invalid building type');
+//     }
+//     await db.dash.promise().query(insertQuery, queryParams);
+// };
+
 const insertBuildingData = async (customerId, customerData) => {
     let insertQuery;
     let queryParams;
@@ -79,8 +108,8 @@ const insertBuildingData = async (customerId, customerData) => {
             customerData.floorNo,
             customerData.houseNo,
             customerData.streetName,
-            customerData.city,
-            salesAgent,
+            customerData.city
+            // Removed salesAgent from here as it's not a column in apartment table
         ];
     } else {
         throw new Error('Invalid building type');
