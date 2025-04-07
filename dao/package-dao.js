@@ -63,7 +63,8 @@ exports.getItemsByPackageId = async (packageId) => {
             mi.displayName AS name, 
             pd.quantity, 
               pd.mpItemId,  
-            pd.quantityType 
+            pd.quantityType,
+            pd.price 
         FROM marketplaceitems mi
         INNER JOIN packagedetails pd ON mi.id = pd.mpItemId
         WHERE pd.packageId = ?
