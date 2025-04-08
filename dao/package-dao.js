@@ -61,6 +61,7 @@ exports.getItemsByPackageId = async (packageId) => {
         const query = `
         SELECT 
             mi.displayName AS name, 
+            pd.id,
             pd.quantity, 
               pd.mpItemId,  
             pd.quantityType,
