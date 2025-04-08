@@ -1,31 +1,104 @@
 const orderDao = require('../dao/order-dao')
 
+// exports.createOrder = async (req, res) => {
+//   try {
+//     const salesAgentId = req.user.id; // Get salesAgentId from authenticated user
+//     const orderData = req.body;
+
+//     // Validate required fields
+//     if (!orderData || !orderData.customerId || !orderData.orderItems) {
+//       return res.status(400).json({ success: false, message: "Invalid order data" });
+//     }
+
+//     // Call DAO to place order
+//     const result = await orderDao.placeOrder(orderData, salesAgentId);
+
+//     return res.status(201).json({
+//       success: true,
+//       orderId: result.orderId,
+//       message: "Order created successfully"
+//     });
+//   } catch (error) {
+//     console.error("Error placing order:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message || "Internal server error"
+//     });
+//   }
+// };
+
+
+
+/**
+ * Create a new order
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
 exports.createOrder = async (req, res) => {
+  const requestId = `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const startTime = Date.now();
+  const salesAgentId = req.user.id;
+  const orderData = req.body;
+  
+  // Log order creation start
+  console.log(`[${requestId}] Order creation started`, { 
+    salesAgentId, 
+    orderType: orderData.isCustomPackage ? 'custom' : 'package' 
+  });
+  
   try {
-    const salesAgentId = req.user.id; // Get salesAgentId from authenticated user
-    const orderData = req.body;
-
-    // Validate required fields
-    if (!orderData || !orderData.customerId || !orderData.orderItems) {
-      return res.status(400).json({ success: false, message: "Invalid order data" });
+    // Basic validation
+    if (!orderData.customerId) {
+      throw new Error('Customer ID is required');
     }
-
-    // Call DAO to place order
-    const result = await orderDao.placeOrder(orderData, salesAgentId);
-
-    return res.status(201).json({
+    
+    if (!orderData.isCustomPackage && !orderData.isSelectPackage) {
+      throw new Error('Invalid order type - must specify isCustomPackage or isSelectPackage');
+    }
+    
+    if (orderData.isCustomPackage && (!orderData.items || !orderData.items.length)) {
+      throw new Error('Items are required for custom package orders');
+    }
+    
+    if (orderData.isSelectPackage && !orderData.packageId) {
+      throw new Error('Package ID is required for package orders');
+    }
+    
+    // Process order with DAO
+    const result = await orderDao.processOrder(orderData, salesAgentId);
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`[${requestId}] Order created successfully in ${processingTime}ms`, { 
+      processingTime,
+      orderId: result.orderId 
+    });
+    
+    res.status(201).json({
       success: true,
-      orderId: result.orderId,
-      message: "Order created successfully"
+      message: 'Order created successfully',
+      data: result
     });
   } catch (error) {
-    console.error("Error placing order:", error);
-    return res.status(500).json({
+    const processingTime = Date.now() - startTime;
+    
+    // Log detailed error info
+    console.error(`[${requestId}] Order creation failed after ${processingTime}ms: ${error.message}`, {
+      error: error.toString(),
+      stack: error.stack,
+      processingTime
+    });
+    
+    // Send appropriate response to client
+    res.status(400).json({
       success: false,
-      message: error.message || "Internal server error"
+      message: `Failed to create order: ${error.message}`,
+      error: error.message
     });
   }
 };
+
+
+
 
 exports.getAllOrderDetails = (req, res) => {
   orderDao.getAllOrderDetails()
