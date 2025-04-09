@@ -240,7 +240,7 @@ const db = require('../startup/database');
 
 // orderDao.js
 
-const QUERY_TIMEOUT = 10000; // 10 seconds timeout for queries
+const QUERY_TIMEOUT = 0; // 10 seconds timeout for queries
 /**
  * Process a complete order with transaction support
  * @param {Object} orderData - Complete order data from request
@@ -258,6 +258,8 @@ exports.processOrder = async (orderData, salesAgentId) => {
     // Execute everything in a transaction
     await connection.promise().beginTransaction();
     console.log('Transaction started');
+
+
 
     // STEP 1: Insert main order record
     const orderId = await insertMainOrder();
@@ -582,7 +584,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
         selectedTimeSlot,
         paymentMethod,
         0, // paymentStatus default false
-        'Placed', // orderStatus default
+        'Ordered', // orderStatus default
         fullTotal,
         discount,
         subtotal,
@@ -841,6 +843,7 @@ exports.getAllOrderDetails = () => {
           o.paymentMethod,
           o.paymentStatus,
           o.orderStatus,
+          o.reportStatus,
           o.createdAt,
           o.fullTotal,
           o.fullDiscount,
@@ -947,7 +950,9 @@ exports.getAllOrderDetails = () => {
 };
 
 exports.getOrderById = (orderId) => {
+  console.log("rrrrrrr")
   return new Promise((resolve, reject) => {
+    console.log("1")
     const sql = `
         SELECT 
           o.id AS orderId,
@@ -960,6 +965,7 @@ exports.getOrderById = (orderId) => {
           o.orderStatus,
           o.createdAt,
           o.InvNo,
+          o.reportStatus,
           o.fullTotal,
           o.fullDiscount,
           o.fullSubTotal,  
@@ -972,20 +978,32 @@ exports.getOrderById = (orderId) => {
         WHERE o.id = ?
       `;
 
+
+    console.log("2")
+    console.log(orderId)
+
+
     db.dash.query(sql, [orderId], (err, orderResults) => {
+      console.log("after")
       if (err) {
+        console.log(".", err)
         return reject(err);
+
       }
 
+      console.log("3")
       if (orderResults.length === 0) {
         return resolve({ message: 'No order found with the given ID' });
       }
 
+      console.log("4")
       const order = orderResults[0];
       const customerId = order.customerId;
       const buildingType = order.buildingType;
 
       if (buildingType === 'House') {
+
+        console.log("5")
         const addressSql = `
             SELECT 
               houseNo,
@@ -994,25 +1012,30 @@ exports.getOrderById = (orderId) => {
             FROM house
             WHERE customerId = ?
           `;
-
+        console.log("6")
         db.dash.query(addressSql, [customerId], (err, addressResults) => {
           if (err) {
+            console.log("error", err)
             return reject(err);
           }
 
+          console.log("7")
           let formattedAddress = '';
           if (addressResults[0]) {
             const addr = addressResults[0];
             formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
             formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
           }
-
+          console.log("8")
           resolve({
             ...order,
             fullAddress: formattedAddress
           });
         });
+        console.log("9")
       } else if (buildingType === 'Apartment') {
+
+        console.log("................")
         const addressSql = `
             SELECT 
               buildingNo,
@@ -1025,11 +1048,15 @@ exports.getOrderById = (orderId) => {
             FROM apartment
             WHERE customerId = ?
           `;
-
+        console.log("10")
         db.dash.query(addressSql, [customerId], (err, addressResults) => {
+          console.log("before")
           if (err) {
+            console.log("errorr", err)
             return reject(err);
           }
+
+          console.log("11")
 
           let formattedAddress = '';
           if (addressResults[0]) {
@@ -1042,6 +1069,7 @@ exports.getOrderById = (orderId) => {
             formattedAddress = formattedAddress.replace(/,\s*$/, '');
           }
 
+          console.log("12")
           resolve({
             ...order,
             fullAddress: formattedAddress
@@ -1142,6 +1170,73 @@ exports.getDataCustomerId = (customerId) => {
         };
 
         resolve(result);
+      });
+    });
+  });
+};
+
+
+
+
+// order-dao.js
+
+exports.cancelOrder = (orderId) => {
+  return new Promise((resolve, reject) => {
+    // Update order status to Cancelled
+    const updateSql = `
+      UPDATE dash.orders 
+      SET orderStatus = 'Cancelled'
+      WHERE id = ?
+    `;
+
+    db.dash.query(updateSql, [orderId], (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+
+      // Check if any row was affected
+      if (result.affectedRows === 0) {
+        return resolve({
+          message: 'Order not found or already cancelled'
+        });
+      }
+
+      // Return success
+      resolve({
+        success: true,
+        message: 'Order cancelled successfully',
+        orderId: orderId
+      });
+    });
+  });
+};
+
+exports.reportOrder = (orderId, reportStatus) => {
+  return new Promise((resolve, reject) => {
+    const updateSql = `
+      UPDATE dash.orders 
+      SET reportStatus = ?
+      WHERE id = ?
+    `;
+
+    db.dash.query(updateSql, [reportStatus, orderId], (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+
+      // Check if any row was affected
+      if (result.affectedRows === 0) {
+        return resolve({
+          message: 'Order not found or could not be updated'
+        });
+      }
+
+      // Return success
+      resolve({
+        success: true,
+        message: 'Order report status updated successfully',
+        orderId: orderId,
+        reportStatus: reportStatus
       });
     });
   });

@@ -39,40 +39,40 @@ exports.createOrder = async (req, res) => {
   const startTime = Date.now();
   const salesAgentId = req.user.id;
   const orderData = req.body;
-  
+
   // Log order creation start
-  console.log(`[${requestId}] Order creation started`, { 
-    salesAgentId, 
-    orderType: orderData.isCustomPackage ? 'custom' : 'package' 
+  console.log(`[${requestId}] Order creation started`, {
+    salesAgentId,
+    orderType: orderData.isCustomPackage ? 'custom' : 'package'
   });
-  
+
   try {
     // Basic validation
     if (!orderData.customerId) {
       throw new Error('Customer ID is required');
     }
-    
+
     if (!orderData.isCustomPackage && !orderData.isSelectPackage) {
       throw new Error('Invalid order type - must specify isCustomPackage or isSelectPackage');
     }
-    
+
     if (orderData.isCustomPackage && (!orderData.items || !orderData.items.length)) {
       throw new Error('Items are required for custom package orders');
     }
-    
+
     if (orderData.isSelectPackage && !orderData.packageId) {
       throw new Error('Package ID is required for package orders');
     }
-    
+
     // Process order with DAO
     const result = await orderDao.processOrder(orderData, salesAgentId);
-    
+
     const processingTime = Date.now() - startTime;
-    console.log(`[${requestId}] Order created successfully in ${processingTime}ms`, { 
+    console.log(`[${requestId}] Order created successfully in ${processingTime}ms`, {
       processingTime,
-      orderId: result.orderId 
+      orderId: result.orderId
     });
-    
+
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
@@ -80,14 +80,14 @@ exports.createOrder = async (req, res) => {
     });
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    
+
     // Log detailed error info
     console.error(`[${requestId}] Order creation failed after ${processingTime}ms: ${error.message}`, {
       error: error.toString(),
       stack: error.stack,
       processingTime
     });
-    
+
     // Send appropriate response to client
     res.status(400).json({
       success: false,
@@ -121,6 +121,8 @@ exports.getAllOrderDetails = (req, res) => {
 
 
 exports.getOrderById = async (req, res) => {
+
+  console.log(",,,,,")
   try {
     const orderId = req.params.orderId;
 
@@ -227,6 +229,88 @@ exports.getCustomerDetailsCustomerId = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch customer details',
+      error: error.message
+    });
+  }
+};
+
+exports.cancelOrder = async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+
+    // Validate orderId
+    if (!orderId || isNaN(parseInt(orderId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Call DAO to cancel the order
+    const result = await orderDao.cancelOrder(orderId);
+
+    if (result.message && !result.success) {
+      return res.status(404).json({
+        success: false,
+        message: result.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Order cancelled successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to cancel order',
+      error: error.message
+    });
+  }
+};
+
+exports.reportOrder = async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const { reportStatus } = req.body;
+
+    // Validate orderId and reportStatus
+    if (!orderId || isNaN(parseInt(orderId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    if (!reportStatus) {
+      return res.status(400).json({
+        success: false,
+        message: 'Report status is required'
+      });
+    }
+
+    // Call DAO to update the order report status
+    const result = await orderDao.reportOrder(orderId, reportStatus);
+
+    if (result.message && !result.success) {
+      return res.status(404).json({
+        success: false,
+        message: result.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Order report status updated successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Error updating report status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update report status',
       error: error.message
     });
   }
