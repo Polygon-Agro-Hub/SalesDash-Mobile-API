@@ -39,40 +39,40 @@ const orderDao = require('../dao/order-dao')
 //   const startTime = Date.now();
 //   const salesAgentId = req.user.id;
 //   const orderData = req.body;
-  
+
 //   // Log order creation start
 //   console.log(`[${requestId}] Order creation started`, { 
 //     salesAgentId, 
 //     orderType: orderData.isCustomPackage ? 'custom' : 'package' 
 //   });
-  
+
 //   try {
 //     // Basic validation
 //     if (!orderData.customerId) {
 //       throw new Error('Customer ID is required');
 //     }
-    
+
 //     if (!orderData.isCustomPackage && !orderData.isSelectPackage) {
 //       throw new Error('Invalid order type - must specify isCustomPackage or isSelectPackage');
 //     }
-    
+
 //     if (orderData.isCustomPackage && (!orderData.items || !orderData.items.length)) {
 //       throw new Error('Items are required for custom package orders');
 //     }
-    
+
 //     if (orderData.isSelectPackage && !orderData.packageId) {
 //       throw new Error('Package ID is required for package orders');
 //     }
-    
+
 //     // Process order with DAO
 //     const result = await orderDao.processOrder(orderData, salesAgentId);
-    
+
 //     const processingTime = Date.now() - startTime;
 //     console.log(`[${requestId}] Order created successfully in ${processingTime}ms`, { 
 //       processingTime,
 //       orderId: result.orderId 
 //     });
-    
+
 //     res.status(201).json({
 //       success: true,
 //       message: 'Order created successfully',
@@ -80,14 +80,14 @@ const orderDao = require('../dao/order-dao')
 //     });
 //   } catch (error) {
 //     const processingTime = Date.now() - startTime;
-    
+
 //     // Log detailed error info
 //     console.error(`[${requestId}] Order creation failed after ${processingTime}ms: ${error.message}`, {
 //       error: error.toString(),
 //       stack: error.stack,
 //       processingTime
 //     });
-    
+
 //     // Send appropriate response to client
 //     res.status(400).json({
 //       success: false,
@@ -100,13 +100,13 @@ const orderDao = require('../dao/order-dao')
 
 exports.createOrder = async (req, res) => {
   try {
-    const orderData  = req.body;
+    const orderData = req.body;
     const salesAgentId = req.user.id; // Assuming agent ID comes from auth middleware
-    
+
     console.log('Creating order with data:', orderData);
 
     const result = await orderDao.processOrder(orderData, salesAgentId);
-    
+
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
@@ -123,6 +123,7 @@ exports.createOrder = async (req, res) => {
     });
   }
 };
+
 
 
 
@@ -338,6 +339,36 @@ exports.reportOrder = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update report status',
+      error: error.message
+    });
+  }
+};
+
+
+exports.getAgentStats = async (req, res) => {
+  try {
+    // Get the salesAgentId from the authenticated user in the request
+    const salesAgentId = req.user.id;
+
+    if (!salesAgentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sales agent ID is required'
+      });
+    }
+
+    // Get combined stats for the agent
+    const stats = await orderDao.getCombinedStats(salesAgentId);
+
+    return res.status(200).json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error in getAgentStats:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get sales agent stats',
       error: error.message
     });
   }

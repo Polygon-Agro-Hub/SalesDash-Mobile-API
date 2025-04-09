@@ -824,6 +824,567 @@ const db = require('../startup/database');
 // };
 
 
+// /**
+//  * Process a complete order with transaction support
+//  * @param {Object} orderData - Complete order data from request
+//  * @param {Number} salesAgentId - ID of the sales agent
+//  * @returns {Promise<{orderId: number}>} Object containing the new order ID
+//  */
+// exports.processOrder = async (orderData, salesAgentId) => {
+//   console.time('process-order');
+//   let connection;
+
+//   try {
+//     // Get connection from pool
+//     connection = await db.dash.promise().getConnection();
+//     console.log('Database connection acquired');
+
+//     // Start transaction
+//     await connection.beginTransaction();
+//     console.log('Transaction started');
+
+//     // STEP 1: Insert main order record
+//     const orderId = await insertMainOrder(connection, orderData, salesAgentId);
+//     console.log(`Main order created with ID: ${orderId}`);
+
+//     // STEP 2: Process items based on order type
+//     if (orderData.isCustomPackage) {
+//       await processCustomPackage(connection, orderId, orderData);
+//       console.log('Custom package items processed');
+//     } else if (orderData.isSelectPackage) {
+//       await processSelectedPackage(connection, orderId, orderData);
+//       console.log('Package order processed');
+//     }
+
+//     // Commit transaction if everything succeeded
+//     await connection.commit();
+//     console.log('Transaction committed successfully');
+//     console.timeEnd('process-order');
+
+//     return { orderId };
+//   } catch (error) {
+//     console.error('Error in processOrder:', error);
+
+//     // Rollback transaction if connection exists
+//     if (connection) {
+//       try {
+//         await connection.rollback();
+//         console.log('Transaction rolled back');
+//       } catch (rollbackError) {
+//         console.error('Error rolling back transaction:', rollbackError);
+//       }
+//     }
+
+//     throw new Error(`Order processing failed: ${error.message}`);
+//   } finally {
+//     // Release connection back to pool
+//     if (connection) {
+//       try {
+//         connection.release();
+//         console.log('DB connection released');
+//       } catch (releaseError) {
+//         console.error('Error releasing connection:', releaseError);
+//       }
+//     }
+//   }
+// };
+
+
+
+
+// // Helper function to insert main order record
+// async function insertMainOrder(connection, orderData, salesAgentId) {
+//   const {
+//     customerId,
+//     isCustomPackage,
+//     isSelectPackage,
+//     scheduleDate,
+//     selectedTimeSlot,
+//     paymentMethod,
+//     fullTotal,
+//     discount,
+//     subtotal,
+//     deleteStatus = false
+//   } = orderData;
+
+//   // Format date if needed (from "12 Apr 2025" to "YYYY-MM-DD 00:00:00")
+//   let formattedDate = scheduleDate;
+//   if (scheduleDate && typeof scheduleDate === 'string' && scheduleDate.match(/^\d{1,2}\s[A-Za-z]{3}\s\d{4}$/)) {
+//     const dateParts = scheduleDate.split(' ');
+//     const day = parseInt(dateParts[0], 10);
+//     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+//     const month = monthNames.indexOf(dateParts[1]) + 1;
+//     const year = parseInt(dateParts[2], 10);
+//     formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+//   }
+
+//   // Generate Invoice Number (YYMMDDRRRR)
+//   const today = new Date();
+//   const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+//   // Get the current max sequence number for today
+//   const [sequenceResult] = await connection.query(
+//     'SELECT MAX(InvNo) as maxInvNo FROM orders WHERE InvNo LIKE ?',
+//     [`${datePrefix}%`]
+//   );
+
+//   let sequenceNumber = 1;
+//   if (sequenceResult[0].maxInvNo) {
+//     sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+//   }
+
+//   const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+
+//   // Insert order record
+//   const [result] = await connection.query(
+//     `INSERT INTO orders (
+//       customerId, salesAgentId, InvNo, customPackage, selectedPackage, deliveryType,
+//       scheduleDate, scheduleTimeSlot, paymentMethod,
+//       paymentStatus, orderStatus, fullTotal,
+//       fullDiscount, fullSubTotal, deleteStatus
+//     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+//     [
+//       customerId,
+//       salesAgentId,
+//       invNo,
+//       isCustomPackage ? 1 : 0,
+//       isSelectPackage ? 1 : 0,
+//       'One Time',
+//       formattedDate,
+//       selectedTimeSlot,
+//       paymentMethod,
+//       0, // paymentStatus default false
+//       'Ordered', // orderStatus default
+//       fullTotal,
+//       discount,
+//       subtotal,
+//       deleteStatus ? 1 : 0
+//     ]
+//   );
+
+//   return result.insertId;
+// }
+
+// // Helper function to process custom package items
+// async function processCustomPackage(connection, orderId, orderData) {
+//   if (!orderData.items?.length) return;
+
+//   const values = orderData.items.map(item => [
+//     orderId,
+//     item.id, // mpItemId
+//     item.quantity,
+//     item.unitType,
+//     item.normalPrice * item.quantity, // total
+//     (item.normalPrice - item.discountedPrice) * item.quantity, // discount
+//     item.price * item.quantity // subtotal
+//   ]);
+
+//   await connection.query(
+//     `INSERT INTO orderselecteditems (
+//       orderId, mpItemId, quantity, unitType, 
+//       total, discount, subtotal
+//     ) VALUES ?`,
+//     [values]
+//   );
+// }
+
+// // Helper function to process selected package
+// async function processSelectedPackage(connection, orderId, orderData) {
+//   const packageId = orderData.packageId || (orderData.items && orderData.items[0]?.packageId);
+//   if (!packageId) {
+//     throw new Error('Package ID is required for selected package orders');
+//   }
+
+//   const {
+//     isModifiedPlus = false,
+//     isModifiedMin = false,
+//     isAdditionalItems = false,
+//     packageTotal = orderData.fullTotal,
+//     packageDiscount = orderData.discount,
+//     packageSubTotal = orderData.subtotal
+//   } = orderData;
+
+//   // Insert package record
+//   const [packageResult] = await connection.query(
+//     `INSERT INTO orderpackageitems (
+//       orderId, packageId, isModifiedPlus, isModifiedMin, 
+//       isAdditionalItems, packageTotal, packageDiscount, packageSubTotal
+//     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+//     [
+//       orderId,
+//       packageId,
+//       isModifiedPlus ? 1 : 0,
+//       isModifiedMin ? 1 : 0,
+//       isAdditionalItems ? 1 : 0,
+//       packageTotal,
+//       packageDiscount,
+//       packageSubTotal
+//     ]
+//   );
+
+//   const orderPackageItemsId = packageResult.insertId;
+
+//   // Process modified plus items if they exist
+//   if (isModifiedPlus && orderData.modifiedPlusItems?.length > 0) {
+//     await connection.query(
+//       `INSERT INTO modifiedplusitems (
+//         orderPackageItemsId, packageDetailsId, originalQuantity, 
+//         modifiedQuantity, originalPrice, additionalPrice, additionalDiscount
+//       ) VALUES ?`,
+//       [orderData.modifiedPlusItems.map(item => [
+//         orderPackageItemsId,
+//         item.packageDetailsId,
+//         item.originalQuantity,
+//         item.modifiedQuantity,
+//         item.originalPrice,
+//         item.additionalPrice,
+//         item.additionalDiscount
+//       ])]
+//     );
+//   }
+
+//   // Process modified minus items if they exist
+//   if (isModifiedMin && orderData.modifiedMinItems?.length > 0) {
+//     await connection.query(
+//       `INSERT INTO modifiedminitems (
+//         orderPackageItemsId, packageDetailsId, originalQuantity, 
+//         modifiedQuantity, originalPrice, additionalPrice, additionalDiscount
+//       ) VALUES ?`,
+//       [orderData.modifiedMinItems.map(item => [
+//         orderPackageItemsId,
+//         item.packageDetailsId,
+//         item.originalQuantity,
+//         item.modifiedQuantity,
+//         item.originalPrice,
+//         item.additionalPrice,
+//         item.additionalDiscount
+//       ])]
+//     );
+//   }
+
+//   // Process additional items if they exist
+//   if (isAdditionalItems && orderData.additionalItems?.length > 0) {
+//     await connection.query(
+//       `INSERT INTO additionalitem (
+//         orderPackageItemsId, mpItemId, quantity, unitType, 
+//         total, discount, subtotal
+//       ) VALUES ?`,
+//       [orderData.additionalItems.map(item => [
+//         orderPackageItemsId,
+//         item.id,
+//         item.quantity,
+//         item.unitType,
+//         item.total,
+//         item.discount,
+//         item.subtotal
+//       ])]
+//     );
+//   }
+// }
+
+
+// /**
+//  * Process a complete order with transaction support
+//  * @param {Object} orderData - Complete order data from request
+//  * @param {Number} salesAgentId - ID of the sales agent
+//  * @returns {Promise<{orderId: number}>} Object containing the new order ID
+//  */
+// exports.processOrder = async (orderData, salesAgentId) => {
+//   console.time('process-order');
+//   let connection;
+
+//   try {
+//     // Get connection from pool
+//     connection = await db.dash.promise().getConnection();
+//     console.log('Database connection acquired');
+
+//     // Start transaction
+//     await connection.beginTransaction();
+//     console.log('Transaction started');
+
+//     // STEP 1: Insert main order record
+//     const orderId = await insertMainOrder(connection, orderData, salesAgentId);
+//     console.log(`Main order created with ID: ${orderId}`);
+
+//     // STEP 2: Process items based on order type
+//     if (orderData.isCustomPackage) {
+//       await processCustomPackage(connection, orderId, orderData);
+//       console.log('Custom package items processed');
+//     } else if (orderData.isSelectPackage) {
+//       await processSelectedPackage(connection, orderId, orderData);
+//       console.log('Package order processed');
+//     }
+
+//     // STEP 3: Update salesagentstars table for the sales agent
+//     await updateSalesAgentStars(connection, salesAgentId);
+//     console.log('Sales agent stars updated');
+
+//     // Commit transaction if everything succeeded
+//     await connection.commit();
+//     console.log('Transaction committed successfully');
+//     console.timeEnd('process-order');
+
+//     return { orderId };
+//   } catch (error) {
+//     console.error('Error in processOrder:', error);
+
+//     // Rollback transaction if connection exists
+//     if (connection) {
+//       try {
+//         await connection.rollback();
+//         console.log('Transaction rolled back');
+//       } catch (rollbackError) {
+//         console.error('Error rolling back transaction:', rollbackError);
+//       }
+//     }
+
+//     throw new Error(`Order processing failed: ${error.message}`);
+//   } finally {
+//     // Release connection back to pool
+//     if (connection) {
+//       try {
+//         connection.release();
+//         console.log('DB connection released');
+//       } catch (releaseError) {
+//         console.error('Error releasing connection:', releaseError);
+//       }
+//     }
+//   }
+// };
+
+// /**
+//  * Update sales agent stars for the current date
+//  * Increments the 'completed' column by 1 for the given salesAgentId on current date
+//  * If no record exists for today, creates a new one
+//  * 
+//  * @param {Object} connection - Database connection
+//  * @param {Number} salesAgentId - ID of the sales agent
+//  * @returns {Promise<void>}
+//  */
+// async function updateSalesAgentStars(connection, salesAgentId) {
+//   // Get current date in YYYY-MM-DD format
+//   const today = new Date();
+//   const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+
+//   // Check if a record exists for this sales agent on the current date
+//   const [existingRows] = await connection.query(
+//     'SELECT id, completed FROM salesagentstars WHERE salesagentId = ? AND date = ?',
+//     [salesAgentId, formattedDate]
+//   );
+
+//   if (existingRows.length > 0) {
+//     // Record exists, update the completed count by incrementing it
+//     const currentCompleted = existingRows[0].completed || 0;
+//     const newCompleted = currentCompleted + 1;
+
+//     await connection.query(
+//       'UPDATE salesagentstars SET completed = ? WHERE id = ?',
+//       [newCompleted, existingRows[0].id]
+//     );
+
+//     console.log(`Updated sales agent ${salesAgentId} stars: completed ${currentCompleted} -> ${newCompleted}`);
+//   } else {
+//     // No record exists for today, create a new one with completed = 1
+//     await connection.query(
+//       'INSERT INTO salesagentstars (salesagentId, date, completed, numOfStars) VALUES (?, ?, ?, ?)',
+//       [salesAgentId, formattedDate, 1, 0]  // Initialize with 1 completed and 0 stars
+//     );
+
+//     console.log(`Created new sales agent ${salesAgentId} stars record with completed = 1`);
+//   }
+// }
+
+// // Helper function to insert main order record
+// async function insertMainOrder(connection, orderData, salesAgentId) {
+//   const {
+//     customerId,
+//     isCustomPackage,
+//     isSelectPackage,
+//     scheduleDate,
+//     selectedTimeSlot,
+//     paymentMethod,
+//     fullTotal,
+//     discount,
+//     subtotal,
+//     deleteStatus = false
+//   } = orderData;
+
+//   // Format date if needed (from "12 Apr 2025" to "YYYY-MM-DD 00:00:00")
+//   let formattedDate = scheduleDate;
+//   if (scheduleDate && typeof scheduleDate === 'string' && scheduleDate.match(/^\d{1,2}\s[A-Za-z]{3}\s\d{4}$/)) {
+//     const dateParts = scheduleDate.split(' ');
+//     const day = parseInt(dateParts[0], 10);
+//     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+//     const month = monthNames.indexOf(dateParts[1]) + 1;
+//     const year = parseInt(dateParts[2], 10);
+//     formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+//   }
+
+//   // Generate Invoice Number (YYMMDDRRRR)
+//   const today = new Date();
+//   const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+//   // Get the current max sequence number for today
+//   const [sequenceResult] = await connection.query(
+//     'SELECT MAX(InvNo) as maxInvNo FROM orders WHERE InvNo LIKE ?',
+//     [`${datePrefix}%`]
+//   );
+
+//   let sequenceNumber = 1;
+//   if (sequenceResult[0].maxInvNo) {
+//     sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+//   }
+
+//   const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+
+//   // Insert order record
+//   const [result] = await connection.query(
+//     `INSERT INTO orders (
+//       customerId, salesAgentId, InvNo, customPackage, selectedPackage, deliveryType,
+//       scheduleDate, scheduleTimeSlot, paymentMethod,
+//       paymentStatus, orderStatus, fullTotal,
+//       fullDiscount, fullSubTotal, deleteStatus
+//     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+//     [
+//       customerId,
+//       salesAgentId,
+//       invNo,
+//       isCustomPackage ? 1 : 0,
+//       isSelectPackage ? 1 : 0,
+//       'One Time',
+//       formattedDate,
+//       selectedTimeSlot,
+//       paymentMethod,
+//       0, // paymentStatus default false
+//       'Ordered', // orderStatus default
+//       fullTotal,
+//       discount,
+//       subtotal,
+//       deleteStatus ? 1 : 0
+//     ]
+//   );
+
+//   return result.insertId;
+// }
+
+// // Helper function to process custom package items
+// async function processCustomPackage(connection, orderId, orderData) {
+//   if (!orderData.items?.length) return;
+
+//   const values = orderData.items.map(item => [
+//     orderId,
+//     item.id, // mpItemId
+//     item.quantity,
+//     item.unitType,
+//     item.normalPrice * item.quantity, // total
+//     (item.normalPrice - item.discountedPrice) * item.quantity, // discount
+//     item.price * item.quantity // subtotal
+//   ]);
+
+//   await connection.query(
+//     `INSERT INTO orderselecteditems (
+//       orderId, mpItemId, quantity, unitType, 
+//       total, discount, subtotal
+//     ) VALUES ?`,
+//     [values]
+//   );
+// }
+
+// // Helper function to process selected package
+// async function processSelectedPackage(connection, orderId, orderData) {
+//   const packageId = orderData.packageId || (orderData.items && orderData.items[0]?.packageId);
+//   if (!packageId) {
+//     throw new Error('Package ID is required for selected package orders');
+//   }
+
+//   const {
+//     isModifiedPlus = false,
+//     isModifiedMin = false,
+//     isAdditionalItems = false,
+//     packageTotal = orderData.fullTotal,
+//     packageDiscount = orderData.discount,
+//     packageSubTotal = orderData.subtotal
+//   } = orderData;
+
+//   // Insert package record
+//   const [packageResult] = await connection.query(
+//     `INSERT INTO orderpackageitems (
+//       orderId, packageId, isModifiedPlus, isModifiedMin, 
+//       isAdditionalItems, packageTotal, packageDiscount, packageSubTotal
+//     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+//     [
+//       orderId,
+//       packageId,
+//       isModifiedPlus ? 1 : 0,
+//       isModifiedMin ? 1 : 0,
+//       isAdditionalItems ? 1 : 0,
+//       packageTotal,
+//       packageDiscount,
+//       packageSubTotal
+//     ]
+//   );
+
+//   const orderPackageItemsId = packageResult.insertId;
+
+//   // Process modified plus items if they exist
+//   if (isModifiedPlus && orderData.modifiedPlusItems?.length > 0) {
+//     await connection.query(
+//       `INSERT INTO modifiedplusitems (
+//         orderPackageItemsId, packageDetailsId, originalQuantity, 
+//         modifiedQuantity, originalPrice, additionalPrice, additionalDiscount
+//       ) VALUES ?`,
+//       [orderData.modifiedPlusItems.map(item => [
+//         orderPackageItemsId,
+//         item.packageDetailsId,
+//         item.originalQuantity,
+//         item.modifiedQuantity,
+//         item.originalPrice,
+//         item.additionalPrice,
+//         item.additionalDiscount
+//       ])]
+//     );
+//   }
+
+//   // Process modified minus items if they exist
+//   if (isModifiedMin && orderData.modifiedMinItems?.length > 0) {
+//     await connection.query(
+//       `INSERT INTO modifiedminitems (
+//         orderPackageItemsId, packageDetailsId, originalQuantity, 
+//         modifiedQuantity, originalPrice, additionalPrice, additionalDiscount
+//       ) VALUES ?`,
+//       [orderData.modifiedMinItems.map(item => [
+//         orderPackageItemsId,
+//         item.packageDetailsId,
+//         item.originalQuantity,
+//         item.modifiedQuantity,
+//         item.originalPrice,
+//         item.additionalPrice,
+//         item.additionalDiscount
+//       ])]
+//     );
+//   }
+
+//   // Process additional items if they exist
+//   if (isAdditionalItems && orderData.additionalItems?.length > 0) {
+//     await connection.query(
+//       `INSERT INTO additionalitem (
+//         orderPackageItemsId, mpItemId, quantity, unitType, 
+//         total, discount, subtotal
+//       ) VALUES ?`,
+//       [orderData.additionalItems.map(item => [
+//         orderPackageItemsId,
+//         item.id,
+//         item.quantity,
+//         item.unitType,
+//         item.total,
+//         item.discount,
+//         item.subtotal
+//       ])]
+//     );
+//   }
+// }
+
+
 /**
  * Process a complete order with transaction support
  * @param {Object} orderData - Complete order data from request
@@ -843,8 +1404,6 @@ exports.processOrder = async (orderData, salesAgentId) => {
     await connection.beginTransaction();
     console.log('Transaction started');
 
-
-
     // STEP 1: Insert main order record
     const orderId = await insertMainOrder(connection, orderData, salesAgentId);
     console.log(`Main order created with ID: ${orderId}`);
@@ -857,6 +1416,10 @@ exports.processOrder = async (orderData, salesAgentId) => {
       await processSelectedPackage(connection, orderId, orderData);
       console.log('Package order processed');
     }
+
+    // STEP 3: Update salesagentstars table for the sales agent
+    await updateSalesAgentStars(connection, salesAgentId);
+    console.log('Sales agent stars updated');
 
     // Commit transaction if everything succeeded
     await connection.commit();
@@ -891,8 +1454,61 @@ exports.processOrder = async (orderData, salesAgentId) => {
   }
 };
 
+/**
+ * Update sales agent stars for the current date
+ * Increments the 'completed' column by 1 for the given salesAgentId on current date
+ * Updates numOfStars to 1 if completed equals target, otherwise leaves it unchanged
+ * If no record exists for today, creates a new one
+ * 
+ * @param {Object} connection - Database connection
+ * @param {Number} salesAgentId - ID of the sales agent
+ * @returns {Promise<void>}
+ */
+async function updateSalesAgentStars(connection, salesAgentId) {
+  // Get current date in YYYY-MM-DD format
+  const today = new Date();
+  const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+
+  // Check if a record exists for this sales agent on the current date
+  const [existingRows] = await connection.query(
+    'SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?',
+    [salesAgentId, formattedDate]
+  );
+
+  if (existingRows.length > 0) {
+    // Record exists, update the completed count by incrementing it
+    const currentRecord = existingRows[0];
+    const currentCompleted = currentRecord.completed || 0;
+    const newCompleted = currentCompleted + 1;
+    const targetValue = currentRecord.target || 0;
+
+    // Determine if numOfStars should be updated
+    let numOfStars = currentRecord.numOfStars || 0;
+    if (newCompleted === targetValue) {
+      numOfStars = 1;
+      console.log(`Sales agent ${salesAgentId} achieved target (${targetValue}), setting numOfStars to 1`);
+    }
+
+    await connection.query(
+      'UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?',
+      [newCompleted, numOfStars, currentRecord.id]
+    );
+
+    console.log(`Updated sales agent ${salesAgentId} stars: completed ${currentCompleted} -> ${newCompleted}`);
+  } else {
+    // No record exists for today, create a new one with completed = 1
+    // Note: We don't know the target yet, so numOfStars will be 0 initially
+    await connection.query(
+      'INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)',
+      [salesAgentId, formattedDate, 1, 0, 0]  // Initialize with defaults
+    );
+
+    console.log(`Created new sales agent ${salesAgentId} stars record with completed = 1`);
+  }
+}
+
 // Helper function to insert main order record
-async function insertMainOrder() {
+async function insertMainOrder(connection, orderData, salesAgentId) {
   const {
     customerId,
     isCustomPackage,
@@ -906,66 +1522,43 @@ async function insertMainOrder() {
     deleteStatus = false
   } = orderData;
 
-  // Convert date from "12 Apr 2025" format to SQL datetime format "YYYY-MM-DD 00:00:00"
+  // Format date if needed (from "12 Apr 2025" to "YYYY-MM-DD 00:00:00")
   let formattedDate = scheduleDate;
-
-  // Check if the date is in the format "12 Apr 2025"
   if (scheduleDate && typeof scheduleDate === 'string' && scheduleDate.match(/^\d{1,2}\s[A-Za-z]{3}\s\d{4}$/)) {
-    // Parse the date string
     const dateParts = scheduleDate.split(' ');
     const day = parseInt(dateParts[0], 10);
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = monthNames.indexOf(dateParts[1]) + 1; // Convert month name to number (1-12)
+    const month = monthNames.indexOf(dateParts[1]) + 1;
     const year = parseInt(dateParts[2], 10);
-
-    // Format as YYYY-MM-DD 00:00:00
     formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
   }
 
-  console.log("Original date:", scheduleDate);
-  console.log("Formatted date for DB:", formattedDate);
-
-  // Generate Invoice Number (InvNo) with format YYMMDDRRRR
+  // Generate Invoice Number (YYMMDDRRRR)
   const today = new Date();
-  const year = today.getFullYear().toString().slice(-2); // Get last 2 digits of year
-  const month = (today.getMonth() + 1).toString().padStart(2, '0'); // 1-12 to 01-12
-  const day = today.getDate().toString().padStart(2, '0'); // 1-31 to 01-31
-  const datePrefix = `${year}${month}${day}`; // e.g., 250408
+  const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
 
   // Get the current max sequence number for today
-  const sequenceQuery = `
-    SELECT MAX(InvNo) as maxInvNo 
-    FROM orders 
-    WHERE InvNo LIKE ?
-  `;
+  const [sequenceResult] = await connection.query(
+    'SELECT MAX(InvNo) as maxInvNo FROM orders WHERE InvNo LIKE ?',
+    [`${datePrefix}%`]
+  );
 
-  try {
-    // Find the highest invoice number for today
-    const [sequenceResult] = await connection.promise().query(sequenceQuery, [`${datePrefix}%`]);
-    let sequenceNumber = 1; // Default to 1 if no orders exist for today
+  let sequenceNumber = 1;
+  if (sequenceResult[0].maxInvNo) {
+    sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+  }
 
-    if (sequenceResult[0].maxInvNo) {
-      // Extract the sequence part (last 4 digits) and increment
-      const lastSequence = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10);
-      sequenceNumber = lastSequence + 1;
-    }
+  const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
 
-    // Format sequence with leading zeros (0001, 0002, etc.)
-    const formattedSequence = sequenceNumber.toString().padStart(4, '0');
-    const invNo = `${datePrefix}${formattedSequence}`;
-
-    console.log("Generated Invoice Number:", invNo);
-
-    const sql = `
-      INSERT INTO orders (
-        customerId, salesAgentId, InvNo,customPackage, selectedPackage, deliveryType,
-        scheduleDate, scheduleTimeSlot, paymentMethod,
-        paymentStatus, orderStatus, fullTotal,
-        fullDiscount, fullSubTotal, deleteStatus
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    const values = [
+  // Insert order record
+  const [result] = await connection.query(
+    `INSERT INTO orders (
+      customerId, salesAgentId, InvNo, customPackage, selectedPackage, deliveryType,
+      scheduleDate, scheduleTimeSlot, paymentMethod,
+      paymentStatus, orderStatus, fullTotal,
+      fullDiscount, fullSubTotal, deleteStatus
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
       customerId,
       salesAgentId,
       invNo,
@@ -981,55 +1574,35 @@ async function insertMainOrder() {
       discount,
       subtotal,
       deleteStatus ? 1 : 0
+    ]
+  );
 
-    ];
-
-    const [result] = await connection.promise().query(sql, values);
-    return result.insertId; // This is the newly created order ID
-  } catch (error) {
-    throw new Error(`Failed to create main order: ${error.message}`);
-  }
+  return result.insertId;
 }
-    
-  
 
+// Helper function to process custom package items
+async function processCustomPackage(connection, orderId, orderData) {
+  if (!orderData.items?.length) return;
 
-  // Updated inner functions to accept orderId as parameter
-  async function processCustomPackage(orderId) {
+  const values = orderData.items.map(item => [
+    orderId,
+    item.id, // mpItemId
+    item.quantity,
+    item.unitType,
+    item.normalPrice * item.quantity, // total
+    (item.normalPrice - item.discountedPrice) * item.quantity, // discount
+    item.price * item.quantity // subtotal
+  ]);
 
-    const items = orderData.items;
-    if (!items?.length) return;
+  await connection.query(
+    `INSERT INTO orderselecteditems (
+      orderId, mpItemId, quantity, unitType, 
+      total, discount, subtotal
+    ) VALUES ?`,
+    [values]
+  );
+}
 
-
-    try {
-      const values = items.map(item => {
-        const total = item.normalPrice * item.quantity;
-        const discount = (item.normalPrice - item.discountedPrice) * item.quantity;
-        const subtotal = item.price * item.quantity;
-
-        return [
-          orderId,
-          item.id, // mpItemId
-          item.quantity,
-          item.unitType,
-          total,
-          discount,
-          subtotal
-        ];
-      });
-
-      const sql = `
-      INSERT INTO orderselecteditems (
-        orderId, mpItemId, quantity, unitType, 
-        total, discount, subtotal
-      ) VALUES ?
-    `;
-
-      await connection.promise().query(sql, [values]);
-    } catch (error) {
-      throw new Error(`Failed to insert order items: ${error.message}`);
-    }
-  }
 // Helper function to process selected package
 async function processSelectedPackage(connection, orderId, orderData) {
   const packageId = orderData.packageId || (orderData.items && orderData.items[0]?.packageId);
@@ -1126,6 +1699,7 @@ async function processSelectedPackage(connection, orderId, orderData) {
 
 
 
+
 exports.getAllOrderDetails = () => {
   return new Promise((resolve, reject) => {
     const sql = `
@@ -1134,6 +1708,7 @@ exports.getAllOrderDetails = () => {
           o.customerId,
           o.salesAgentId,
           o.InvNo,
+          o.reportStatus,
           o.customPackage,
           o.selectedPackage,
           o.deliveryType,
@@ -1142,7 +1717,6 @@ exports.getAllOrderDetails = () => {
           o.paymentMethod,
           o.paymentStatus,
           o.orderStatus,
-          o.reportStatus,
           o.createdAt,
           o.fullTotal,
           o.fullDiscount,
@@ -1249,9 +1823,7 @@ exports.getAllOrderDetails = () => {
 };
 
 exports.getOrderById = (orderId) => {
-  console.log("rrrrrrr")
   return new Promise((resolve, reject) => {
-    console.log("1")
     const sql = `
         SELECT 
           o.id AS orderId,
@@ -1277,32 +1849,20 @@ exports.getOrderById = (orderId) => {
         WHERE o.id = ?
       `;
 
-
-    console.log("2")
-    console.log(orderId)
-
-
     db.dash.query(sql, [orderId], (err, orderResults) => {
-      console.log("after")
       if (err) {
-        console.log(".", err)
         return reject(err);
-
       }
 
-      console.log("3")
       if (orderResults.length === 0) {
         return resolve({ message: 'No order found with the given ID' });
       }
 
-      console.log("4")
       const order = orderResults[0];
       const customerId = order.customerId;
       const buildingType = order.buildingType;
 
       if (buildingType === 'House') {
-
-        console.log("5")
         const addressSql = `
             SELECT 
               houseNo,
@@ -1311,30 +1871,25 @@ exports.getOrderById = (orderId) => {
             FROM house
             WHERE customerId = ?
           `;
-        console.log("6")
+
         db.dash.query(addressSql, [customerId], (err, addressResults) => {
           if (err) {
-            console.log("error", err)
             return reject(err);
           }
 
-          console.log("7")
           let formattedAddress = '';
           if (addressResults[0]) {
             const addr = addressResults[0];
             formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
             formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
           }
-          console.log("8")
+
           resolve({
             ...order,
             fullAddress: formattedAddress
           });
         });
-        console.log("9")
       } else if (buildingType === 'Apartment') {
-
-        console.log("................")
         const addressSql = `
             SELECT 
               buildingNo,
@@ -1347,15 +1902,11 @@ exports.getOrderById = (orderId) => {
             FROM apartment
             WHERE customerId = ?
           `;
-        console.log("10")
+
         db.dash.query(addressSql, [customerId], (err, addressResults) => {
-          console.log("before")
           if (err) {
-            console.log("errorr", err)
             return reject(err);
           }
-
-          console.log("11")
 
           let formattedAddress = '';
           if (addressResults[0]) {
@@ -1368,7 +1919,6 @@ exports.getOrderById = (orderId) => {
             formattedAddress = formattedAddress.replace(/,\s*$/, '');
           }
 
-          console.log("12")
           resolve({
             ...order,
             fullAddress: formattedAddress
@@ -1398,6 +1948,7 @@ exports.getOrderByCustomerId = (customerId) => {
         orderStatus,
         createdAt,
         InvNo,
+        reportStatus,
         fullTotal,
         fullDiscount,
         fullSubTotal  
@@ -1476,7 +2027,6 @@ exports.getDataCustomerId = (customerId) => {
 
 
 
-
 // order-dao.js
 
 exports.cancelOrder = (orderId) => {
@@ -1539,4 +2089,101 @@ exports.reportOrder = (orderId, reportStatus) => {
       });
     });
   });
+};
+
+
+
+
+
+exports.getTodayStats = async (salesAgentId) => {
+  try {
+    const connection = await db.dash.promise().getConnection();
+
+    try {
+      // Get current date in YYYY-MM-DD format
+      const today = new Date();
+      const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+
+      // Get today's stats
+      const [rows] = await connection.query(
+        'SELECT target, completed, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?',
+        [salesAgentId, formattedDate]
+      );
+
+      // Return default values if no record found
+      if (rows.length === 0) {
+        return {
+          target: 10, // Default target value
+          completed: 0,
+          numOfStars: 0,
+          progress: 0
+        };
+      }
+
+      // Calculate progress (between 0 and 1)
+      const progress = rows[0].target > 0 ?
+        Math.min(rows[0].completed / rows[0].target, 1) : 0;
+
+      return {
+        target: rows[0].target,
+        completed: rows[0].completed,
+        numOfStars: rows[0].numOfStars,
+        progress
+      };
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error in getTodayStats:', error);
+    throw new Error(`Failed to get today's stats: ${error.message}`);
+  }
+};
+
+
+exports.getMonthlyStats = async (salesAgentId) => {
+  try {
+    const connection = await db.dash.promise().getConnection();
+
+    try {
+      // Get current month range
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth() + 1;
+      const firstDay = `${year}-${month.toString().padStart(2, '0')}-01`;
+      const lastDay = month === 12 ?
+        `${year + 1}-01-01` :
+        `${year}-${(month + 1).toString().padStart(2, '0')}-01`;
+
+      // Get sum of numOfStars for the current month
+      const [rows] = await connection.query(
+        'SELECT SUM(numOfStars) as totalStars FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?',
+        [salesAgentId, firstDay, lastDay]
+      );
+
+      return {
+        totalStars: rows[0].totalStars || 0
+      };
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error in getMonthlyStats:', error);
+    throw new Error(`Failed to get monthly stats: ${error.message}`);
+  }
+};
+
+
+exports.getCombinedStats = async (salesAgentId) => {
+  try {
+    const dailyStats = await exports.getTodayStats(salesAgentId);
+    const monthlyStats = await exports.getMonthlyStats(salesAgentId);
+
+    return {
+      daily: dailyStats,
+      monthly: monthlyStats
+    };
+  } catch (error) {
+    console.error('Error in getCombinedStats:', error);
+    throw new Error(`Failed to get combined stats: ${error.message}`);
+  }
 };
