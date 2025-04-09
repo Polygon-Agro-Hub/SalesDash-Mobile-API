@@ -824,6 +824,8 @@ const db = require('../startup/database');
 // };
 
 
+
+const QUERY_TIMEOUT = 0; // 10 seconds timeout for queries
 /**
  * Process a complete order with transaction support
  * @param {Object} orderData - Complete order data from request
@@ -842,6 +844,8 @@ exports.processOrder = async (orderData, salesAgentId) => {
     // Start transaction
     await connection.beginTransaction();
     console.log('Transaction started');
+
+
 
     // STEP 1: Insert main order record
     const orderId = await insertMainOrder(connection, orderData, salesAgentId);
@@ -990,6 +994,191 @@ async function processSelectedPackage(connection, orderId, orderData) {
   const packageId = orderData.packageId || (orderData.items && orderData.items[0]?.packageId);
   if (!packageId) {
     throw new Error('Package ID is required for selected package orders');
+
+      deleteStatus = false
+    } = orderData;
+
+    // Convert date from "12 Apr 2025" format to SQL datetime format "YYYY-MM-DD 00:00:00"
+    let formattedDate = scheduleDate;
+
+    // Check if the date is in the format "12 Apr 2025"
+    if (scheduleDate && typeof scheduleDate === 'string' && scheduleDate.match(/^\d{1,2}\s[A-Za-z]{3}\s\d{4}$/)) {
+      // Parse the date string
+      const dateParts = scheduleDate.split(' ');
+      const day = parseInt(dateParts[0], 10);
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = monthNames.indexOf(dateParts[1]) + 1; // Convert month name to number (1-12)
+      const year = parseInt(dateParts[2], 10);
+
+      // Format as YYYY-MM-DD 00:00:00
+      formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+    }
+
+    console.log("Original date:", scheduleDate);
+    console.log("Formatted date for DB:", formattedDate);
+
+    // Generate Invoice Number (InvNo) with format YYMMDDRRRR
+    const today = new Date();
+    const year = today.getFullYear().toString().slice(-2); // Get last 2 digits of year
+    const month = (today.getMonth() + 1).toString().padStart(2, '0'); // 1-12 to 01-12
+    const day = today.getDate().toString().padStart(2, '0'); // 1-31 to 01-31
+    const datePrefix = `${year}${month}${day}`; // e.g., 250408
+
+    // Get the current max sequence number for today
+    const sequenceQuery = `
+      SELECT MAX(InvNo) as maxInvNo 
+      FROM orders 
+      WHERE InvNo LIKE ?
+    `;
+
+    try {
+      // Find the highest invoice number for today
+      const [sequenceResult] = await connection.promise().query(sequenceQuery, [`${datePrefix}%`]);
+      let sequenceNumber = 1; // Default to 1 if no orders exist for today
+
+      if (sequenceResult[0].maxInvNo) {
+        // Extract the sequence part (last 4 digits) and increment
+        const lastSequence = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10);
+        sequenceNumber = lastSequence + 1;
+      }
+
+      // Format sequence with leading zeros (0001, 0002, etc.)
+      const formattedSequence = sequenceNumber.toString().padStart(4, '0');
+      const invNo = `${datePrefix}${formattedSequence}`;
+
+      console.log("Generated Invoice Number:", invNo);
+
+      const sql = `
+        INSERT INTO orders (
+          customerId, salesAgentId, InvNo,customPackage, selectedPackage, deliveryType,
+          scheduleDate, scheduleTimeSlot, paymentMethod,
+          paymentStatus, orderStatus, fullTotal,
+          fullDiscount, fullSubTotal, deleteStatus
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      const values = [
+        customerId,
+        salesAgentId,
+        invNo,
+        isCustomPackage ? 1 : 0,
+        isSelectPackage ? 1 : 0,
+        'One Time',
+        formattedDate,
+        selectedTimeSlot,
+        paymentMethod,
+        0, // paymentStatus default false
+        'Ordered', // orderStatus default
+        fullTotal,
+        discount,
+        subtotal,
+        deleteStatus ? 1 : 0
+
+      ];
+
+      const [result] = await connection.promise().query(sql, values);
+      return result.insertId; // This is the newly created order ID
+    } catch (error) {
+      throw new Error(`Failed to create main order: ${error.message}`);
+    }
+  }
+
+
+  // Updated inner functions to accept orderId as parameter
+  async function processCustomPackage(orderId) {
+
+    const items = orderData.items;
+    if (!items?.length) return;
+
+
+    try {
+      const values = items.map(item => {
+        const total = item.normalPrice * item.quantity;
+        const discount = (item.normalPrice - item.discountedPrice) * item.quantity;
+        const subtotal = item.price * item.quantity;
+
+        return [
+          orderId,
+          item.id, // mpItemId
+          item.quantity,
+          item.unitType,
+          total,
+          discount,
+          subtotal
+        ];
+      });
+
+      const sql = `
+      INSERT INTO orderselecteditems (
+        orderId, mpItemId, quantity, unitType, 
+        total, discount, subtotal
+      ) VALUES ?
+    `;
+
+      await connection.promise().query(sql, [values]);
+    } catch (error) {
+      throw new Error(`Failed to insert order items: ${error.message}`);
+    }
+  }
+
+  async function processSelectedPackage(orderId) {
+    try {
+      const packageId = orderData.packageId || (orderData.items && orderData.items[0]?.packageId);
+
+      if (!packageId) {
+        throw new Error('Package ID is required for selected package orders');
+      }
+
+      const {
+        isModifiedPlus = false,
+        isModifiedMin = false,
+        isAdditionalItems = false,
+        packageTotal = orderData.fullTotal,
+        packageDiscount = orderData.discount,
+        packageSubTotal = orderData.subtotal
+      } = orderData;
+
+      const packageSql = `
+      INSERT INTO orderpackageitems (
+        orderId, packageId, isModifiedPlus, isModifiedMin, 
+        isAdditionalItems, packageTotal, packageDiscount, packageSubTotal
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+      const packageValues = [
+        orderId,
+        packageId,
+        isModifiedPlus ? 1 : 0,
+        isModifiedMin ? 1 : 0,
+        isAdditionalItems ? 1 : 0,
+        packageTotal,
+        packageDiscount,
+        packageSubTotal
+      ];
+
+      const [packageResult] = await connection.promise().query(packageSql, packageValues);
+      const orderPackageItemsId = packageResult.insertId;
+
+      const operations = [];
+
+      if (isModifiedPlus && orderData.modifiedPlusItems?.length > 0) {
+        operations.push(processModifiedPlusItems(orderPackageItemsId));
+      }
+
+      if (isModifiedMin && orderData.modifiedMinItems?.length > 0) {
+        operations.push(processModifiedMinItems(orderPackageItemsId));
+      }
+
+      if (isAdditionalItems && orderData.additionalItems?.length > 0) {
+        operations.push(processAdditionalItems(orderPackageItemsId));
+      }
+
+      if (operations.length > 0) {
+        await Promise.all(operations);
+      }
+    } catch (error) {
+      throw new Error(`Failed to process package order: ${error.message}`);
+    }
   }
 
   const {
@@ -1097,6 +1286,7 @@ exports.getAllOrderDetails = () => {
           o.paymentMethod,
           o.paymentStatus,
           o.orderStatus,
+          o.reportStatus,
           o.createdAt,
           o.fullTotal,
           o.fullDiscount,
@@ -1203,7 +1393,9 @@ exports.getAllOrderDetails = () => {
 };
 
 exports.getOrderById = (orderId) => {
+  console.log("rrrrrrr")
   return new Promise((resolve, reject) => {
+    console.log("1")
     const sql = `
         SELECT 
           o.id AS orderId,
@@ -1216,6 +1408,7 @@ exports.getOrderById = (orderId) => {
           o.orderStatus,
           o.createdAt,
           o.InvNo,
+          o.reportStatus,
           o.fullTotal,
           o.fullDiscount,
           o.fullSubTotal,  
@@ -1228,20 +1421,32 @@ exports.getOrderById = (orderId) => {
         WHERE o.id = ?
       `;
 
+
+    console.log("2")
+    console.log(orderId)
+
+
     db.dash.query(sql, [orderId], (err, orderResults) => {
+      console.log("after")
       if (err) {
+        console.log(".", err)
         return reject(err);
+
       }
 
+      console.log("3")
       if (orderResults.length === 0) {
         return resolve({ message: 'No order found with the given ID' });
       }
 
+      console.log("4")
       const order = orderResults[0];
       const customerId = order.customerId;
       const buildingType = order.buildingType;
 
       if (buildingType === 'House') {
+
+        console.log("5")
         const addressSql = `
             SELECT 
               houseNo,
@@ -1250,25 +1455,30 @@ exports.getOrderById = (orderId) => {
             FROM house
             WHERE customerId = ?
           `;
-
+        console.log("6")
         db.dash.query(addressSql, [customerId], (err, addressResults) => {
           if (err) {
+            console.log("error", err)
             return reject(err);
           }
 
+          console.log("7")
           let formattedAddress = '';
           if (addressResults[0]) {
             const addr = addressResults[0];
             formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
             formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
           }
-
+          console.log("8")
           resolve({
             ...order,
             fullAddress: formattedAddress
           });
         });
+        console.log("9")
       } else if (buildingType === 'Apartment') {
+
+        console.log("................")
         const addressSql = `
             SELECT 
               buildingNo,
@@ -1281,11 +1491,15 @@ exports.getOrderById = (orderId) => {
             FROM apartment
             WHERE customerId = ?
           `;
-
+        console.log("10")
         db.dash.query(addressSql, [customerId], (err, addressResults) => {
+          console.log("before")
           if (err) {
+            console.log("errorr", err)
             return reject(err);
           }
+
+          console.log("11")
 
           let formattedAddress = '';
           if (addressResults[0]) {
@@ -1298,6 +1512,7 @@ exports.getOrderById = (orderId) => {
             formattedAddress = formattedAddress.replace(/,\s*$/, '');
           }
 
+          console.log("12")
           resolve({
             ...order,
             fullAddress: formattedAddress
@@ -1398,6 +1613,73 @@ exports.getDataCustomerId = (customerId) => {
         };
 
         resolve(result);
+      });
+    });
+  });
+};
+
+
+
+
+// order-dao.js
+
+exports.cancelOrder = (orderId) => {
+  return new Promise((resolve, reject) => {
+    // Update order status to Cancelled
+    const updateSql = `
+      UPDATE dash.orders 
+      SET orderStatus = 'Cancelled'
+      WHERE id = ?
+    `;
+
+    db.dash.query(updateSql, [orderId], (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+
+      // Check if any row was affected
+      if (result.affectedRows === 0) {
+        return resolve({
+          message: 'Order not found or already cancelled'
+        });
+      }
+
+      // Return success
+      resolve({
+        success: true,
+        message: 'Order cancelled successfully',
+        orderId: orderId
+      });
+    });
+  });
+};
+
+exports.reportOrder = (orderId, reportStatus) => {
+  return new Promise((resolve, reject) => {
+    const updateSql = `
+      UPDATE dash.orders 
+      SET reportStatus = ?
+      WHERE id = ?
+    `;
+
+    db.dash.query(updateSql, [reportStatus, orderId], (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+
+      // Check if any row was affected
+      if (result.affectedRows === 0) {
+        return resolve({
+          message: 'Order not found or could not be updated'
+        });
+      }
+
+      // Return success
+      resolve({
+        success: true,
+        message: 'Order report status updated successfully',
+        orderId: orderId,
+        reportStatus: reportStatus
       });
     });
   });

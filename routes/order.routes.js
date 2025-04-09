@@ -10,5 +10,8 @@ router.get('/get-order/:orderId', orderEp.getOrderById)
 router.get('/get-order-bycustomerId/:id', orderEp.getOrderByCustomerId)
 router.get('/get-customer-data/:id', orderEp.getCustomerDetailsCustomerId)
 
+router.post('/cancel-order/:orderId', auth, orderEp.cancelOrder)
+
+router.post('/report-order/:orderId', auth, orderEp.reportOrder);
 
 module.exports = router;
