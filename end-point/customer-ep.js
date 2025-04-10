@@ -138,7 +138,7 @@ exports.customerData = async (req, res) => {
     console.log('--- Received Data -----', customerData);
 
     try {
-        const salesAgentId = req.user.id;
+        const salesAgent = req.user.id;
 
         // Validate phone number
         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
@@ -153,7 +153,7 @@ exports.customerData = async (req, res) => {
         }
 
         // Add customer
-        const result = await customerDAO.addCustomer(customerData, salesAgentId);
+        const result = await customerDAO.addCustomer(customerData, salesAgent);
 
         res.status(200).json({
             status: "success",
@@ -214,6 +214,8 @@ exports.getCustomerData = asyncHandler(async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+
 
 
 

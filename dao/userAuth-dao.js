@@ -1,31 +1,30 @@
 const db = require('../startup/database');
 const bcrypt = require('bcrypt');
 
-exports.loginUser = (username, password) => {
-  return new Promise((resolve, reject) => {
-    const sql = 'SELECT username, password, id, passwordUpdate FROM salesagent WHERE username = ?';
-    db.dash.query(sql, [username], async (err, results) => {
-      if (err) {
-        return reject(new Error('Database error'));
-      }
+exports.loginUser = (empId, password) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const sql = 'SELECT empId, password, id, passwordUpdate FROM salesagent WHERE empId = ?';
+      const [results] = await db.dash.promise().query(sql, [empId]);
+
       if (results.length === 0) {
         return reject(new Error('User not found'));
       }
 
       const user = results[0];
+      const isPasswordValid = await bcrypt.compare(password, user.password);
 
-      try {
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
-          return reject(new Error('Invalid password'));
-        }
-        resolve({ success: true, username: user.username, id: user.id, passwordUpdate: user.passwordUpdate });
-      } catch (bcryptErr) {
-        return reject(new Error('Password comparison error'));
+      if (!isPasswordValid) {
+        return reject(new Error('Invalid password'));
       }
-    });
+
+      resolve({ success: true, empId: user.empId, id: user.id, passwordUpdate: user.passwordUpdate });
+    } catch (err) {
+      return reject(new Error('Database error: ' + err.message));
+    }
   });
 };
+
 
 exports.getUserProfile = (id) => {
   return new Promise((resolve, reject) => {
@@ -40,8 +39,7 @@ exports.getUserProfile = (id) => {
         email, 
         houseNumber, 
         streetName, 
-        city, 
-        username
+        city
       FROM salesagent 
       WHERE id = ?
     `;

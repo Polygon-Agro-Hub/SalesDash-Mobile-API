@@ -15,10 +15,11 @@ const db = require('../startup/database');
 // };
 
 
-exports.createComplain = (saId, language, complain, category, status, refNo, replyTime) => {
+exports.createComplain = (saId, language, complain, category, status, refNo) => {
     return new Promise((resolve, reject) => {
         const today = new Date();
         const datePrefix = today.toISOString().slice(2, 10).replace(/-/g, ""); // YYMMDD format
+        console.log("datePrefix", datePrefix);
 
         // Query to find the last inserted refNo for today
         const checkSql = `SELECT refNo FROM dashcomplain WHERE refNo LIKE ? ORDER BY refNo DESC LIMIT 1`;
@@ -38,8 +39,8 @@ exports.createComplain = (saId, language, complain, category, status, refNo, rep
             const refNo = `SA${datePrefix}${newNumber}`;
 
             // Insert the complaint with the generated refNo
-            const insertSql = `INSERT INTO dashcomplain (saId, language, complain, complainCategory, status, refNo,replyTime ) VALUES (?, ?, ?, ?, ?, ?,?)`;
-            db.dash.query(insertSql, [saId, language, complain, category, status, refNo, replyTime], (err, result) => {
+            const insertSql = `INSERT INTO dashcomplain (saId, language, complain, complainCategory, status, refNo, adminStatus ) VALUES (?, ?, ?, ?, ?, ?, 'Assigned')`;
+            db.dash.query(insertSql, [saId, language, complain, category, status, refNo], (err, result) => {
                 if (err) {
                     return reject(err);
                 } else {
@@ -93,7 +94,7 @@ exports.createComplain = (saId, language, complain, category, status, refNo, rep
 exports.getAllComplaintsByUserId = async (userId) => {
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo,replyTime
+        SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo
         FROM dashcomplain 
         WHERE saId = ?
         ORDER BY createdAt DESC
@@ -108,3 +109,25 @@ exports.getAllComplaintsByUserId = async (userId) => {
         });
     });
 };
+
+exports.getComplainCategories = async (appName) => {
+    return new Promise((resolve, reject) => {
+        const query = `
+                SELECT cc.id, cc.roleId, cc.appId, cc.categoryEnglish, cc.categorySinhala, cc.categoryTamil, ssa.appName
+                FROM complaincategory cc
+                JOIN systemapplications ssa ON cc.appId = ssa.id
+                WHERE ssa.appName = ?
+      `;
+        db.admin.query(query, [appName], (error, results) => {
+            if (error) {
+                console.error("Error fetching complaints:", error);
+                reject(error);
+            } else {
+                // Log the entire response to ensure the IDs are correct
+                console.log("Fetched categories:", results);
+                resolve(results);
+            }
+        });
+    });
+};
+

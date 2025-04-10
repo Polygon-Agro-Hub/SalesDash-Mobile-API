@@ -12,12 +12,15 @@ const Joi = require('joi');
 
 
 exports.createComplain = asyncHandler(async (req, res) => {
+    console.log("Creating complain...");
     try {
         const saId = req.user.id; // Get the user ID from the token
         const input = { ...req.body, saId };
 
         // Validate input using Joi
         const { value, error } = createComplain.validate(input);
+        console.log("value", value);
+        console.log("error", error);
         if (error) {
             return res.status(400).json({
                 status: "error",
@@ -25,7 +28,7 @@ exports.createComplain = asyncHandler(async (req, res) => {
             });
         }
 
-        const { language, complain, category, refNo, replyTime } = value;
+        const { language, complain, category, refNo } = value;
         const status = "Opened"; // Default status for new complaints
 
         // Create the complaint in the database
@@ -35,8 +38,7 @@ exports.createComplain = asyncHandler(async (req, res) => {
             complain,
             category,
             status,
-            refNo,
-            replyTime
+            refNo
         );
 
         res.status(201).json({
@@ -88,3 +90,19 @@ exports.getComplains = asyncHandler(async (req, res) => {
 //     }
 // });
 
+exports.getComplainCategory = asyncHandler(async(req, res) => {
+    try {
+        const appName = req.params.appName;
+        console.log("Fetching categories for app:", appName);
+        const categories = await complainDAO.getComplainCategories(appName);
+
+        if (!categories || categories.length === 0) {
+            return res.status(404).json({ message: "No categories found" });
+        }
+
+        res.status(200).json({ status: "success", data: categories }); 
+    } catch (error) {
+        console.error("Error fetching categories:", error);
+        res.status(500).json({ message: "Failed to fetch categories" });
+    }
+});

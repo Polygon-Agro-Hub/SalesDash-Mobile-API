@@ -10,5 +10,7 @@ router.post('/add-complain', auth, complainEp.createComplain);
 
 router.get('/get-complains', auth, complainEp.getComplains);
 
+router.get('/get-complain/category/:appName',complainEp.getComplainCategory)
+
 
 module.exports = router;
