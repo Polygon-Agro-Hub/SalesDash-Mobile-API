@@ -1,32 +1,5 @@
 const orderDao = require('../dao/order-dao')
 
-// exports.createOrder = async (req, res) => {
-//   try {
-//     const salesAgentId = req.user.id; // Get salesAgentId from authenticated user
-//     const orderData = req.body;
-
-//     // Validate required fields
-//     if (!orderData || !orderData.customerId || !orderData.orderItems) {
-//       return res.status(400).json({ success: false, message: "Invalid order data" });
-//     }
-
-//     // Call DAO to place order
-//     const result = await orderDao.placeOrder(orderData, salesAgentId);
-
-//     return res.status(201).json({
-//       success: true,
-//       orderId: result.orderId,
-//       message: "Order created successfully"
-//     });
-//   } catch (error) {
-//     console.error("Error placing order:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message || "Internal server error"
-//     });
-//   }
-// };
-
 
 
 /**
@@ -34,68 +7,6 @@ const orderDao = require('../dao/order-dao')
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-// exports.createOrder = async (req, res) => {
-//   const requestId = `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-//   const startTime = Date.now();
-//   const salesAgentId = req.user.id;
-//   const orderData = req.body;
-
-//   // Log order creation start
-//   console.log(`[${requestId}] Order creation started`, { 
-//     salesAgentId, 
-//     orderType: orderData.isCustomPackage ? 'custom' : 'package' 
-//   });
-
-//   try {
-//     // Basic validation
-//     if (!orderData.customerId) {
-//       throw new Error('Customer ID is required');
-//     }
-
-//     if (!orderData.isCustomPackage && !orderData.isSelectPackage) {
-//       throw new Error('Invalid order type - must specify isCustomPackage or isSelectPackage');
-//     }
-
-//     if (orderData.isCustomPackage && (!orderData.items || !orderData.items.length)) {
-//       throw new Error('Items are required for custom package orders');
-//     }
-
-//     if (orderData.isSelectPackage && !orderData.packageId) {
-//       throw new Error('Package ID is required for package orders');
-//     }
-
-//     // Process order with DAO
-//     const result = await orderDao.processOrder(orderData, salesAgentId);
-
-//     const processingTime = Date.now() - startTime;
-//     console.log(`[${requestId}] Order created successfully in ${processingTime}ms`, { 
-//       processingTime,
-//       orderId: result.orderId 
-//     });
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Order created successfully',
-//       data: result
-//     });
-//   } catch (error) {
-//     const processingTime = Date.now() - startTime;
-
-//     // Log detailed error info
-//     console.error(`[${requestId}] Order creation failed after ${processingTime}ms: ${error.message}`, {
-//       error: error.toString(),
-//       stack: error.stack,
-//       processingTime
-//     });
-
-//     // Send appropriate response to client
-//     res.status(400).json({
-//       success: false,
-//       message: `Failed to create order: ${error.message}`,
-//       error: error.message
-//     });
-//   }
-// };
 
 
 exports.createOrder = async (req, res) => {
@@ -171,14 +82,11 @@ exports.getOrderById = async (req, res) => {
       });
     }
 
-    // Get order items if needed
-    // This is an example of how you might include order items
-    // const orderItems = await orderItemDao.getOrderItemsByOrderId(orderId);
 
     res.status(200).json({
       success: true,
       data: order
-      // data: { ...order, items: orderItems } // Uncomment if you want to include order items
+
     });
   } catch (error) {
     console.error('Error fetching order by ID:', error);
@@ -194,7 +102,7 @@ exports.getOrderByCustomerId = async (req, res) => {
   try {
     const customerId = req.params.id;
 
-    // Validate customerId
+
     if (!customerId || isNaN(parseInt(customerId))) {
       return res.status(400).json({
         success: false,
@@ -373,3 +281,54 @@ exports.getAgentStats = async (req, res) => {
     });
   }
 };
+
+exports.getAgentAllStars = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+
+    if (!salesAgentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sales agent ID is required'
+      });
+    }
+
+    const stats = await orderDao.getAllAgentStats(salesAgentId);
+
+    return res.status(200).json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error in getAgentAllStars:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get sales agent stars data',
+      error: error.message
+    });
+  }
+};
+
+exports.getOrderCountBySalesAgent = async (req, res) => {
+  try {
+    const result = await orderDao.getOrderCountBySalesAgent();
+
+    return res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error in getOrderCountBySalesAgent:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch order count by sales agent',
+      error: error.message
+    });
+  }
+};
+
+
+
+
+
+

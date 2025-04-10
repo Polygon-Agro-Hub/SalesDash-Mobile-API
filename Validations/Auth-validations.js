@@ -22,7 +22,7 @@ const updateUserProfileSchema = Joi.object({
     firstName: Joi.string().min(2).max(50).required().label('First Name'),
     lastName: Joi.string().min(2).max(50).required().label('Last Name'),
     phoneNumber1: Joi.string().min(10).max(15).optional().label('Phone Number 1'),
-    phoneNumber2: Joi.string().min(10).max(15).optional().label('Phone Number 2'),
+    phoneNumber2: Joi.string().min(10).max(15).optional().label('Phone Number 1'),
     email: Joi.string().email().optional().label('Email'),
     houseNumber: Joi.string().optional().label('House Number'),
     streetName: Joi.string().min(2).max(50).optional().label('Street Name'),
