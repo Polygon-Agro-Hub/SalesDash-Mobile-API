@@ -70,58 +70,6 @@ exports.processOrder = async (orderData, salesAgentId) => {
   }
 };
 
-/**
- * Update sales agent stars for the current date
- * Increments the 'completed' column by 1 for the given salesAgentId on current date
- * Updates numOfStars to 1 if completed equals target, otherwise leaves it unchanged
- * If no record exists for today, creates a new one
- * 
- * @param {Object} connection - Database connection
- * @param {Number} salesAgentId - ID of the sales agent
- * @returns {Promise<void>}
- */
-async function updateSalesAgentStars(connection, salesAgentId) {
-  // Get current date in YYYY-MM-DD format
-  const today = new Date();
-  const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
-
-  // Check if a record exists for this sales agent on the current date
-  const [existingRows] = await connection.query(
-    'SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?',
-    [salesAgentId, formattedDate]
-  );
-
-  if (existingRows.length > 0) {
-    // Record exists, update the completed count by incrementing it
-    const currentRecord = existingRows[0];
-    const currentCompleted = currentRecord.completed || 0;
-    const newCompleted = currentCompleted + 1;
-    const targetValue = currentRecord.target || 0;
-
-    // Determine if numOfStars should be updated
-    let numOfStars = currentRecord.numOfStars || 0;
-    if (newCompleted === targetValue) {
-      numOfStars = 1;
-      console.log(`Sales agent ${salesAgentId} achieved target (${targetValue}), setting numOfStars to 1`);
-    }
-
-    await connection.query(
-      'UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?',
-      [newCompleted, numOfStars, currentRecord.id]
-    );
-
-    console.log(`Updated sales agent ${salesAgentId} stars: completed ${currentCompleted} -> ${newCompleted}`);
-  } else {
-    // No record exists for today, create a new one with completed = 1
-    // Note: We don't know the target yet, so numOfStars will be 0 initially
-    await connection.query(
-      'INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)',
-      [salesAgentId, formattedDate, 1, 0, 0]  // Initialize with defaults
-    );
-
-    console.log(`Created new sales agent ${salesAgentId} stars record with completed = 1`);
-  }
-}
 
 // Helper function to insert main order record
 async function insertMainOrder(connection, orderData, salesAgentId) {
@@ -220,6 +168,7 @@ async function processCustomPackage(connection, orderId, orderData) {
 }
 
 // Helper function to process selected package
+// Helper function to process selected package
 async function processSelectedPackage(connection, orderId, orderData) {
   const packageId = orderData.packageId || (orderData.items && orderData.items[0]?.packageId);
   if (!packageId) {
@@ -309,6 +258,27 @@ async function processSelectedPackage(connection, orderId, orderData) {
         item.discount,
         item.subtotal
       ])]
+    );
+  }
+
+  // NEW CODE: Process finalOrderPackageList if it exists
+  if (orderData.finalOrderPackageList?.length > 0) {
+    // Get the items from the finalOrderPackageList
+    const finalOrderItems = orderData.finalOrderPackageList.map(item => [
+      orderId,
+      item.productId,
+      item.quantity,
+      item.price,
+      item.isPacking || 0,
+      new Date().toISOString().slice(0, 19).replace('T', ' ') // Format current timestamp for MySQL
+    ]);
+
+    // Insert all items into finalorderpackagelist table
+    await connection.query(
+      `INSERT INTO finalorderpackagelist (
+        orderId, productId, quantity, price, isPacking, createdAt
+      ) VALUES ?`,
+      [finalOrderItems]
     );
   }
 }
@@ -878,6 +848,60 @@ exports.getOrderCountBySalesAgent = async () => {
     throw new Error(`Failed to get order count: ${error.message}`);
   }
 };
+
+/**
+ * Update sales agent stars for the current date
+ * Increments the 'completed' column by 1 for the given salesAgentId on current date
+ * Updates numOfStars to 1 if completed equals target, otherwise leaves it unchanged
+ * If no record exists for today, creates a new one
+ * 
+ * @param {Object} connection - Database connection
+ * @param {Number} salesAgentId - ID of the sales agent
+ * @returns {Promise<void>}
+ */
+async function updateSalesAgentStars(connection, salesAgentId) {
+  // Get current date in YYYY-MM-DD format
+  const today = new Date();
+  const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+
+  // Check if a record exists for this sales agent on the current date
+  const [existingRows] = await connection.query(
+    'SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?',
+    [salesAgentId, formattedDate]
+  );
+
+  if (existingRows.length > 0) {
+    // Record exists, update the completed count by incrementing it
+    const currentRecord = existingRows[0];
+    const currentCompleted = currentRecord.completed || 0;
+    const newCompleted = currentCompleted + 1;
+    const targetValue = currentRecord.target || 0;
+
+    // Determine if numOfStars should be updated
+    let numOfStars = currentRecord.numOfStars || 0;
+    if (newCompleted === targetValue) {
+      numOfStars = 1;
+      console.log(`Sales agent ${salesAgentId} achieved target (${targetValue}), setting numOfStars to 1`);
+    }
+
+    await connection.query(
+      'UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?',
+      [newCompleted, numOfStars, currentRecord.id]
+    );
+
+    console.log(`Updated sales agent ${salesAgentId} stars: completed ${currentCompleted} -> ${newCompleted}`);
+  } else {
+    // No record exists for today, create a new one with completed = 1
+    // Note: We don't know the target yet, so numOfStars will be 0 initially
+    await connection.query(
+      'INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)',
+      [salesAgentId, formattedDate, 1, 0, 0]  // Initialize with defaults
+    );
+
+    console.log(`Created new sales agent ${salesAgentId} stars record with completed = 1`);
+  }
+}
+
 
 
 

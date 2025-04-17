@@ -57,16 +57,18 @@ exports.getUserProfile = (id) => {
 
 
 exports.updateUserProfile = (id, updatedData) => {
+  console.log("kkkkk")
   return new Promise((resolve, reject) => {
     const sql = `
           UPDATE salesagent
-          SET firstName = ?, lastName = ?, phoneNumber1 = ?, phoneNumber2 = ?, email = ?, 
+          SET firstName = ?, lastName = ?, phoneNumber1 = ?, phoneNumber2 = ?, nic =? ,email = ?, 
               houseNumber = ?, streetName = ?, city = ?, district = ?, province = ?
           WHERE id = ?;
       `;
 
     const values = [
       updatedData.firstName, updatedData.lastName, updatedData.phoneNumber1, updatedData.phoneNumber2,
+      updatedData.nic,
       updatedData.email, updatedData.houseNumber, updatedData.streetName, updatedData.city,
       updatedData.district, updatedData.province, id
     ];

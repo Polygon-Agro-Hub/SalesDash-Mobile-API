@@ -1,11 +1,30 @@
 const db = require("../startup/database");
 
 
+// exports.getAllPackages = async () => {
+//     return new Promise((resolve, reject) => {
+//         const query = `
+//         SELECT id, displayName, image, status, total, created_at AS createdAt, description, discount, subTotal
+//         FROM marketplacepackages
+//         `;
+
+//         db.marketPlace.query(query, (error, results) => {
+//             if (error) {
+//                 console.error("Error fetching packages:", error);
+//                 reject(error);
+//             } else {
+//                 resolve(results);
+//             }
+//         });
+//     });
+// };
+
 exports.getAllPackages = async () => {
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, displayName, status, total, created_at AS createdAt, description, discount, subTotal
+        SELECT id, displayName, image, status, total, created_at AS createdAt, description, discount, subTotal
         FROM marketplacepackages
+        WHERE status = 'Enabled'
         `;
 
         db.marketPlace.query(query, (error, results) => {
@@ -104,19 +123,19 @@ exports.getAllCrops = async () => {
 
 
 
-exports.getCropById = async (cropId) => {
+exports.getCropById = async (id) => {
     try {
         const query = `
             SELECT 
-                id, cropId, displayName, category, 
+                id, varietyId, displayName, category, 
                 normalPrice, discountedPrice, discount, 
                 promo, unitType, startValue, changeby, displayType 
             FROM marketplaceitems 
-            WHERE cropId = ?;
+            WHERE id = ?;
         `;  // SQL query to fetch the crop with the specific cropId
 
         console.log("Executing query:", query);  // Debugging SQL query
-        const [results] = await db.marketPlace.promise().query(query, [cropId]);  // Run the query with cropId as a parameter
+        const [results] = await db.marketPlace.promise().query(query, [id]);  // Run the query with cropId as a parameter
 
         console.log("Result fetched from DB:", results); // Check what the query returns
         return results[0];  // Return the first result (single crop)
