@@ -1,32 +1,42 @@
-const orderDao = require('../dao/order-dao')
-
-
+const orderDao = require('../dao/order-dao');
+const orderValidationSchema = require('../Validations/Order-validation');
 
 /**
  * Create a new order
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-
-
 exports.createOrder = async (req, res) => {
   try {
-    const orderData = req.body;
-    const salesAgentId = req.user.id; // Assuming agent ID comes from auth middleware
+    // Validate the request body using the Joi schema
+    await orderValidationSchema.validateAsync(req.body);  // Validate async to handle validation errors properly
 
-    console.log('Creating order with data:', orderData);
+    // Extract sales agent ID from the user (authenticated user)
+    const salesAgentId = req.user.id;
 
-    const result = await orderDao.processOrder(orderData, salesAgentId);
+    // Process the order using the DAO
+    const result = await orderDao.processOrder(req.body, salesAgentId);
 
+    // Send a successful response with the order ID or relevant result
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
-      data: {
-        orderId: result.orderId
-      }
+      data: result // Or you can return order ID here depending on your DAO response
     });
   } catch (error) {
+    // If validation fails or any other error occurs, catch it and send an error response
     console.error('Error creating order:', error);
+
+    if (error.isJoi) {
+      // Handle Joi validation errors
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        error: error.details.map(err => err.message)  // Send detailed validation errors
+      });
+    }
+
+    // Handle any other errors
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create order',
@@ -34,6 +44,8 @@ exports.createOrder = async (req, res) => {
     });
   }
 };
+
+
 
 
 
