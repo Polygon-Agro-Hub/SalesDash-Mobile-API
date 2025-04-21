@@ -156,7 +156,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         await connection.beginTransaction();
 
         // Check if customer exists
-        const getCustomerIdQuery = `SELECT id, phoneNumber, email FROM customer WHERE id = ?`;
+        const getCustomerIdQuery = `SELECT id, phoneNumber, email, buildingType FROM customer WHERE id = ?`;
         const [customerResult] = await connection.query(getCustomerIdQuery, [cusId]);
 
         console.log("Customer ID query result:", customerResult);
@@ -168,12 +168,13 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         const customerId = customerResult[0].id;
         const existingPhoneNumber = customerResult[0].phoneNumber;
         const existingEmail = customerResult[0].email;
+        const existingBuildingType = customerResult[0].buildingType;
         console.log("Using customerId:", customerId);
 
         // Check for duplicate phone number
         if (customerData.phoneNumber !== existingPhoneNumber) {
-            const checkPhoneQuery = `SELECT id FROM customer WHERE phoneNumber = ?`;
-            const [phoneResult] = await connection.query(checkPhoneQuery, [customerData.phoneNumber]);
+            const checkPhoneQuery = `SELECT id FROM customer WHERE phoneNumber = ? AND id != ?`;
+            const [phoneResult] = await connection.query(checkPhoneQuery, [customerData.phoneNumber, customerId]);
 
             if (phoneResult.length > 0) {
                 throw new Error('Phone number already exists.');
@@ -182,8 +183,8 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
         // Check for duplicate email
         if (customerData.email !== existingEmail) {
-            const checkEmailQuery = `SELECT id FROM customer WHERE email = ?`;
-            const [emailResult] = await connection.query(checkEmailQuery, [customerData.email]);
+            const checkEmailQuery = `SELECT id FROM customer WHERE email = ? AND id != ?`;
+            const [emailResult] = await connection.query(checkEmailQuery, [customerData.email, customerId]);
 
             if (emailResult.length > 0) {
                 throw new Error('Email already exists.');
@@ -209,44 +210,121 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         await connection.query(updateCustomerQuery, customerParams);
         console.log("Customer data updated.");
 
-        // Update building based on type
-        let updateBuildingQuery = '';
-        let buildingParams = [];
+        // Handle building type change
+        if (customerData.buildingType !== existingBuildingType) {
+            console.log(`Building type changed from ${existingBuildingType} to ${customerData.buildingType}`);
 
-        if (customerData.buildingType === 'House') {
-            updateBuildingQuery = `
-                UPDATE house 
-                SET houseNo = ?, streetName = ?, city = ? 
-                WHERE customerId = ?`;
-            buildingParams = [
-                buildingData.houseNo,
-                buildingData.streetName,
-                buildingData.city,
-                customerId
-            ];
-            console.log("House data updated.");
-        } else if (customerData.buildingType === 'Apartment') {
-            updateBuildingQuery = `
-                UPDATE apartment 
-                SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
-                WHERE customerId = ?`;
-            buildingParams = [
-                buildingData.buildingNo,
-                buildingData.buildingName,
-                buildingData.unitNo,
-                buildingData.floorNo,
-                buildingData.houseNo,
-                buildingData.streetName,
-                buildingData.city,
-                customerId
-            ];
-            console.log("Apartment data updated.");
+            // Delete existing building data no matter which type
+            if (existingBuildingType === 'House') {
+                await connection.query('DELETE FROM house WHERE customerId = ?', [customerId]);
+                console.log("Deleted old house data.");
+            } else if (existingBuildingType === 'Apartment') {
+                await connection.query('DELETE FROM apartment WHERE customerId = ?', [customerId]);
+                console.log("Deleted old apartment data.");
+            }
+
+            // Insert new building data
+            if (customerData.buildingType === 'House') {
+                const insertHouseQuery = `
+                    INSERT INTO house (customerId, houseNo, streetName, city) 
+                    VALUES (?, ?, ?, ?)`;
+
+                await connection.query(insertHouseQuery, [
+                    customerId,
+                    buildingData.houseNo || '',  // Default to empty string if undefined
+                    buildingData.streetName || '',  // Default to empty string if undefined
+                    buildingData.city || ''  // Default to empty string if undefined
+                ]);
+                console.log("New house data created.");
+            } else if (customerData.buildingType === 'Apartment') {
+                const insertApartmentQuery = `
+                    INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+                await connection.query(insertApartmentQuery, [
+                    customerId,
+                    buildingData.buildingNo || '',
+                    buildingData.buildingName || '',
+                    buildingData.unitNo || '',
+                    buildingData.floorNo || '',
+                    buildingData.houseNo || '',
+                    buildingData.streetName || '',
+                    buildingData.city || ''
+                ]);
+                console.log("New apartment data created.");
+            }
+
         } else {
-            throw new Error('Invalid building type');
-        }
+            // If building type didn't change, update the existing building data
+            if (customerData.buildingType === 'House') {
+                const [houseExists] = await connection.query('SELECT * FROM house WHERE customerId = ?', [customerId]);
+                console.log("House exists check result:", houseExists); // Check the existing house data
 
-        await connection.query(updateBuildingQuery, buildingParams);
-        console.log("Building data updated.");
+                if (houseExists.length > 0) {
+                    const updateHouseQuery = `
+                        UPDATE house 
+                        SET houseNo = ?, streetName = ?, city = ? 
+                        WHERE customerId = ?`;
+
+                    const updateParams = [
+                        buildingData.houseNo || '',  // Default to empty string if undefined
+                        buildingData.streetName || '',  // Default to empty string if undefined
+                        buildingData.city || '',  // Default to empty string if undefined
+                        customerId
+                    ];
+                    console.log("House update parameters:", updateParams);
+
+                    const [updateResult] = await connection.query(updateHouseQuery, updateParams);
+                    console.log("House update result:", updateResult);
+
+                    const [verifyUpdate] = await connection.query('SELECT * FROM house WHERE customerId = ?', [customerId]);
+                    console.log("After update - house data:", verifyUpdate);
+
+                    if (updateResult.affectedRows === 0) {
+                        console.warn("Warning: House update query did not update any rows!");
+                    } else {
+                        console.log(`House update successful, affected rows: ${updateResult.affectedRows}`);
+                    }
+                }
+            } else if (customerData.buildingType === 'Apartment') {
+                const [apartmentExists] = await connection.query('SELECT 1 FROM apartment WHERE customerId = ?', [customerId]);
+
+                if (apartmentExists.length > 0) {
+                    const updateApartmentQuery = `
+                        UPDATE apartment 
+                        SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
+                        WHERE customerId = ?`;
+
+                    await connection.query(updateApartmentQuery, [
+                        buildingData.buildingNo || '',
+                        buildingData.buildingName || '',
+                        buildingData.unitNo || '',
+                        buildingData.floorNo || '',
+                        buildingData.houseNo || '',
+                        buildingData.streetName || '',
+                        buildingData.city || '',
+                        customerId
+                    ]);
+                    console.log("Apartment data updated.");
+                } else {
+                    const insertApartmentQuery = `
+                        INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+                    await connection.query(insertApartmentQuery, [
+                        customerId,
+                        buildingData.buildingNo || '',
+                        buildingData.buildingName || '',
+                        buildingData.unitNo || '',
+                        buildingData.floorNo || '',
+                        buildingData.houseNo || '',
+                        buildingData.streetName || '',
+                        buildingData.city || ''
+                    ]);
+                    console.log("New apartment data created for existing apartment type.");
+                }
+            }
+        }
 
         // Commit the transaction
         await connection.commit();

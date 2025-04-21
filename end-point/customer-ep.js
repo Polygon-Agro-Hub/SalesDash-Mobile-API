@@ -70,27 +70,55 @@ exports.getCustomerData = asyncHandler(async (req, res) => {
 
 
 
+
 exports.updateCustomerData = asyncHandler(async (req, res) => {
     const { cusId } = req.params;
-    const customerData = req.body;
-    const buildingData = req.body;
-
     console.log("Request Body:", req.body);
 
-    try {
+    // Initialize variables
+    let customerData;
+    let buildingData;
 
+    // Detect request format and extract data accordingly
+    if (req.body.customerData) {
+        // Format: { customerData: {...}, buildingData: {...} }
+        customerData = req.body.customerData;
+        buildingData = req.body.buildingData;
+    } else {
+        // Format: { title: '...', firstName: '...', buildingData: {...} }
+        customerData = {
+            title: req.body.title,
+            firstName: req.body.firstName,
+            lastName: req.body.lastName,
+            phoneNumber: req.body.phoneNumber,
+            email: req.body.email,
+            buildingType: req.body.buildingType
+        };
+        buildingData = req.body.buildingData;
+    }
+
+    console.log("Customer Data (extracted):", customerData);
+    console.log("Building Data (extracted):", buildingData);
+
+    try {
+        // Validate the customer data exists
+        if (!customerData || !customerData.phoneNumber || !customerData.email) {
+            return res.status(400).json({ error: "Customer data is incomplete" });
+        }
+
+        // Validate phone number
         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
         if (phoneNumberValidation.error) {
             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
         }
 
-        // Step 2: Validate email
+        // Validate email
         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
         if (emailValidation.error) {
             return res.status(400).json({ error: emailValidation.error.details[0].message });
         }
 
-        // Step 3: Ensure customerData and buildingData are correctly structured
+        // Update customer data through DAO
         const result = await customerDAO.updateCustomerData(cusId, customerData, buildingData);
 
         // Send success response
