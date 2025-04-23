@@ -1,13 +1,13 @@
-const db = require('../startup/database'); // Assuming db connection
+const db = require('../startup/database');
 
 exports.addCustomer = (customerData, salesAgent) => {
     return new Promise(async (resolve, reject) => {
 
         try {
-            // Generate customer ID
+
             const newCustomerId = await generateCustomerId();
 
-            // Insert into `customer` table
+
             const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgent) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
 
@@ -21,10 +21,10 @@ exports.addCustomer = (customerData, salesAgent) => {
                 customerData.email,
                 customerData.title,
                 customerData.buildingType,
-                salesAgent,  // Ensure this is the correct variable
+                salesAgent,
             ], (err, customerResult) => {
                 if (err) {
-                    return reject(err);  // Reject promise if error occurs
+                    return reject(err);
                 }
 
                 const customerId = customerResult.insertId;
@@ -32,15 +32,15 @@ exports.addCustomer = (customerData, salesAgent) => {
                 // Insert building data (assuming this function exists)
                 insertBuildingData(customerId, customerData)
                     .then(() => {
-                        resolve({ success: true, customerId });  // Resolve promise if everything is successful
+                        resolve({ success: true, customerId });
                     })
                     .catch((buildingError) => {
-                        reject(buildingError);  // Reject if there's an error in inserting building data
+                        reject(buildingError);
                     });
             });
 
         } catch (error) {
-            reject(error);  // Reject if there's an error in the try block
+            reject(error);
         }
     });
 };
@@ -58,35 +58,6 @@ const generateCustomerId = async () => {
 };
 
 
-// Function to insert building-related data
-// const insertBuildingData = async (customerId, customerData) => {
-//     let insertQuery;
-//     let queryParams;
-
-//     if (customerData.buildingType === 'House') {
-//         insertQuery = `INSERT INTO house (customerId, houseNo, streetName, city) VALUES (?, ?, ?, ?)`;
-//         queryParams = [customerId, customerData.houseNo, customerData.streetName, customerData.city];
-//     } else if (customerData.buildingType === 'Apartment') {
-//         if (!customerData.buildingNo || !customerData.buildingName || !customerData.unitNo || !customerData.floorNo || !customerData.houseNo || !customerData.streetName || !customerData.city) {
-//             throw new Error('Missing required fields for apartment');
-//         }
-//         insertQuery = `INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-//         queryParams = [
-//             customerId,
-//             customerData.buildingNo,
-//             customerData.buildingName,
-//             customerData.unitNo,
-//             customerData.floorNo,
-//             customerData.houseNo,
-//             customerData.streetName,
-//             customerData.city,
-//             salesAgent,
-//         ];
-//     } else {
-//         throw new Error('Invalid building type');
-//     }
-//     await db.dash.promise().query(insertQuery, queryParams);
-// };
 
 const insertBuildingData = async (customerId, customerData) => {
     let insertQuery;
@@ -109,7 +80,7 @@ const insertBuildingData = async (customerId, customerData) => {
             customerData.houseNo,
             customerData.streetName,
             customerData.city
-            // Removed salesAgent from here as it's not a column in apartment table
+
         ];
     } else {
         throw new Error('Invalid building type');
@@ -117,52 +88,6 @@ const insertBuildingData = async (customerId, customerData) => {
     await db.dash.promise().query(insertQuery, queryParams);
 };
 
-
-// exports.addCustomer = (customerData, salesAgentId) => {
-//     return new Promise(async (resolve, reject) => {
-//         try {
-//             // Generate customer ID
-//             const newCustomerId = await generateCustomerId();
-
-//             // Insert into `customer` table
-//             const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgentId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
-
-//             db.dash.query(sqlCustomer, [
-//                 newCustomerId,
-//                 customerData.firstName,
-//                 customerData.lastName,
-//                 customerData.phoneNumber,
-//                 customerData.email,
-//                 customerData.title,
-//                 customerData.buildingType,
-//                 salesAgentId, // Pass the sales agent ID
-//             ], (err, customerResult) => {
-//                 if (err) {
-//                     console.error('Error inserting customer:', err);  // Log error if insertion fails
-//                     return reject(err);
-//                 }
-
-//                 console.log('Customer inserted, ID:', customerResult.insertId);  // Log the inserted ID
-
-//                 const customerId = customerResult.insertId;
-
-//                 // Insert building data
-//                 insertBuildingData(customerId, customerData)
-//                     .then(() => {
-//                         resolve({ success: true, customerId });
-//                     })
-//                     .catch((buildingError) => {
-//                         console.error('Error inserting building data:', buildingError);  // Log any error with building data
-//                         reject(buildingError);
-//                     });
-//             });
-
-//         } catch (error) {
-//             console.error('Error while adding customer:', error);  // Log error if the whole process fails
-//             reject(error);
-//         }
-//     });
-// };
 
 
 // Function to retrieve all customers from the database
@@ -179,7 +104,7 @@ exports.getAllCustomers = () => {
 // Function to get customer data along with related building data (House or Apartment)
 exports.getCustomerData = async (cusId) => {
     return new Promise((resolve, reject) => {
-        // First, get the customer details based on cusId
+
         const sqlCustomerQuery = `SELECT * FROM customer WHERE id = ?`;
 
         db.dash.promise().query(sqlCustomerQuery, [cusId])
@@ -220,229 +145,205 @@ exports.getCustomerData = async (cusId) => {
 };
 
 
-
-
-
-// exports.updateCustomerData = async (cusId, customerData, buildingData) => {
-//     return new Promise((resolve, reject) => {
-//         // Start a transaction
-//         db.dash.promise().beginTransaction()
-//             .then(async () => {
-//                 try {
-//                     // Get the customer ID from cusId to update related building tables
-//                     const getCustomerIdQuery = `SELECT id FROM customer WHERE id = ?`;
-//                     const [customerResult] = await db.dash.promise().query(getCustomerIdQuery, [cusId]);
-
-//                     console.log("Customer ID query result:", customerResult);
-
-//                     if (customerResult.length === 0) {
-//                         throw new Error('Customer not found');
-//                     }
-
-//                     const customerId = customerResult[0].id;  // Use the retrieved customerId here
-//                     console.log("Using customerId:", customerId);
-
-//                     // Update the customer data
-//                     const updateCustomerQuery = `
-//                         UPDATE customer 
-//                         SET title = ?, firstName = ?, lastName = ?, phoneNumber = ?, email = ?, buildingType = ? 
-//                         WHERE id = ?`;
-
-//                     const customerParams = [
-//                         customerData.title,
-//                         customerData.firstName,
-//                         customerData.lastName,
-//                         customerData.phoneNumber,
-//                         customerData.email,
-//                         customerData.buildingType,
-//                         cusId  // This is the original customer ID from URL params
-//                     ];
-
-//                     await db.dash.promise().query(updateCustomerQuery, customerParams);
-//                     console.log("Customer data updated.");
-
-//                     let updateBuildingQuery = '';
-//                     let buildingParams = [];
-
-//                     // Update the corresponding building data (house or apartment)
-//                     if (customerData.buildingType === 'House') {
-//                         updateBuildingQuery = `
-//                             UPDATE house 
-//                             SET houseNo = ?, streetName = ?, city = ? 
-//                             WHERE customerId = ?`;
-//                         buildingParams = [
-//                             buildingData.houseNo,
-//                             buildingData.streetName,
-//                             buildingData.city,
-//                             customerId // Use the customerId fetched from the customer query
-//                         ];
-//                         console.log("House data updated.");
-//                     } else if (customerData.buildingType === 'Apartment') {
-//                         updateBuildingQuery = `
-//                             UPDATE apartment 
-//                             SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
-//                             WHERE customerId = ?`;
-//                         buildingParams = [
-//                             buildingData.buildingNo,
-//                             buildingData.buildingName,
-//                             buildingData.unitNo,
-//                             buildingData.floorNo,
-//                             buildingData.houseNo,
-//                             buildingData.streetName,
-//                             buildingData.city,
-//                             customerId // Use the customerId fetched from the customer query
-//                         ];
-//                         console.log("Apartment data updated.");
-//                     } else {
-//                         // If the building type is invalid, reject the transaction
-//                         throw new Error('Invalid building type');
-//                     }
-
-//                     // Update building data (house or apartment)
-//                     await db.dash.promise().query(updateBuildingQuery, buildingParams);
-//                     console.log("Building data updated.");
-
-//                     // Commit the transaction after both updates succeed
-//                     await db.dash.promise().commit();
-//                     resolve("Customer and building data updated successfully.");
-//                 } catch (error) {
-//                     // If any error occurs, rollback the transaction
-//                     await db.dash.promise().rollback();
-//                     console.error("Error during update: ", error);
-//                     reject(error);
-//                 }
-//             })
-//             .catch(async (error) => {
-//                 // Handle any error during the transaction start
-//                 await db.dash.promise().rollback();
-//                 console.error("Transaction failed: ", error);
-//                 reject(error);
-//             });
-//     });
-// };
-
-
 exports.updateCustomerData = async (cusId, customerData, buildingData) => {
-    return new Promise((resolve, reject) => {
-        // Start a transaction
-        db.dash.promise().beginTransaction()
-            .then(async () => {
-                try {
-                    // Get the customer ID from cusId to update related building tables
-                    const getCustomerIdQuery = `SELECT id, phoneNumber, email FROM customer WHERE id = ?`;
-                    const [customerResult] = await db.dash.promise().query(getCustomerIdQuery, [cusId]);
+    let connection;
 
-                    console.log("Customer ID query result:", customerResult);
+    try {
+        // Get a connection from the pool
+        connection = await db.dash.promise().getConnection();
 
-                    if (customerResult.length === 0) {
-                        throw new Error('Customer not found');
-                    }
+        // Start transaction
+        await connection.beginTransaction();
 
-                    const customerId = customerResult[0].id;  // Use the retrieved customerId here
-                    const existingPhoneNumber = customerResult[0].phoneNumber;  // Get the existing phone number
-                    const existingEmail = customerResult[0].email;  // Get the existing email for validation
-                    console.log("Using customerId:", customerId);
+        // Check if customer exists
+        const getCustomerIdQuery = `SELECT id, phoneNumber, email, buildingType FROM customer WHERE id = ?`;
+        const [customerResult] = await connection.query(getCustomerIdQuery, [cusId]);
 
-                    // Check for duplicate phone number (but allow duplicate emails)
-                    if (customerData.phoneNumber !== existingPhoneNumber) {
-                        const checkPhoneQuery = `SELECT id FROM customer WHERE phoneNumber = ?`;
-                        const [phoneResult] = await db.dash.promise().query(checkPhoneQuery, [customerData.phoneNumber]);
+        console.log("Customer ID query result:", customerResult);
 
-                        if (phoneResult.length > 0) {
-                            throw new Error('Phone number already exists.');
-                        }
-                    }
+        if (customerResult.length === 0) {
+            throw new Error('Customer not found');
+        }
 
-                    // Check for duplicate email (but allow same email for the same customer)
-                    if (customerData.email !== existingEmail) {
-                        const checkEmailQuery = `SELECT id FROM customer WHERE email = ?`;
-                        const [emailResult] = await db.dash.promise().query(checkEmailQuery, [customerData.email]);
+        const customerId = customerResult[0].id;
+        const existingPhoneNumber = customerResult[0].phoneNumber;
+        const existingEmail = customerResult[0].email;
+        const existingBuildingType = customerResult[0].buildingType;
+        console.log("Using customerId:", customerId);
 
-                        if (emailResult.length > 0) {
-                            throw new Error('Email already exists.');
-                        }
-                    }
+        // Check for duplicate phone number
+        if (customerData.phoneNumber !== existingPhoneNumber) {
+            const checkPhoneQuery = `SELECT id FROM customer WHERE phoneNumber = ? AND id != ?`;
+            const [phoneResult] = await connection.query(checkPhoneQuery, [customerData.phoneNumber, customerId]);
 
-                    // Update the customer data
-                    const updateCustomerQuery = `
-                        UPDATE customer 
-                        SET title = ?, firstName = ?, lastName = ?, phoneNumber = ?, email = ?, buildingType = ? 
-                        WHERE id = ?`;
+            if (phoneResult.length > 0) {
+                throw new Error('Phone number already exists.');
+            }
+        }
 
-                    const customerParams = [
-                        customerData.title,
-                        customerData.firstName,
-                        customerData.lastName,
-                        customerData.phoneNumber,
-                        customerData.email,
-                        customerData.buildingType,
-                        cusId  // This is the original customer ID from URL params
+        // Check for duplicate email
+        if (customerData.email !== existingEmail) {
+            const checkEmailQuery = `SELECT id FROM customer WHERE email = ? AND id != ?`;
+            const [emailResult] = await connection.query(checkEmailQuery, [customerData.email, customerId]);
+
+            if (emailResult.length > 0) {
+                throw new Error('Email already exists.');
+            }
+        }
+
+        // Update customer
+        const updateCustomerQuery = `
+            UPDATE customer 
+            SET title = ?, firstName = ?, lastName = ?, phoneNumber = ?, email = ?, buildingType = ? 
+            WHERE id = ?`;
+
+        const customerParams = [
+            customerData.title,
+            customerData.firstName,
+            customerData.lastName,
+            customerData.phoneNumber,
+            customerData.email,
+            customerData.buildingType,
+            cusId
+        ];
+
+        await connection.query(updateCustomerQuery, customerParams);
+        console.log("Customer data updated.");
+
+        // Handle building type change
+        if (customerData.buildingType !== existingBuildingType) {
+            console.log(`Building type changed from ${existingBuildingType} to ${customerData.buildingType}`);
+
+            // Delete existing building data no matter which type
+            if (existingBuildingType === 'House') {
+                await connection.query('DELETE FROM house WHERE customerId = ?', [customerId]);
+                console.log("Deleted old house data.");
+            } else if (existingBuildingType === 'Apartment') {
+                await connection.query('DELETE FROM apartment WHERE customerId = ?', [customerId]);
+                console.log("Deleted old apartment data.");
+            }
+
+            // Insert new building data
+            if (customerData.buildingType === 'House') {
+                const insertHouseQuery = `
+                    INSERT INTO house (customerId, houseNo, streetName, city) 
+                    VALUES (?, ?, ?, ?)`;
+
+                await connection.query(insertHouseQuery, [
+                    customerId,
+                    buildingData.houseNo || '',  // Default to empty string if undefined
+                    buildingData.streetName || '',  // Default to empty string if undefined
+                    buildingData.city || ''  // Default to empty string if undefined
+                ]);
+                console.log("New house data created.");
+            } else if (customerData.buildingType === 'Apartment') {
+                const insertApartmentQuery = `
+                    INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+                await connection.query(insertApartmentQuery, [
+                    customerId,
+                    buildingData.buildingNo || '',
+                    buildingData.buildingName || '',
+                    buildingData.unitNo || '',
+                    buildingData.floorNo || '',
+                    buildingData.houseNo || '',
+                    buildingData.streetName || '',
+                    buildingData.city || ''
+                ]);
+                console.log("New apartment data created.");
+            }
+
+        } else {
+            // If building type didn't change, update the existing building data
+            if (customerData.buildingType === 'House') {
+                const [houseExists] = await connection.query('SELECT * FROM house WHERE customerId = ?', [customerId]);
+                console.log("House exists check result:", houseExists); // Check the existing house data
+
+                if (houseExists.length > 0) {
+                    const updateHouseQuery = `
+                        UPDATE house 
+                        SET houseNo = ?, streetName = ?, city = ? 
+                        WHERE customerId = ?`;
+
+                    const updateParams = [
+                        buildingData.houseNo || '',  // Default to empty string if undefined
+                        buildingData.streetName || '',  // Default to empty string if undefined
+                        buildingData.city || '',  // Default to empty string if undefined
+                        customerId
                     ];
+                    console.log("House update parameters:", updateParams);
 
-                    await db.dash.promise().query(updateCustomerQuery, customerParams);
-                    console.log("Customer data updated.");
+                    const [updateResult] = await connection.query(updateHouseQuery, updateParams);
+                    console.log("House update result:", updateResult);
 
-                    let updateBuildingQuery = '';
-                    let buildingParams = [];
+                    const [verifyUpdate] = await connection.query('SELECT * FROM house WHERE customerId = ?', [customerId]);
+                    console.log("After update - house data:", verifyUpdate);
 
-                    // Update the corresponding building data (house or apartment)
-                    if (customerData.buildingType === 'House') {
-                        updateBuildingQuery = `
-                            UPDATE house 
-                            SET houseNo = ?, streetName = ?, city = ? 
-                            WHERE customerId = ?`;
-                        buildingParams = [
-                            buildingData.houseNo,
-                            buildingData.streetName,
-                            buildingData.city,
-                            customerId // Use the customerId fetched from the customer query
-                        ];
-                        console.log("House data updated.");
-                    } else if (customerData.buildingType === 'Apartment') {
-                        updateBuildingQuery = `
-                            UPDATE apartment 
-                            SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
-                            WHERE customerId = ?`;
-                        buildingParams = [
-                            buildingData.buildingNo,
-                            buildingData.buildingName,
-                            buildingData.unitNo,
-                            buildingData.floorNo,
-                            buildingData.houseNo,
-                            buildingData.streetName,
-                            buildingData.city,
-                            customerId // Use the customerId fetched from the customer query
-                        ];
-                        console.log("Apartment data updated.");
+                    if (updateResult.affectedRows === 0) {
+                        console.warn("Warning: House update query did not update any rows!");
                     } else {
-                        // If the building type is invalid, reject the transaction
-                        throw new Error('Invalid building type');
+                        console.log(`House update successful, affected rows: ${updateResult.affectedRows}`);
                     }
-
-                    // Update building data (house or apartment)
-                    await db.dash.promise().query(updateBuildingQuery, buildingParams);
-                    console.log("Building data updated.");
-
-                    // Commit the transaction after both updates succeed
-                    await db.dash.promise().commit();
-                    resolve("Customer and building data updated successfully.");
-                } catch (error) {
-                    // If any error occurs, rollback the transaction
-                    await db.dash.promise().rollback();
-                    console.error("Error during update: ", error);
-                    reject(error);
                 }
-            })
-            .catch(async (error) => {
-                // Handle any error during the transaction start
-                await db.dash.promise().rollback();
-                console.error("Transaction failed: ", error);
-                reject(error);
-            });
-    });
+            } else if (customerData.buildingType === 'Apartment') {
+                const [apartmentExists] = await connection.query('SELECT 1 FROM apartment WHERE customerId = ?', [customerId]);
+
+                if (apartmentExists.length > 0) {
+                    const updateApartmentQuery = `
+                        UPDATE apartment 
+                        SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
+                        WHERE customerId = ?`;
+
+                    await connection.query(updateApartmentQuery, [
+                        buildingData.buildingNo || '',
+                        buildingData.buildingName || '',
+                        buildingData.unitNo || '',
+                        buildingData.floorNo || '',
+                        buildingData.houseNo || '',
+                        buildingData.streetName || '',
+                        buildingData.city || '',
+                        customerId
+                    ]);
+                    console.log("Apartment data updated.");
+                } else {
+                    const insertApartmentQuery = `
+                        INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+                    await connection.query(insertApartmentQuery, [
+                        customerId,
+                        buildingData.buildingNo || '',
+                        buildingData.buildingName || '',
+                        buildingData.unitNo || '',
+                        buildingData.floorNo || '',
+                        buildingData.houseNo || '',
+                        buildingData.streetName || '',
+                        buildingData.city || ''
+                    ]);
+                    console.log("New apartment data created for existing apartment type.");
+                }
+            }
+        }
+
+        // Commit the transaction
+        await connection.commit();
+        return "Customer and building data updated successfully.";
+
+    } catch (error) {
+        // If there's an error, roll back the transaction
+        if (connection) {
+            await connection.rollback();
+        }
+        console.error("Error during update: ", error);
+        throw error;
+    } finally {
+        // Release the connection back to the pool
+        if (connection) {
+            connection.release();
+        }
+    }
 };
-
-
 
 
 
@@ -455,9 +356,9 @@ exports.findCustomerByPhoneOrEmail = (phoneNumber, email) => {
         db.dash.promise().query(sqlQuery, [phoneNumber, email])
             .then(([rows]) => {
                 if (rows.length > 0) {
-                    resolve(rows[0]);  // Resolving with the first customer found (if any)
+                    resolve(rows[0]);
                 } else {
-                    resolve(null);  // No customer found, resolve with null
+                    resolve(null);
                 }
             })
             .catch(error => {
@@ -466,6 +367,27 @@ exports.findCustomerByPhoneOrEmail = (phoneNumber, email) => {
             });
     });
 };
+
+exports.getCustomerCountBySalesAgent = async () => {
+    try {
+        const connection = await db.dash.promise().getConnection();
+        try {
+            const [rows] = await connection.query(`
+        SELECT salesAgent, COUNT(*) AS customerCount
+        FROM customer
+        GROUP BY salesAgent
+      `);
+            return rows;
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('Error in getCustomerCountBySalesAgent:', error);
+        throw new Error(`Failed to get customer count: ${error.message}`);
+    }
+};
+
+
 
 
 
