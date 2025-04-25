@@ -52,7 +52,12 @@ exports.createOrder = async (req, res) => {
 
 
 exports.getAllOrderDetails = (req, res) => {
-  orderDao.getAllOrderDetails()
+
+  const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
+
+  console.log("id", salesAgentId)
+
+  orderDao.getAllOrderDetails(salesAgentId)
     .then(orderDetails => {
       res.status(200).json({
         success: true,

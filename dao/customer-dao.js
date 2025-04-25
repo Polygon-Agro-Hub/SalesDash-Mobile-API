@@ -91,15 +91,27 @@ const insertBuildingData = async (customerId, customerData) => {
 
 
 // Function to retrieve all customers from the database
-exports.getAllCustomers = () => {
-    return new Promise((resolve, reject) => {
-        const sqlQuery = `SELECT * FROM customer`;
+// exports.getAllCustomers = () => {
+//     return new Promise((resolve, reject) => {
+//         const sqlQuery = `SELECT * FROM customer`;
 
-        db.dash.promise().query(sqlQuery)
+//         db.dash.promise().query(sqlQuery)
+//             .then(([rows]) => resolve(rows))
+//             .catch(error => reject(error));
+//     });
+// };
+
+exports.getCustomersBySalesAgent = (salesAgentId) => {
+    console.log(salesAgentId)
+    return new Promise((resolve, reject) => {
+        const sqlQuery = `SELECT * FROM customer WHERE salesAgent = ?`;
+
+        db.dash.promise().query(sqlQuery, [salesAgentId])
             .then(([rows]) => resolve(rows))
             .catch(error => reject(error));
     });
 };
+
 
 // Function to get customer data along with related building data (House or Apartment)
 exports.getCustomerData = async (cusId) => {
