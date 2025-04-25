@@ -286,36 +286,165 @@ async function processSelectedPackage(connection, orderId, orderData) {
 
 
 
-exports.getAllOrderDetails = () => {
-  return new Promise((resolve, reject) => {
-    const sql = `
-        SELECT 
-          o.id AS orderId,
-          o.customerId,
-          o.salesAgentId,
-          o.InvNo,
-          o.reportStatus,
-          o.customPackage,
-          o.selectedPackage,
-          o.deliveryType,
-          o.scheduleDate,
-          o.scheduleTimeSlot,
-          o.paymentMethod,
-          o.paymentStatus,
-          o.orderStatus,
-          o.createdAt,
-          o.fullTotal,
-          o.fullDiscount,
-          o.fullSubTotal,
-          c.firstName,
-          c.lastName,
-          c.phoneNumber,
-          c.buildingType
-        FROM orders o
-        JOIN customer c ON o.customerId = c.id
-      `;
+// exports.getAllOrderDetails = (salesAgentId) => {
+//   return new Promise((resolve, reject) => {
+//     const sql = `
+//         SELECT 
+//           o.id AS orderId,
+//           o.customerId,
+//           o.salesAgentId,
+//           o.InvNo,
+//           o.reportStatus,
+//           o.customPackage,
+//           o.selectedPackage,
+//           o.deliveryType,
+//           o.scheduleDate,
+//           o.scheduleTimeSlot,
+//           o.paymentMethod,
+//           o.paymentStatus,
+//           o.orderStatus,
+//           o.createdAt,
+//           o.fullTotal,
+//           o.fullDiscount,
+//           o.fullSubTotal,
+//           c.firstName,
+//           c.lastName,
+//           c.phoneNumber,
+//           c.buildingType
+//         FROM orders o
+//         JOIN customer c ON o.customerId = c.id
+//       `;
 
-    db.dash.query(sql, (err, orderResults) => {
+//     db.dash.query(sql, (err, orderResults) => {
+//       if (err) {
+//         return reject(err);
+//       }
+
+//       if (orderResults.length === 0) {
+//         return resolve({ message: 'No orders found' });
+//       }
+
+//       // Process each order to get corresponding address details
+//       const orderPromises = orderResults.map(order => {
+//         return new Promise((resolveOrder, rejectOrder) => {
+//           const customerId = order.customerId;
+//           const buildingType = order.buildingType;
+
+//           if (buildingType === 'House') {
+//             const addressSql = `
+//                 SELECT 
+//                   houseNo,
+//                   streetName,
+//                   city
+//                 FROM house
+//                 WHERE customerId = ?
+//               `;
+
+//             db.dash.query(addressSql, [customerId], (err, addressResults) => {
+//               if (err) {
+//                 return rejectOrder(err);
+//               }
+
+//               let formattedAddress = '';
+//               if (addressResults[0]) {
+//                 const addr = addressResults[0];
+//                 formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+//                 formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
+//               }
+
+//               resolveOrder({
+//                 ...order,
+//                 fullAddress: formattedAddress
+//               });
+//             });
+//           } else if (buildingType === 'Apartment') {
+//             const addressSql = `
+//                 SELECT 
+//                   buildingNo,
+//                   buildingName,
+//                   unitNo,
+//                   floorNo,
+//                   houseNo,
+//                   streetName,
+//                   city
+//                 FROM apartment
+//                 WHERE customerId = ?
+//               `;
+
+//             db.dash.query(addressSql, [customerId], (err, addressResults) => {
+//               if (err) {
+//                 return rejectOrder(err);
+//               }
+
+//               let formattedAddress = '';
+//               if (addressResults[0]) {
+//                 const addr = addressResults[0];
+//                 formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+//                 formattedAddress = formattedAddress.replace(/\s+/g, ' ')
+//                   .replace(/, Unit ,/, ',')
+//                   .replace(/, Floor ,/, ',')
+//                   .trim();
+//                 formattedAddress = formattedAddress.replace(/,\s*$/, '');
+//               }
+
+//               resolveOrder({
+//                 ...order,
+//                 fullAddress: formattedAddress
+//               });
+//             });
+//           } else {
+//             resolveOrder({
+//               ...order,
+//               fullAddress: ''
+//             });
+//           }
+//         });
+//       });
+
+//       Promise.all(orderPromises)
+//         .then(results => resolve(results))
+//         .catch(error => reject(error));
+//     });
+//   });
+// };
+
+exports.getAllOrderDetails = (salesAgentId) => {
+  return new Promise((resolve, reject) => {
+    let sql = `
+      SELECT 
+        o.id AS orderId,
+        o.customerId,
+        o.salesAgentId,
+        o.InvNo,
+        o.reportStatus,
+        o.customPackage,
+        o.selectedPackage,
+        o.deliveryType,
+        o.scheduleDate,
+        o.scheduleTimeSlot,
+        o.paymentMethod,
+        o.paymentStatus,
+        o.orderStatus,
+        o.createdAt,
+        o.fullTotal,
+        o.fullDiscount,
+        o.fullSubTotal,
+        c.firstName,
+        c.lastName,
+        c.phoneNumber,
+        c.buildingType
+      FROM orders o
+      JOIN customer c ON o.customerId = c.id
+    `;
+
+    // Add WHERE clause if salesAgentId is provided
+    const params = [];
+    if (salesAgentId) {
+      sql += ` WHERE o.salesAgentId = ?`;
+      params.push(salesAgentId);
+    }
+
+    db.dash.query(sql, params, (err, orderResults) => {
       if (err) {
         return reject(err);
       }
@@ -332,13 +461,13 @@ exports.getAllOrderDetails = () => {
 
           if (buildingType === 'House') {
             const addressSql = `
-                SELECT 
-                  houseNo,
-                  streetName,
-                  city
-                FROM house
-                WHERE customerId = ?
-              `;
+              SELECT 
+                houseNo,
+                streetName,
+                city
+              FROM house
+              WHERE customerId = ?
+            `;
 
             db.dash.query(addressSql, [customerId], (err, addressResults) => {
               if (err) {
@@ -359,17 +488,17 @@ exports.getAllOrderDetails = () => {
             });
           } else if (buildingType === 'Apartment') {
             const addressSql = `
-                SELECT 
-                  buildingNo,
-                  buildingName,
-                  unitNo,
-                  floorNo,
-                  houseNo,
-                  streetName,
-                  city
-                FROM apartment
-                WHERE customerId = ?
-              `;
+              SELECT 
+                buildingNo,
+                buildingName,
+                unitNo,
+                floorNo,
+                houseNo,
+                streetName,
+                city
+              FROM apartment
+              WHERE customerId = ?
+            `;
 
             db.dash.query(addressSql, [customerId], (err, addressResults) => {
               if (err) {
