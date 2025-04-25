@@ -13,8 +13,6 @@ const createPool = (database) => {
     connectionLimit: 10,
     maxIdle: 6,
     queueLimit: 0,
-    connectionTimeout: 60000, // Set the connection timeout (in milliseconds)
-
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
   });

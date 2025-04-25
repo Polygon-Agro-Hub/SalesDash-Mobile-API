@@ -27,7 +27,7 @@ exports.login = asyncHandler(async (req, res) => {
     const token = jwt.sign(
       { empId: result.empId, id: result.id, passwordUpdate: result.passwordUpdate },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "8h" }
     );
 
     // Send token as HTTP-only cookie (More Secure)
@@ -35,7 +35,8 @@ exports.login = asyncHandler(async (req, res) => {
       httpOnly: true, // Prevents JavaScript access
       secure: process.env.NODE_ENV === "production", // Secure flag for HTTPS in production
       sameSite: "Strict",
-      maxAge: 3600000, // 1 hour
+      // maxAge: 3600000, // 1 hour
+      maxAge: 8 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
