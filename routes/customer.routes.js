@@ -8,7 +8,7 @@ const auth = require('../Middlewares/auth.middleware');
 router.post('/add-customer', auth, customerEp.customerData);
 
 
-router.get('/get-customers', customerEp.getCustomers);
+router.get('/get-customers', auth, customerEp.getCustomers);
 
 router.get('/get-customer-data/:cusId', customerEp.getCustomerData);
 

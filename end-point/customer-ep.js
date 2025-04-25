@@ -45,9 +45,30 @@ exports.customerData = async (req, res) => {
 };
 
 
+// exports.getCustomers = asyncHandler(async (req, res) => {
+
+//     const saId = req.user.id;
+
+//     console.log("", saId)
+//     try {
+
+//         const customers = await customerDAO.getAllCustomers();
+//         res.status(200).json(customers);
+//     } catch (error) {
+//         res.status(500).json({ error: error.message });
+//     }
+// });
+
 exports.getCustomers = asyncHandler(async (req, res) => {
     try {
-        const customers = await customerDAO.getAllCustomers();
+        // Get the sales agent ID from the decoded token
+        const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
+
+        console.log("id", salesAgentId)
+
+        // Get only customers assigned to this sales agent
+        const customers = await customerDAO.getCustomersBySalesAgent(salesAgentId);
+
         res.status(200).json(customers);
     } catch (error) {
         res.status(500).json({ error: error.message });
