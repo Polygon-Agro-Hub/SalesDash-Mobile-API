@@ -62,12 +62,14 @@ exports.customerData = async (req, res) => {
 exports.getCustomers = asyncHandler(async (req, res) => {
     try {
         // Get the sales agent ID from the decoded token
-        const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
+        const salesAgentId = req.user.id;
 
         console.log("id", salesAgentId)
 
         // Get only customers assigned to this sales agent
         const customers = await customerDAO.getCustomersBySalesAgent(salesAgentId);
+
+        //console.log("customers", customers)
 
         res.status(200).json(customers);
     } catch (error) {
