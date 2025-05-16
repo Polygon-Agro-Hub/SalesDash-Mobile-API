@@ -105,7 +105,7 @@ exports.getAllCrops = async () => {
         SELECT 
             id, varietyId, displayName, category, 
             normalPrice, discountedPrice, discount, 
-            promo, unitType, startValue, changeby
+            promo, unitType, startValue, changeby,tags
         FROM marketplaceitems;
        
         `;
