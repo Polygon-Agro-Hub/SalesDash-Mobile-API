@@ -26,30 +26,84 @@ exports.loginUser = (empId, password) => {
 };
 
 
+// exports.getUserProfile = (id) => {
+//   return new Promise((resolve, reject) => {
+//     const sql = `
+//       SELECT 
+//         firstName, 
+//         lastName, 
+//         empId, 
+//         phoneNumber1, 
+//         phoneNumber2, 
+//         nic, 
+//         email, 
+//         houseNumber, 
+//         streetName, 
+//         city,
+//         image
+//       FROM salesagent 
+//       WHERE id = ?
+//     `;
+//     db.dash.query(sql, [id], (err, results) => {
+//       if (err) {
+//         return reject(new Error('Database error'));
+//       }
+//       if (results.length === 0) {
+//         return reject(new Error('User not found'));
+//       }
+//       resolve(results[0]);
+//     });
+//   });
+// };
+
+// Check if the image is actually being retrieved by adding a console.log
 exports.getUserProfile = (id) => {
   return new Promise((resolve, reject) => {
-    const sql = `
+    const sql = `       
       SELECT 
-        firstName, 
-        lastName, 
-        empId, 
-        phoneNumber1, 
-        phoneNumber2, 
-        nic, 
-        email, 
-        houseNumber, 
-        streetName, 
-        city
-      FROM salesagent 
-      WHERE id = ?
+        id,         
+        firstName,          
+        lastName,          
+        empType,
+        empId,          
+        phoneCode1,
+        phoneNumber1,          
+        phoneCode2,
+        phoneNumber2,          
+        nic,          
+        email,          
+        houseNumber,          
+        streetName,          
+        city,
+        district,
+        province,
+        country,
+        accHolderName,
+        accNumber,
+        bankName,
+        branchName,
+        status,
+        image,
+        createdAt
+      FROM salesagent        
+      WHERE id = ?     
     `;
+
     db.dash.query(sql, [id], (err, results) => {
       if (err) {
+        console.error("Database error:", err);
         return reject(new Error('Database error'));
       }
+
       if (results.length === 0) {
         return reject(new Error('User not found'));
       }
+
+
+      console.log("Raw DB result:", JSON.stringify(results[0]).substring(0, 200) + "...");
+      console.log("Image exists:", results[0].image ? "Yes" : "No");
+
+
       resolve(results[0]);
     });
   });
@@ -103,7 +157,7 @@ exports.updatePassword = (id, oldPassword, newPassword) => {
         // Verify old password
         const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
         if (!isPasswordValid) {
-          return reject(new Error('Old password is incorrect'));
+          return reject(new Error('Current Password does not match. Please Re-enter'));
         }
 
         // Check if the new password matches the old password
