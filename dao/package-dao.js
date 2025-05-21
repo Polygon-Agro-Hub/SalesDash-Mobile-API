@@ -19,12 +19,32 @@ const db = require("../startup/database");
 //     });
 // };
 
+// exports.getAllPackages = async () => {
+//     return new Promise((resolve, reject) => {
+//         const query = `
+//         SELECT id, displayName, image, status, total, created_at AS createdAt, description, discount, subTotal
+//         FROM marketplacepackages
+//         WHERE status = 'Enabled'
+//         `;
+
+//         db.marketPlace.query(query, (error, results) => {
+//             if (error) {
+//                 console.error("Error fetching packages:", error);
+//                 reject(error);
+//             } else {
+//                 resolve(results);
+//             }
+//         });
+//     });
+// };
+
 exports.getAllPackages = async () => {
     return new Promise((resolve, reject) => {
         const query = `
         SELECT id, displayName, image, status, total, created_at AS createdAt, description, discount, subTotal
         FROM marketplacepackages
         WHERE status = 'Enabled'
+        ORDER BY displayName ASC
         `;
 
         db.marketPlace.query(query, (error, results) => {
@@ -99,15 +119,37 @@ exports.getMarketplaceItemDetails = async (mpItemId) => {
 
 
 
+// exports.getAllCrops = async () => {
+//     try {
+//         const query = `
+//         SELECT 
+//             id, varietyId, displayName, category, 
+//             normalPrice, discountedPrice, discount, 
+//             promo, unitType, startValue, changeby,tags
+//         FROM marketplaceitems;
+
+//         `;
+
+//         console.log("Executing query:", query);
+//         const [results] = await db.marketPlace.promise().query(query);
+
+//         console.log("Results fetched from DB:", results);
+//         return results;
+//     } catch (error) {
+//         console.error("Error fetching crops:", error);
+//         throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+//     }
+// };
+
 exports.getAllCrops = async () => {
     try {
         const query = `
         SELECT 
-            id, varietyId, displayName, category, 
-            normalPrice, discountedPrice, discount, 
-            promo, unitType, startValue, changeby
-        FROM marketplaceitems;
-       
+            id, varietyId, displayName, category,
+            normalPrice, discountedPrice, discount,
+            promo, unitType, startValue, changeby, tags
+        FROM marketplaceitems
+        ORDER BY displayName ASC;
         `;
 
         console.log("Executing query:", query);

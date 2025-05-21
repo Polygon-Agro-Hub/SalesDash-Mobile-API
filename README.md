@@ -20,6 +20,7 @@ This README would normally document whatever steps are necessary to get your app
 ### Contribution guidelines ###
 
 * Writing tests
+* test1
 * Code review
 * Other guidelines
 
@@ -27,4 +28,4 @@ This README would normally document whatever steps are necessary to get your app
 
 * Repo owner or admin
 * Other community or team contact
-* #tset1
+

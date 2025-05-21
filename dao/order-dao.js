@@ -555,6 +555,7 @@ exports.getOrderById = (orderId) => {
           o.fullTotal,
           o.fullDiscount,
           o.fullSubTotal,  
+          c.title,
           c.firstName,
           c.lastName,
           c.phoneNumber,

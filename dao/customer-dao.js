@@ -46,14 +46,36 @@ exports.addCustomer = (customerData, salesAgent) => {
 };
 
 // Function to generate a custom customer ID
+// const generateCustomerId = async () => {
+//     const sqlGetLastCustomerId = `SELECT cusId FROM customer ORDER BY cusId DESC LIMIT 1`;
+//     const [result] = await db.dash.promise().query(sqlGetLastCustomerId);
+//     let newCustomerId = 'CUS-1001';
+//     if (result.length > 0 && result[0].cusId) {
+//         const lastNumber = parseInt(result[0].cusId.split('-')[1], 10);
+//         newCustomerId = `CUS-${lastNumber + 1}`;
+//     }
+//     return newCustomerId;
+// };
+
 const generateCustomerId = async () => {
     const sqlGetLastCustomerId = `SELECT cusId FROM customer ORDER BY cusId DESC LIMIT 1`;
     const [result] = await db.dash.promise().query(sqlGetLastCustomerId);
-    let newCustomerId = 'CUS-1001';
+
+    // Default starting ID if no customers exist
+    let newCustomerId = 'CUS-00001';
+
     if (result.length > 0 && result[0].cusId) {
-        const lastNumber = parseInt(result[0].cusId.split('-')[1], 10);
-        newCustomerId = `CUS-${lastNumber + 1}`;
+        // Extract the number part from the existing ID
+        const lastIdParts = result[0].cusId.split('-');
+        const lastNumber = parseInt(lastIdParts[1], 10);
+
+        // Format with leading zeros to ensure 5 digits
+        const nextNumber = lastNumber + 1;
+        const paddedNumber = String(nextNumber).padStart(5, '0');
+
+        newCustomerId = `CUS-${paddedNumber}`;
     }
+
     return newCustomerId;
 };
 
@@ -101,16 +123,45 @@ const insertBuildingData = async (customerId, customerData) => {
 //     });
 // };
 
+// exports.getCustomersBySalesAgent = (salesAgentId) => {
+//     console.log(salesAgentId)
+//     return new Promise((resolve, reject) => {
+//         const sqlQuery = `SELECT * FROM customer WHERE salesAgent = ?`;
+
+//         db.dash.promise().query(sqlQuery, [salesAgentId])
+//             .then(([rows]) => resolve(rows))
+//             .catch(error => reject(error));
+//     });
+// };
+
 exports.getCustomersBySalesAgent = (salesAgentId) => {
-    console.log(salesAgentId)
+    console.log(`Getting customers for sales agent ID: ${salesAgentId}`);
+
     return new Promise((resolve, reject) => {
-        const sqlQuery = `SELECT * FROM customer WHERE salesAgent = ?`;
+        const sqlQuery = `
+            SELECT 
+                c.id ,
+                c.cusId,
+                c.title,
+                c.firstName,
+                c.lastName,
+                c.phoneNumber,
+                c.email,
+                c.buildingType,
+                COUNT(o.id) AS orderCount
+            FROM customer c
+            LEFT JOIN orders o ON c.id = o.customerId
+            WHERE c.salesAgent = ?
+            GROUP BY c.id
+            ORDER BY c.id
+        `;
 
         db.dash.promise().query(sqlQuery, [salesAgentId])
             .then(([rows]) => resolve(rows))
-            .catch(error => reject(error));
+            .catch(error => reject(error))
     });
 };
+
 
 
 // Function to get customer data along with related building data (House or Apartment)
