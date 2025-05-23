@@ -116,6 +116,36 @@ exports.getMarketplaceItemDetails = async (mpItemId) => {
     });
 };
 
+exports.getMarketplacePackage = async (packageId) => {
+    return new Promise((resolve, reject) => {
+        // Query the packages table instead of marketplaceitems
+        const query = `
+        SELECT 
+          id,
+          displayName,
+        
+          description
+        FROM marketplacepackages
+        WHERE id = ?;
+        `;
+
+        console.log("Executing query:", query);
+        console.log("With packageId:", packageId);
+
+        db.marketPlace.query(query, [packageId], (error, results) => {
+            if (error) {
+                console.error("Error fetching package details:", error);
+                reject(error);
+            } else {
+                console.log("Query results:", results);
+                resolve(results.length > 0 ? results[0] : null);
+            }
+        });
+    });
+};
+
+
+
 
 
 
@@ -185,4 +215,62 @@ exports.getCropById = async (id) => {
         console.error("Error fetching crop by ID:", error);
         throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
     }
+};
+
+exports.getPackageItemByProductId = async (packageId, productId) => {
+    return new Promise((resolve, reject) => {
+        const query = `
+        SELECT 
+          pd.id,
+          pd.packageId,
+          pd.mpItemId,
+          pd.quantity,
+          pd.quantityType,
+          pd.price,
+          pd.discount,
+          pd.discountedPrice,
+          mi.displayName,
+          mi.normalPrice as marketplacePrice,
+          mi.discountedPrice as marketplaceDiscountedPrice,
+          mi.unitType,
+          mi.startValue,
+          mi.changeby
+        FROM market_place.packagedetails pd
+        LEFT JOIN marketplaceitems mi ON pd.mpItemId = mi.id
+        WHERE pd.packageId = ? AND pd.mpItemId = ?;
+        `;
+
+        console.log("Executing query:", query);
+        console.log("With packageId:", packageId, "and productId (mpItemId):", productId);
+
+        db.marketPlace.query(query, [packageId, productId], (error, results) => {
+            if (error) {
+                console.error("Error fetching package item details:", error);
+                reject(error);
+            } else {
+                console.log("Query results:", results);
+                if (results.length > 0) {
+                    const result = results[0];
+                    resolve({
+                        id: result.id,
+                        packageId: result.packageId,
+                        mpItemId: result.mpItemId,
+                        name: result.displayName,
+                        displayName: result.displayName,
+                        quantity: result.quantity,
+                        quantityType: result.quantityType,
+                        price: result.price,
+                        discount: result.discount,
+                        discountedPrice: result.discountedPrice,
+                        normalPrice: result.marketplacePrice,
+                        unitType: result.unitType,
+                        startValue: result.startValue,
+                        changeby: result.changeby
+                    });
+                } else {
+                    resolve(null);
+                }
+            }
+        });
+    });
 };

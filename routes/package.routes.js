@@ -8,10 +8,14 @@ router.get("/:packageId/items", auth, packagesEp.getItemsForPackage);
 
 router.get("/marketplace-item/:mpItemId", auth, packagesEp.getMarketplaceItemDetails);
 
+router.get("/marketplace-package/:packageid", auth, packagesEp.getMarketplacePackage);
+
 
 router.get('/crops/all', auth, packagesEp.getAllCrops);
 
 
 router.get("/crops/:cropId", auth, packagesEp.getCropById);
+
+router.get("/package-item-by-product/:packageId/:productId", auth, packagesEp.getPackageItemByProductId);
 
 module.exports = router;

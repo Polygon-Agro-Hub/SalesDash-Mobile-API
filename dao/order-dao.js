@@ -596,7 +596,7 @@ exports.getOrderById = (orderId) => {
           let formattedAddress = '';
           if (addressResults[0]) {
             const addr = addressResults[0];
-            formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+            formattedAddress = `${addr.houseNo || ''}, ${addr.streetName || ''}, ${addr.city || ''}`.trim();
             formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
           }
 
@@ -627,7 +627,7 @@ exports.getOrderById = (orderId) => {
           let formattedAddress = '';
           if (addressResults[0]) {
             const addr = addressResults[0];
-            formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+            formattedAddress = `${addr.buildingName || ''}, ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''}, ${addr.streetName || ''}, ${addr.city || ''}`.trim();
             formattedAddress = formattedAddress.replace(/\s+/g, ' ')
               .replace(/, Unit ,/, ',')
               .replace(/, Floor ,/, ',')

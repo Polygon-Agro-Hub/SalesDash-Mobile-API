@@ -14,8 +14,11 @@ exports.createOrder = async (req, res) => {
     // Extract sales agent ID from the user (authenticated user)
     const salesAgentId = req.user.id;
 
+
+
     // Process the order using the DAO
     const result = await orderDao.processOrder(req.body, salesAgentId);
+    console.log("-----------------", req.body)
 
     // Send a successful response with the order ID or relevant result
     res.status(201).json({
