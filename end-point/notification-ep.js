@@ -4,7 +4,7 @@ exports.getNotifications = async (req, res) => {
   try {
     const salesAgentId = req.user.id; // From auth middleware
     const { notifications, unreadCount } = await notificationDao.getNotificationsBySalesAgent(salesAgentId);
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -24,9 +24,9 @@ exports.getNotifications = async (req, res) => {
 exports.markAsReadByOrderId = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     console.log('Received orderId:', id); // Debugging line
-    
+
     if (!id || isNaN(id)) {
       return res.status(400).json({
         success: false,
@@ -35,7 +35,7 @@ exports.markAsReadByOrderId = async (req, res) => {
     }
 
     const affectedRows = await notificationDao.markNotificationsAsReadByOrderId(id);
-    
+
     res.status(200).json({
       success: true,
       message: `Marked ${affectedRows} notifications as read`,
@@ -53,8 +53,8 @@ exports.markAsReadByOrderId = async (req, res) => {
 
 exports.deleteByOrderId = async (req, res) => {
   try {
-    const { id} = req.params;
-    
+    const { id } = req.params;
+
     if (!id || isNaN(id)) {
       return res.status(400).json({
         success: false,
@@ -63,7 +63,7 @@ exports.deleteByOrderId = async (req, res) => {
     }
 
     const affectedRows = await notificationDao.deleteNotificationsByOrderId(id);
-    
+
     if (affectedRows === 0) {
       return res.status(404).json({
         success: false,
@@ -81,6 +81,44 @@ exports.deleteByOrderId = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete notifications'
+    });
+  }
+};
+
+// exports.createPaymentReminders = async (req, res) => {
+//   try {
+//     // Get orders with scheduleDate 3 days from now
+//     const remindersCreated = await notificationDao.createPaymentReminders();
+
+//     res.status(200).json({
+//       success: true,
+//       message: `Created ${remindersCreated} payment reminder notifications`,
+//       count: remindersCreated
+//     });
+//   } catch (error) {
+//     console.error('Error creating payment reminders:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create payment reminders'
+//     });
+//   }
+// };
+
+exports.createPaymentReminders = async (req, res) => {
+  try {
+    // Get orders with scheduleDate 3 days from now and send notifications
+    const remindersCreated = await notificationDao.createPaymentReminders();
+
+    res.status(200).json({
+      success: true,
+      message: `Created ${remindersCreated.notificationCount} payment reminder notifications and sent ${remindersCreated.smsCount} SMS messages`,
+      data: remindersCreated
+    });
+  } catch (error) {
+    console.error('Error creating payment reminders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment reminders'
     });
   }
 };
