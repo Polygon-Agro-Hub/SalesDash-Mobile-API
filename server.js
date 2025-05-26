@@ -54,7 +54,7 @@
 //       });
 //     });
 //   };
-  
+
 //   // Test all database connections sequentially
 //   const checkConnections = async () => {
 //     console.log('🔄 Testing database connections...\n');
@@ -69,7 +69,7 @@
 //       console.error('\n⚠️ Some databases failed to connect. Check logs above.\n');
 //     }
 //   };
-  
+
 //   checkConnections();
 
 
@@ -247,7 +247,7 @@ DatabaseConnection(admin, "Admin");
         customer: require('./routes/customer.routes'),
         complain: require('./routes/complain.routes'),
         packages: require('./routes/package.routes'),
-        orders:require('./routes/order.routes'),
+        orders: require('./routes/order.routes'),
         notifications: require('./routes/notification.routes')
     };
 
@@ -275,4 +275,17 @@ DatabaseConnection(admin, "Admin");
 
 // dgsdgdsgdhdf
 
-module.exports = app
+const cron = require('node-cron');
+const notificationDao = require('./dao/notification-dao');
+
+// Run every day at midnight
+cron.schedule('00 18 * * *', async () => {
+    try {
+        await notificationDao.createPaymentReminders();
+        console.log('Payment reminders created successfully');
+    } catch (error) {
+        console.error('Error creating payment reminders:', error);
+    }
+});
+
+module.exports = app;
