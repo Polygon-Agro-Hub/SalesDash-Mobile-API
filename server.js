@@ -288,3 +288,4 @@ cron.schedule('00 18 * * *', async () => {
     }
 });
 
+module.exports = app;
