@@ -64,6 +64,33 @@ exports.getMarketplaceItemDetails = asyncHandler(async (req, res) => {
 });
 
 
+exports.getMarketplacePackage = asyncHandler(async (req, res) => {
+    const { packageid } = req.params;
+    // Validate mpItemId
+    if (!packageid || isNaN(packageid)) {
+        return res.status(400).json({ message: "Invalid package item ID" });
+    }
+    try {
+        // Get marketplace item details
+        const marketplaceIPackage = await packageDAO.getMarketplacePackage(packageid);
+
+        // Check if marketplace item exists
+        if (!marketplaceIPackage) {
+            return res.status(404).json({ message: "Marketplace item not found" });
+        }
+
+        // Send successful response with the marketplace item details
+        res.status(200).json({
+            message: "Marketplace item fetched successfully",
+            data: marketplaceIPackage, // Directly returning the single record
+        });
+    } catch (error) {
+        console.error("Error fetching marketplace item:", error);
+        res.status(500).json({ message: "Failed to fetch marketplace item", error: error.message });
+    }
+});
+
+
 exports.getAllCrops = asyncHandler(async (req, res) => {
     console.log("✅ API /crops/all hit!");
 
@@ -108,3 +135,41 @@ exports.getCropById = async (req, res) => {
         res.status(500).json({ message: "Failed to fetch crop", error: error.message });  // If error occurs, send 500
     }
 };
+
+
+exports.getPackageItemByProductId = asyncHandler(async (req, res) => {
+    const { packageId, productId } = req.params;
+
+    // Validate parameters
+    if (!packageId || isNaN(packageId)) {
+        return res.status(400).json({ message: "Invalid package ID" });
+    }
+
+    if (!productId || isNaN(productId)) {
+        return res.status(400).json({ message: "Invalid product ID" });
+    }
+
+    try {
+        // Get package item details using packageId and productId (mpItemId)
+        const packageItemDetails = await packageDAO.getPackageItemByProductId(packageId, productId);
+
+        // Check if package item exists
+        if (!packageItemDetails) {
+            return res.status(404).json({
+                message: `Package item not found for packageId: ${packageId}, productId: ${productId}`
+            });
+        }
+
+        // Send successful response with the package item details
+        res.status(200).json({
+            message: "Package item details fetched successfully",
+            data: packageItemDetails,
+        });
+    } catch (error) {
+        console.error("Error fetching package item details:", error);
+        res.status(500).json({
+            message: "Failed to fetch package item details",
+            error: error.message
+        });
+    }
+});

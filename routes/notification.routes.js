@@ -10,4 +10,7 @@ router.patch('/mark-read/:id', auth, notificationEp.markAsReadByOrderId);
 
 router.delete('/:id', notificationEp.deleteByOrderId);
 
+router.post('/payment-reminders', auth, notificationEp.createPaymentReminders);
+
+
 module.exports = router;
