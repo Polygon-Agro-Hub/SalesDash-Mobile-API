@@ -41,7 +41,7 @@ const db = require("../startup/database");
 exports.getAllPackages = async () => {
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, displayName, image, status, total, created_at AS createdAt, description, discount, subTotal
+        SELECT id, displayName, image, status, created_at AS createdAt, description, productPrice, packingFee, serviceFee
         FROM marketplacepackages
         WHERE status = 'Enabled'
         ORDER BY displayName ASC
