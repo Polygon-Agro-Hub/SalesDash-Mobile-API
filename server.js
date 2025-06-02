@@ -96,5 +96,3 @@ cron.schedule('00 18 * * *', async () => {
         console.error('Error creating payment reminders:', error);
     }
 });
-
-//hi

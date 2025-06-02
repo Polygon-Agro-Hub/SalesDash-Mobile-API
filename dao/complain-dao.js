@@ -9,7 +9,7 @@ exports.createComplain = (saId, language, complain, category, status, refNo) => 
 
 
         const checkSql = `SELECT refNo FROM dashcomplain WHERE refNo LIKE ? ORDER BY refNo DESC LIMIT 1`;
-        db.dash.query(checkSql, [`SA${datePrefix}%`], (err, results) => {
+        db.marketPlace.query(checkSql, [`SA${datePrefix}%`], (err, results) => {
             if (err) {
                 return reject(err);
             }
@@ -26,7 +26,7 @@ exports.createComplain = (saId, language, complain, category, status, refNo) => 
 
             // Insert the complaint with the generated refNo
             const insertSql = `INSERT INTO dashcomplain (saId, language, complain, complainCategory, status, refNo, adminStatus ) VALUES (?, ?, ?, ?, ?, ?, 'Assigned')`;
-            db.dash.query(insertSql, [saId, language, complain, category, status, refNo], (err, result) => {
+            db.marketPlace.query(insertSql, [saId, language, complain, category, status, refNo], (err, result) => {
                 if (err) {
                     return reject(err);
                 } else {
@@ -45,7 +45,7 @@ exports.getAllComplaintsByUserId = async (userId) => {
         WHERE saId = ?
         ORDER BY createdAt DESC
       `;
-        db.dash.query(query, [userId], (error, results) => {
+        db.marketPlace.query(query, [userId], (error, results) => {
             if (error) {
                 console.error("Error fetching complaints:", error);
                 reject(error);

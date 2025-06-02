@@ -73,11 +73,14 @@ exports.getUserProfile = asyncHandler(async (req, res) => {
 
 
 exports.updateUserProfile = asyncHandler(async (req, res) => {
+
   const id = req.user.id;
+  console.log(id)
   const updatedData = req.body;
 
 
   const { error } = updateUserProfileSchema.validate(updatedData, { abortEarly: false });
+  console.log(error)
 
   if (error) {
     return res.status(400).json({
