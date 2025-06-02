@@ -14,8 +14,6 @@ const createPool = (database) => {
     connectionLimit: 10,
     maxIdle: 6,
     queueLimit: 0,
-    connectionTimeout: 60000, // Set the connection timeout (in milliseconds)
-
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
   });
@@ -25,7 +23,6 @@ const createPool = (database) => {
 const plantcare = createPool(process.env.DB_NAME_PC);
 const collectionofficer = createPool(process.env.DB_NAME_CO);
 const marketPlace = createPool(process.env.DB_NAME_MP);
-const dash = createPool(process.env.DB_NAME_DS);
 const admin = createPool(process.env.DB_NAME_AD);
 
-module.exports = { plantcare, collectionofficer, marketPlace, dash, admin };
+module.exports = { plantcare, collectionofficer, marketPlace, admin };
