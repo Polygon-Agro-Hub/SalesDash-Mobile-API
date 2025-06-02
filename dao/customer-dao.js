@@ -8,12 +8,12 @@ exports.addCustomer = (customerData, salesAgent) => {
             const newCustomerId = await generateCustomerId();
 
 
-            const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgent) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
+            const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgent,isDashUser) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`;
 
 
 
-            db.dash.query(sqlCustomer, [
+            db.marketPlace.query(sqlCustomer, [
                 newCustomerId,
                 customerData.firstName,
                 customerData.lastName,
@@ -22,6 +22,7 @@ exports.addCustomer = (customerData, salesAgent) => {
                 customerData.title,
                 customerData.buildingType,
                 salesAgent,
+                1,
             ], (err, customerResult) => {
                 if (err) {
                     return reject(err);
@@ -58,8 +59,8 @@ exports.addCustomer = (customerData, salesAgent) => {
 // };
 
 const generateCustomerId = async () => {
-    const sqlGetLastCustomerId = `SELECT cusId FROM customer ORDER BY cusId DESC LIMIT 1`;
-    const [result] = await db.dash.promise().query(sqlGetLastCustomerId);
+    const sqlGetLastCustomerId = `SELECT cusId FROM marketplaceusers ORDER BY cusId DESC LIMIT 1`;
+    const [result] = await db.marketPlace.promise().query(sqlGetLastCustomerId);
 
     // Default starting ID if no customers exist
     let newCustomerId = 'CUS-00001';
@@ -107,7 +108,7 @@ const insertBuildingData = async (customerId, customerData) => {
     } else {
         throw new Error('Invalid building type');
     }
-    await db.dash.promise().query(insertQuery, queryParams);
+    await db.marketPlace.promise().query(insertQuery, queryParams);
 };
 
 
@@ -149,16 +150,24 @@ exports.getCustomersBySalesAgent = (salesAgentId) => {
                 c.email,
                 c.buildingType,
                 COUNT(o.id) AS orderCount
-            FROM customer c
-            LEFT JOIN orders o ON c.id = o.customerId
+            FROM marketplaceusers c
+            LEFT JOIN orders o ON c.id = o.userId
             WHERE c.salesAgent = ?
             GROUP BY c.id
             ORDER BY c.id
         `;
 
-        db.dash.promise().query(sqlQuery, [salesAgentId])
-            .then(([rows]) => resolve(rows))
-            .catch(error => reject(error))
+        // Use marketPlace directly or db.marketPlace if you updated the config
+        db.marketPlace.promise().query(sqlQuery, [salesAgentId])
+            .then(([rows]) => {
+                console.log(`Found ${rows.length} customers for sales agent ${salesAgentId}`);
+                console.log('Query result:', rows);
+                resolve(rows);
+            })
+            .catch(error => {
+                console.error('Database query error:', error);
+                reject(error);
+            });
     });
 };
 
@@ -168,9 +177,9 @@ exports.getCustomersBySalesAgent = (salesAgentId) => {
 exports.getCustomerData = async (cusId) => {
     return new Promise((resolve, reject) => {
 
-        const sqlCustomerQuery = `SELECT * FROM customer WHERE id = ?`;
+        const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
 
-        db.dash.promise().query(sqlCustomerQuery, [cusId])
+        db.marketPlace.promise().query(sqlCustomerQuery, [cusId])
             .then(async ([customerRows]) => {
                 console.log("Customer Rows: ", customerRows); // Log the result of the query
 
@@ -193,7 +202,7 @@ exports.getCustomerData = async (cusId) => {
                 }
 
                 // Fetch building data
-                const [buildingData] = await db.dash.promise().query(buildingDataQuery, buildingDataParams);
+                const [buildingData] = await db.marketPlace.promise().query(buildingDataQuery, buildingDataParams);
 
                 console.log("Building Data: ", buildingData); // Log the building data
 
@@ -213,13 +222,13 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
     try {
         // Get a connection from the pool
-        connection = await db.dash.promise().getConnection();
+        connection = await db.marketPlace.promise().getConnection();
 
         // Start transaction
         await connection.beginTransaction();
 
         // Check if customer exists
-        const getCustomerIdQuery = `SELECT id, phoneNumber, email, buildingType FROM customer WHERE id = ?`;
+        const getCustomerIdQuery = `SELECT id, phoneNumber, email, buildingType FROM marketplaceusers WHERE id = ?`;
         const [customerResult] = await connection.query(getCustomerIdQuery, [cusId]);
 
         console.log("Customer ID query result:", customerResult);
@@ -236,7 +245,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
         // Check for duplicate phone number
         if (customerData.phoneNumber !== existingPhoneNumber) {
-            const checkPhoneQuery = `SELECT id FROM customer WHERE phoneNumber = ? AND id != ?`;
+            const checkPhoneQuery = `SELECT id FROM marketplaceusers WHERE phoneNumber = ? AND id != ?`;
             const [phoneResult] = await connection.query(checkPhoneQuery, [customerData.phoneNumber, customerId]);
 
             if (phoneResult.length > 0) {
@@ -246,7 +255,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
         // Check for duplicate email
         if (customerData.email !== existingEmail) {
-            const checkEmailQuery = `SELECT id FROM customer WHERE email = ? AND id != ?`;
+            const checkEmailQuery = `SELECT id FROM marketplaceusers WHERE email = ? AND id != ?`;
             const [emailResult] = await connection.query(checkEmailQuery, [customerData.email, customerId]);
 
             if (emailResult.length > 0) {
@@ -256,7 +265,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
         // Update customer
         const updateCustomerQuery = `
-            UPDATE customer 
+            UPDATE marketplaceusers 
             SET title = ?, firstName = ?, lastName = ?, phoneNumber = ?, email = ?, buildingType = ? 
             WHERE id = ?`;
 
@@ -410,34 +419,28 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
 
 
-exports.findCustomerByPhoneOrEmail = (phoneNumber, email) => {
-    return new Promise((resolve, reject) => {
+exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
+    try {
         const sqlQuery = `
-            SELECT * FROM customer 
+            SELECT * FROM marketplaceusers 
             WHERE phoneNumber = ? OR email = ?`;
 
-        db.dash.promise().query(sqlQuery, [phoneNumber, email])
-            .then(([rows]) => {
-                if (rows.length > 0) {
-                    resolve(rows[0]);
-                } else {
-                    resolve(null);
-                }
-            })
-            .catch(error => {
-                console.error("Error finding customer:", error);
-                reject(error);
-            });
-    });
+        const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneNumber, email]);
+
+        return rows.length > 0 ? rows[0] : null;
+    } catch (error) {
+        console.error("Error finding customer:", error);
+        throw error;
+    }
 };
 
 exports.getCustomerCountBySalesAgent = async () => {
     try {
-        const connection = await db.dash.promise().getConnection();
+        const connection = await db.marketPlace.promise().getConnection();
         try {
             const [rows] = await connection.query(`
         SELECT salesAgent, COUNT(*) AS customerCount
-        FROM customer
+        FROM marketplaceusers
         GROUP BY salesAgent
       `);
             return rows;
