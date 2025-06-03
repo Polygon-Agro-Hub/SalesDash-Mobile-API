@@ -84,19 +84,18 @@ exports.updateUserProfile = (id, updatedData) => {
   return new Promise((resolve, reject) => {
     const sql = `
           UPDATE salesagent
-          SET firstName = ?, lastName = ?, phoneNumber1 = ?, phoneNumber2 = ?, nic =? ,email = ?, 
+          SET firstName = ?, lastName = ?,
               houseNumber = ?, streetName = ?, city = ?, district = ?, province = ?
           WHERE id = ?;
       `;
 
     const values = [
-      updatedData.firstName, updatedData.lastName, updatedData.phoneNumber1, updatedData.phoneNumber2,
-      updatedData.nic,
-      updatedData.email, updatedData.houseNumber, updatedData.streetName, updatedData.city,
+      updatedData.firstName, updatedData.lastName,
+      updatedData.houseNumber, updatedData.streetName, updatedData.city,
       updatedData.district, updatedData.province, id
     ];
 
-    db.dash.query(sql, values, (err, results) => {
+    db.marketPlace.query(sql, values, (err, results) => {
       if (err) return reject(new Error('Database update error'));
       if (results.affectedRows === 0) {
         return reject(new Error('User not found'));
