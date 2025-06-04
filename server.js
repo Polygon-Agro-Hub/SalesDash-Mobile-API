@@ -96,3 +96,12 @@ cron.schedule('00 18 * * *', async () => {
         console.error('Error creating payment reminders:', error);
     }
 });
+
+// cron.schedule('30 * * * * *', async () => {
+//     try {
+//         await notificationDao.createPaymentReminders();
+//         console.log('Payment reminders created successfully');
+//     } catch (error) {
+//         console.error('Error creating payment reminders:', error);
+//     }
+// });
