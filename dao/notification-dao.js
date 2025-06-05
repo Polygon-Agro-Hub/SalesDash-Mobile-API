@@ -4,35 +4,38 @@ exports.getNotificationsBySalesAgent = (salesAgentId) => {
   console.log(salesAgentId)
   return new Promise((resolve, reject) => {
     const query = `
-      SELECT 
-        dn.id,
-        dn.orderId,
-        dn.title,
-        dn.readStatus,
-        dn.createdAt,
-        o.invNo,
-        o.orderStatus,
-        c.cusId,
-        CONCAT(c.firstName, ' ', c.lastName) AS customerName,
-        c.phoneNumber
-      FROM dashnotification dn
-      JOIN orders o ON dn.orderId = o.id
-      JOIN customer c ON o.customerId = c.id
-      WHERE o.salesAgentId = ?
-      ORDER BY dn.createdAt DESC
+    SELECT 
+  dn.id,
+  dn.orderId,
+  dn.title,
+  dn.readStatus,
+  dn.createdAt,
+  po.invNo,
+  po.status,
+  o.userId AS cusId,
+  o.fullName AS customerName,
+  CONCAT(o.phonecode1, o.phone1) AS phoneNumber
+FROM dashnotification dn
+JOIN processorders po ON dn.orderId = po.id
+JOIN orders o ON  po.orderId = o.id
+JOIN marketplaceusers mps ON o.userId = mps.id
+WHERE mps.salesAgent = ?
+ORDER BY dn.createdAt DESC
+
     `;
 
     const countQuery = `
       SELECT COUNT(*) AS unreadCount 
       FROM dashnotification dn
       JOIN orders o ON dn.orderId = o.id
-      WHERE o.salesAgentId = ? AND dn.readStatus = 0
+      JOIN marketplaceusers mps ON o.userId = mps.id
+      WHERE mps.salesAgent = ? AND dn.readStatus = 0
     `;
 
-    db.dash.query(query, [salesAgentId], (err, notifications) => {
+    db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
       if (err) return reject(err);
 
-      db.dash.query(countQuery, [salesAgentId], (err, countResult) => {
+      db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
         if (err) return reject(err);
 
         resolve({
@@ -46,6 +49,7 @@ exports.getNotificationsBySalesAgent = (salesAgentId) => {
 };
 
 exports.markNotificationsAsReadByOrderId = (id) => {
+  console.log(id)
   return new Promise((resolve, reject) => {
     const query = `
       UPDATE dashnotification 
@@ -53,7 +57,7 @@ exports.markNotificationsAsReadByOrderId = (id) => {
       WHERE id = ? AND readStatus = 0
     `;
 
-    db.dash.query(query, [id], (err, result) => {
+    db.marketPlace.query(query, [id], (err, result) => {
       if (err) return reject(err);
       resolve(result.affectedRows); // Returns number of marked notifications
     });
@@ -67,88 +71,31 @@ exports.deleteNotificationsByOrderId = (id) => {
       WHERE id = ?
     `;
 
-    db.dash.query(query, [id], (err, result) => {
+    db.marketPlace.query(query, [id], (err, result) => {
       if (err) return reject(err);
       resolve(result.affectedRows); // Returns number of deleted notifications
     });
   });
 };
 
-
-
-// exports.createPaymentReminders = () => {
-//   return new Promise((resolve, reject) => {
-//     // First get orders with scheduleDate 3 days from now
-//     const orderQuery = `
-//       SELECT 
-//         o.id as orderId,
-//         o.invNo,
-//         o.customerId
-//       FROM orders o
-//       WHERE DATE(o.scheduleDate) = DATE(DATE_ADD(CURDATE(), INTERVAL 3 DAY))
-//       AND NOT EXISTS (
-//         SELECT 1 FROM dashnotification dn 
-//         WHERE dn.orderId = o.id 
-//         AND dn.title LIKE 'Payment reminder%'
-//       )
-//     `;
-
-//     db.dash.query(orderQuery, [], (err, orders) => {
-//       if (err) return reject(err);
-
-//       if (!orders || orders.length === 0) {
-//         return resolve(0); // No qualifying orders found
-//       }
-
-//       // Create notifications for each qualifying order
-//       const insertQueries = orders.map(order => {
-//         return new Promise((resolveInsert, rejectInsert) => {
-//           const insertQuery = `
-//             INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
-//             VALUES (?, ?, 0, NOW())
-//           `;
-
-//           const title = `Payment reminder `;
-
-//           db.dash.query(insertQuery, [order.orderId, title], (insertErr, result) => {
-//             if (insertErr) return rejectInsert(insertErr);
-//             resolveInsert(result);
-//           });
-//         });
-//       });
-
-//       // Execute all insert queries
-//       Promise.all(insertQueries)
-//         .then(results => {
-//           resolve(results.length); // Return number of notifications created
-//         })
-//         .catch(insertErr => {
-//           reject(insertErr);
-//         });
-//     });
-//   });
-// };
-
-// Update in notification-dao.js
-// Make sure this is at the top of your file
 const smsService = require('../services/sms-service');
 
 exports.createPaymentReminders = async () => {
   return new Promise(async (resolve, reject) => {
-    // First get orders with scheduleDate 3 days from now along with customer details
     const orderQuery = `
       SELECT 
-        o.id as orderId,
-        o.invNo,
-        o.customerId,
-        c.phoneNumber,
-        CONCAT(c.firstName, ' ', c.lastName) AS customerName
-      FROM orders o
-      JOIN customer c ON o.customerId = c.id
-      WHERE DATE(o.scheduleDate) = DATE(DATE_ADD(CURDATE(), INTERVAL 3 DAY))
+        po.id as orderId,
+        po.invNo,
+        o.userId AS customerId,
+        o.fullName AS customerName,
+        CONCAT(o.phonecode1, o.phone1) AS phoneNumber
+      FROM processorders po
+      JOIN orders o ON po.orderId = o.id
+      JOIN marketplaceusers mps ON o.userId = mps.id
+      WHERE DATE(o.sheduleDate) = DATE(DATE_ADD(CURDATE(), INTERVAL 3 DAY))
       AND NOT EXISTS (
         SELECT 1 FROM dashnotification dn 
-        WHERE dn.orderId = o.id 
+        WHERE dn.orderId = po.id 
         AND dn.title LIKE 'Payment reminder%'
       )
     `;
@@ -166,6 +113,8 @@ exports.createPaymentReminders = async () => {
         smsCount: 0,
         orders: []
       };
+
+      console.log("check notifi ",results)
 
       for (const order of orders) {
         try {
@@ -234,7 +183,7 @@ exports.createPaymentReminders = async () => {
 // Helper function to use promises with mysql queries
 function queryAsync(query, params) {
   return new Promise((resolve, reject) => {
-    db.dash.query(query, params, (err, results) => {
+    db.marketPlace.query(query, params, (err, results) => {
       if (err) return reject(err);
       resolve(results);
     });
@@ -249,7 +198,7 @@ function insertNotification(orderId, title) {
       VALUES (?, ?, 0, NOW())
     `;
 
-    db.dash.query(insertQuery, [orderId, title], (err, result) => {
+    db.marketPlace.query(insertQuery, [orderId, title], (err, result) => {
       if (err) return reject(err);
       resolve(result);
     });
