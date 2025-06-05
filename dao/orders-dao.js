@@ -350,7 +350,7 @@ async function insertProcessOrder(connection, orderId, orderData) {
             orderData.paymentMethod || 'cash',
             0,
             0,
-            orderData.status || 'pending'
+            'Ordered'
         ]
     );
 }
@@ -412,31 +412,138 @@ exports.getDataCustomerId = (customerId) => {
 };
 
 
+// exports.getOrderById = (orderId) => {
+//     return new Promise((resolve, reject) => {
+//         const sql = `
+//         SELECT 
+//           o.id AS orderId,
+//           o.userId,
+//           o.sheduleType,
+//           o.sheduleDate,
+//           o.sheduleTime,  
+
+//           o.createdAt,
+
+//           o.total,
+//           o.discount,
+//           o.fullTotal,  
+//           c.title,
+//           c.firstName,
+//           c.lastName,
+//           c.phoneNumber,
+//           c.buildingType
+//         FROM orders o
+//         JOIN marketplaceusers c ON o.userId = c.id
+//         WHERE o.id = ?
+//       `;
+
+//         db.marketPlace.query(sql, [orderId], (err, orderResults) => {
+//             if (err) {
+//                 return reject(err);
+//             }
+
+//             if (orderResults.length === 0) {
+//                 return resolve({ message: 'No order found with the given ID' });
+//             }
+
+//             const order = orderResults[0];
+//             const customerId = order.customerId;
+//             const buildingType = order.buildingType;
+
+//             if (buildingType === 'House') {
+//                 const addressSql = `
+//             SELECT 
+//               houseNo,
+//               streetName,
+//               city
+//             FROM house
+//             WHERE customerId = ?
+//           `;
+
+//                 db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
+//                     if (err) {
+//                         return reject(err);
+//                     }
+
+//                     let formattedAddress = '';
+//                     if (addressResults[0]) {
+//                         const addr = addressResults[0];
+//                         formattedAddress = `${addr.houseNo || ''}, ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+//                         formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
+//                     }
+
+//                     resolve({
+//                         ...order,
+//                         fullAddress: formattedAddress
+//                     });
+//                 });
+//             } else if (buildingType === 'Apartment') {
+//                 const addressSql = `
+//             SELECT 
+//               buildingNo,
+//               buildingName,
+//               unitNo,
+//               floorNo,
+//               houseNo,
+//               streetName,
+//               city
+//             FROM apartment
+//             WHERE customerId = ?
+//           `;
+
+//                 db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
+//                     if (err) {
+//                         return reject(err);
+//                     }
+
+//                     let formattedAddress = '';
+//                     if (addressResults[0]) {
+//                         const addr = addressResults[0];
+//                         formattedAddress = `${addr.buildingName || ''}, ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''}, ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+//                         formattedAddress = formattedAddress.replace(/\s+/g, ' ')
+//                             .replace(/, Unit ,/, ',')
+//                             .replace(/, Floor ,/, ',')
+//                             .trim();
+//                         formattedAddress = formattedAddress.replace(/,\s*$/, '');
+//                     }
+
+//                     resolve({
+//                         ...order,
+//                         fullAddress: formattedAddress
+//                     });
+//                 });
+//             } else {
+//                 resolve({
+//                     ...order,
+//                     fullAddress: ''
+//                 });
+//             }
+//         });
+//     });
+// };
+
 exports.getOrderById = (orderId) => {
     return new Promise((resolve, reject) => {
         const sql = `
         SELECT 
-          o.id AS orderId,
-          o.userId,
-          o.deliveryType,
-          o.scheduleDate,
-          o.scheduleTimeSlot,  
-          o.paymentMethod,
-          o.paymentStatus,
-          o.orderStatus,
-          o.createdAt,
-          o.InvNo,
-          o.reportStatus,
-          o.fullTotal,
-          o.fullDiscount,
-          o.fullSubTotal,  
-          c.title,
-          c.firstName,
-          c.lastName,
-          c.phoneNumber,
-          c.buildingType
+           o.id AS orderId,
+           o.userId,
+           o.sheduleType,
+           o.sheduleDate,
+           o.sheduleTime,
+           o.createdAt,
+           o.total,
+           o.discount,
+           o.fullTotal,
+           c.title,
+           c.firstName,
+           c.lastName,
+           c.phoneNumber,
+           c.buildingType,
+           p.invNo AS invoiceNumber
         FROM orders o
         JOIN marketplaceusers c ON o.userId = c.id
+        LEFT JOIN processorders p ON o.id = p.orderId
         WHERE o.id = ?
       `;
 
@@ -450,15 +557,15 @@ exports.getOrderById = (orderId) => {
             }
 
             const order = orderResults[0];
-            const customerId = order.customerId;
+            const customerId = order.userId; // Fixed: should be userId, not customerId
             const buildingType = order.buildingType;
 
             if (buildingType === 'House') {
                 const addressSql = `
             SELECT 
-              houseNo,
-              streetName,
-              city
+               houseNo,
+               streetName,
+               city
             FROM house
             WHERE customerId = ?
           `;
@@ -483,13 +590,13 @@ exports.getOrderById = (orderId) => {
             } else if (buildingType === 'Apartment') {
                 const addressSql = `
             SELECT 
-              buildingNo,
-              buildingName,
-              unitNo,
-              floorNo,
-              houseNo,
-              streetName,
-              city
+               buildingNo,
+               buildingName,
+               unitNo,
+               floorNo,
+               houseNo,
+               streetName,
+               city
             FROM apartment
             WHERE customerId = ?
           `;
@@ -521,6 +628,204 @@ exports.getOrderById = (orderId) => {
                     fullAddress: ''
                 });
             }
+        });
+    });
+};
+
+
+
+exports.getOrderByCustomerId = (customerId) => {
+    return new Promise((resolve, reject) => {
+        const sql = `
+            SELECT 
+                o.id AS orderId,
+                o.userId,
+                o.sheduleType,
+                o.sheduleDate,
+                o.sheduleTime,
+               
+            
+                o.createdAt,
+        
+             
+                o.total,
+                o.discount,
+                o.fullTotal,
+                p.invNo AS InvNo,
+                p.reportStatus AS reportStatus,
+                p.paymentMethod AS paymentMethod,
+                p.status As status
+            FROM orders o
+            LEFT JOIN market_place.processorders p ON o.id = p.orderId
+            WHERE o.userId = ?
+        `;
+
+        db.marketPlace.query(sql, [customerId], (err, orderResults) => {
+            if (err) {
+                return reject(err);
+            }
+
+            if (orderResults.length === 0) {
+                return resolve({ message: 'No orders found for this customer' });
+            }
+
+            resolve(orderResults);
+        });
+    });
+};
+
+
+
+exports.getAllOrderDetails = (salesAgentId) => {
+    return new Promise((resolve, reject) => {
+        let sql = `
+      SELECT 
+         o.id AS orderId,
+                o.userId,
+                o.sheduleType,
+                o.sheduleDate,
+                o.sheduleTime,
+                o.createdAt,
+                o.total,
+                o.discount,
+                o.fullTotal,
+                m.salesAgent,
+                p.invNo AS InvNo,
+                p.reportStatus AS reportStatus,
+                p.paymentMethod AS paymentMethod,
+                p.status As status
+      FROM orders o
+       LEFT JOIN market_place.processorders p ON o.id = p.orderId
+        LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
+    `;
+
+        // Add WHERE clause if salesAgentId is provided
+        const params = [];
+        if (salesAgentId) {
+            sql += ` WHERE m.salesAgent = ?`;
+            params.push(salesAgentId);
+        }
+
+        db.marketPlace.query(sql, params, (err, orderResults) => {
+            if (err) {
+                return reject(err);
+            }
+
+            if (orderResults.length === 0) {
+                return resolve({ message: 'No orders found' });
+            }
+
+            // Process each order to get corresponding address details
+            const orderPromises = orderResults.map(order => {
+                return new Promise((resolveOrder, rejectOrder) => {
+                    const customerId = order.customerId;
+                    const buildingType = order.buildingType;
+
+                    if (buildingType === 'House') {
+                        const addressSql = `
+              SELECT 
+                houseNo,
+                streetName,
+                city
+              FROM house
+              WHERE customerId = ?
+            `;
+
+                        db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
+                            if (err) {
+                                return rejectOrder(err);
+                            }
+
+                            let formattedAddress = '';
+                            if (addressResults[0]) {
+                                const addr = addressResults[0];
+                                formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+                                formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
+                            }
+
+                            resolveOrder({
+                                ...order,
+                                fullAddress: formattedAddress
+                            });
+                        });
+                    } else if (buildingType === 'Apartment') {
+                        const addressSql = `
+              SELECT 
+                buildingNo,
+                buildingName,
+                unitNo,
+                floorNo,
+                houseNo,
+                streetName,
+                city
+              FROM apartment
+              WHERE customerId = ?
+            `;
+
+                        db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
+                            if (err) {
+                                return rejectOrder(err);
+                            }
+
+                            let formattedAddress = '';
+                            if (addressResults[0]) {
+                                const addr = addressResults[0];
+                                formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
+                                formattedAddress = formattedAddress.replace(/\s+/g, ' ')
+                                    .replace(/, Unit ,/, ',')
+                                    .replace(/, Floor ,/, ',')
+                                    .trim();
+                                formattedAddress = formattedAddress.replace(/,\s*$/, '');
+                            }
+
+                            resolveOrder({
+                                ...order,
+                                fullAddress: formattedAddress
+                            });
+                        });
+                    } else {
+                        resolveOrder({
+                            ...order,
+                            fullAddress: ''
+                        });
+                    }
+                });
+            });
+
+            Promise.all(orderPromises)
+                .then(results => resolve(results))
+                .catch(error => reject(error));
+        });
+    });
+};
+
+exports.reportOrder = (orderId, reportStatus) => {
+    return new Promise((resolve, reject) => {
+        const updateSql = `
+      UPDATE market_place.processorders 
+      SET reportStatus = ?
+      WHERE orderId = ?
+    `;
+
+        db.marketPlace.query(updateSql, [reportStatus, orderId], (err, result) => {
+            if (err) {
+                return reject(err);
+            }
+
+            // Check if any row was affected
+            if (result.affectedRows === 0) {
+                return resolve({
+                    message: 'Order not found or could not be updated'
+                });
+            }
+
+            // Return success
+            resolve({
+                success: true,
+                message: 'Order report status updated successfully',
+                orderId: orderId,
+                reportStatus: reportStatus
+            });
         });
     });
 };
