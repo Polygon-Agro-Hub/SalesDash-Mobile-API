@@ -175,7 +175,9 @@ exports.checkCustomer = (req, res) => {
 
 exports.getCustomerCountBySalesAgent = async (req, res) => {
     try {
-        const result = await customerDAO.getCustomerCountBySalesAgent();
+
+        const salesAgentId = req.user.id
+        const result = await customerDAO.getCustomerCountBySalesAgent(salesAgentId);
 
         return res.status(200).json({
             success: true,

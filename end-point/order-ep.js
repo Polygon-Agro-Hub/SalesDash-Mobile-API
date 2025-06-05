@@ -55,6 +55,9 @@ exports.createOrder = async (req, res) => {
     console.log('Full request body:', req.body);
     console.log('Content-Type header:', req.headers['content-type']);
     console.log('Request method:', req.method);
+
+    // Validate the request body using the Joi schema
+    await orderValidationSchema.validateAsync(req.body);
     const salesAgentId = req.user.id;
 
 
@@ -379,12 +382,17 @@ exports.getAgentAllStars = async (req, res) => {
 
 exports.getOrderCountBySalesAgent = async (req, res) => {
   try {
-    const result = await orderDao.getOrderCountBySalesAgent();
+    const salesAgentId = req.user.id; // Get from authenticated user
+    const result = await orderDao.getOrderCountBySalesAgent(salesAgentId);
+
 
     return res.status(200).json({
       success: true,
       data: result
+
     });
+
+
   } catch (error) {
     console.error('Error in getOrderCountBySalesAgent:', error);
     return res.status(500).json({
@@ -392,7 +400,9 @@ exports.getOrderCountBySalesAgent = async (req, res) => {
       message: 'Failed to fetch order count by sales agent',
       error: error.message
     });
+
   }
+
 };
 
 

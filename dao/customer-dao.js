@@ -434,16 +434,21 @@ exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
     }
 };
 
-exports.getCustomerCountBySalesAgent = async () => {
+exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
     try {
         const connection = await db.marketPlace.promise().getConnection();
         try {
             const [rows] = await connection.query(`
         SELECT salesAgent, COUNT(*) AS customerCount
         FROM marketplaceusers
+        WHERE salesAgent = ?
         GROUP BY salesAgent
-      `);
-            return rows;
+      `, [salesAgentId]);
+
+
+            console.log("vfas", rows)
+            // Return the count for the specific agent, or default object if no customers found
+            return rows.length > 0 ? rows[0] : { salesAgent: parseInt(salesAgentId), customerCount: 0 };
         } finally {
             connection.release();
         }
@@ -452,7 +457,6 @@ exports.getCustomerCountBySalesAgent = async () => {
         throw new Error(`Failed to get customer count: ${error.message}`);
     }
 };
-
 
 
 
