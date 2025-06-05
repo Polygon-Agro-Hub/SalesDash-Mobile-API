@@ -2,6 +2,7 @@ const asyncHandler = require("express-async-handler");
 const packageDAO = require("../dao/package-dao");
 
 exports.getAllPackages = asyncHandler(async (req, res) => {
+    console.log("hitt")
     try {
         const packages = await packageDAO.getAllPackages();
 
@@ -19,7 +20,9 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
 
 
 exports.getItemsForPackage = asyncHandler(async (req, res) => {
+    console.log("get package item")
     const { packageId } = req.params;
+    console.log("packageid", packageId)
 
     try {
         const items = await packageDAO.getItemsByPackageId(packageId);

@@ -39,9 +39,10 @@ const db = require("../startup/database");
 // };
 
 exports.getAllPackages = async () => {
+    console.log("hitpack")
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, displayName, image, status, total, created_at AS createdAt, description, discount, subTotal
+        SELECT id, displayName, image, status, created_at AS createdAt, description, productPrice, packingFee, serviceFee
         FROM marketplacepackages
         WHERE status = 'Enabled'
         ORDER BY displayName ASC
@@ -63,16 +64,23 @@ exports.getItemsByPackageId = async (packageId) => {
     return new Promise((resolve, reject) => {
         const query = `
         SELECT 
-            mi.displayName AS name, 
+            pt.typeName AS name, 
             pd.id,
-            pd.quantity, 
-              pd.mpItemId,  
-            pd.quantityType,
-            pd.price 
-        FROM marketplaceitems mi
-        INNER JOIN packagedetails pd ON mi.id = pd.mpItemId
+            pd.qty,
+            pd.productTypeId
+        FROM producttypes pt
+        INNER JOIN packagedetails pd ON  pd.productTypeId = pt.id 
         WHERE pd.packageId = ?
         `;
+
+        //  const query = `
+        // SELECT 
+        //     pd.productTypeId,
+        //     pd.id,
+        //     pd.qty
+        // FROM packagedetails pd
+        // WHERE pd.packageId = ?
+        // `;
 
         db.marketPlace.query(query, [packageId], (error, results) => {
             if (error) {
@@ -274,3 +282,4 @@ exports.getPackageItemByProductId = async (packageId, productId) => {
         });
     });
 };
+/////////// package

@@ -2,10 +2,11 @@ const db = require('../startup/database');
 const bcrypt = require('bcrypt');
 
 exports.loginUser = (empId, password) => {
+  console.log(empId)
   return new Promise(async (resolve, reject) => {
     try {
       const sql = 'SELECT empId, password, id, passwordUpdate FROM salesagent WHERE empId = ?';
-      const [results] = await db.dash.promise().query(sql, [empId]);
+      const [results] = await db.marketPlace.promise().query(sql, [empId]);
 
       if (results.length === 0) {
         return reject(new Error('User not found'));
@@ -25,38 +26,6 @@ exports.loginUser = (empId, password) => {
   });
 };
 
-
-// exports.getUserProfile = (id) => {
-//   return new Promise((resolve, reject) => {
-//     const sql = `
-//       SELECT 
-//         firstName, 
-//         lastName, 
-//         empId, 
-//         phoneNumber1, 
-//         phoneNumber2, 
-//         nic, 
-//         email, 
-//         houseNumber, 
-//         streetName, 
-//         city,
-//         image
-//       FROM salesagent 
-//       WHERE id = ?
-//     `;
-//     db.dash.query(sql, [id], (err, results) => {
-//       if (err) {
-//         return reject(new Error('Database error'));
-//       }
-//       if (results.length === 0) {
-//         return reject(new Error('User not found'));
-//       }
-//       resolve(results[0]);
-//     });
-//   });
-// };
-
-// Check if the image is actually being retrieved by adding a console.log
 exports.getUserProfile = (id) => {
   return new Promise((resolve, reject) => {
     const sql = `       
@@ -89,7 +58,7 @@ exports.getUserProfile = (id) => {
       WHERE id = ?     
     `;
 
-    db.dash.query(sql, [id], (err, results) => {
+    db.marketPlace.query(sql, [id], (err, results) => {
       if (err) {
         console.error("Database error:", err);
         return reject(new Error('Database error'));
@@ -115,19 +84,18 @@ exports.updateUserProfile = (id, updatedData) => {
   return new Promise((resolve, reject) => {
     const sql = `
           UPDATE salesagent
-          SET firstName = ?, lastName = ?, phoneNumber1 = ?, phoneNumber2 = ?, nic =? ,email = ?, 
+          SET firstName = ?, lastName = ?,
               houseNumber = ?, streetName = ?, city = ?, district = ?, province = ?
           WHERE id = ?;
       `;
 
     const values = [
-      updatedData.firstName, updatedData.lastName, updatedData.phoneNumber1, updatedData.phoneNumber2,
-      updatedData.nic,
-      updatedData.email, updatedData.houseNumber, updatedData.streetName, updatedData.city,
+      updatedData.firstName, updatedData.lastName,
+      updatedData.houseNumber, updatedData.streetName, updatedData.city,
       updatedData.district, updatedData.province, id
     ];
 
-    db.dash.query(sql, values, (err, results) => {
+    db.marketPlace.query(sql, values, (err, results) => {
       if (err) return reject(new Error('Database update error'));
       if (results.affectedRows === 0) {
         return reject(new Error('User not found'));
@@ -143,7 +111,7 @@ exports.updatePassword = (id, oldPassword, newPassword) => {
   return new Promise((resolve, reject) => {
     // Fetch the user's current password and passwordUpdate status
     const fetchSql = `SELECT password, passwordUpdate FROM salesagent WHERE id = ?`;
-    db.dash.query(fetchSql, [id], async (err, results) => {
+    db.marketPlace.query(fetchSql, [id], async (err, results) => {
       if (err) {
         return reject(new Error('Database error'));
       }
@@ -177,7 +145,7 @@ exports.updatePassword = (id, oldPassword, newPassword) => {
         `;
         const passwordUpdateValue = user.passwordUpdate === 0 ? 1 : user.passwordUpdate;
 
-        db.dash.query(updateSql, [newPasswordHash, passwordUpdateValue, id], (updateErr, updateResults) => {
+        db.marketPlace.query(updateSql, [newPasswordHash, passwordUpdateValue, id], (updateErr, updateResults) => {
           if (updateErr) {
             return reject(new Error('Database update error'));
           }
