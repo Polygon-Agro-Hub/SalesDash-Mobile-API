@@ -2,26 +2,55 @@ const db = require('../startup/database');
 
 exports.addCustomer = (customerData, salesAgent) => {
     return new Promise(async (resolve, reject) => {
-
         try {
-
             const newCustomerId = await generateCustomerId();
 
+            // Parse phone number to extract phone code and number
+            let phoneCode = '';
+            let phoneNumber = '';
 
-            const sqlCustomer = `INSERT INTO customer (cusId, firstName, lastName, phoneNumber, email, title, buildingType, salesAgent) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);`;
+            if (customerData.phoneNumber) {
+                const fullPhone = customerData.phoneNumber.toString();
 
+                // Check if phone number starts with +94 (Sri Lanka)
+                if (fullPhone.startsWith('+94')) {
+                    phoneCode = '+94';
+                    phoneNumber = fullPhone.substring(3); // Remove +94
+                }
+                // Check if phone number starts with 94 (without +)
+                else if (fullPhone.startsWith('94') && fullPhone.length > 9) {
+                    phoneCode = '+94';
+                    phoneNumber = fullPhone.substring(2); // Remove 94
+                }
+                // Check if phone number starts with 0 (local format)
+                else if (fullPhone.startsWith('0')) {
+                    phoneCode = '+94';
+                    phoneNumber = fullPhone.substring(1); // Remove leading 0
+                }
+                // Default case - assume it's already in correct format
+                else {
+                    phoneCode = '+94'; // Default to Sri Lanka
+                    phoneNumber = fullPhone;
+                }
 
+                // Clean up phone number (remove any spaces, dashes, etc.)
+                phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+            }
 
-            db.dash.query(sqlCustomer, [
+            const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, buildingType, salesAgent, isDashUser)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+
+            db.marketPlace.query(sqlCustomer, [
                 newCustomerId,
                 customerData.firstName,
                 customerData.lastName,
-                customerData.phoneNumber,
+                phoneCode,
+                phoneNumber,
                 customerData.email,
                 customerData.title,
                 customerData.buildingType,
                 salesAgent,
+                1,
             ], (err, customerResult) => {
                 if (err) {
                     return reject(err);
@@ -58,8 +87,8 @@ exports.addCustomer = (customerData, salesAgent) => {
 // };
 
 const generateCustomerId = async () => {
-    const sqlGetLastCustomerId = `SELECT cusId FROM customer ORDER BY cusId DESC LIMIT 1`;
-    const [result] = await db.dash.promise().query(sqlGetLastCustomerId);
+    const sqlGetLastCustomerId = `SELECT cusId FROM marketplaceusers ORDER BY cusId DESC LIMIT 1`;
+    const [result] = await db.marketPlace.promise().query(sqlGetLastCustomerId);
 
     // Default starting ID if no customers exist
     let newCustomerId = 'CUS-00001';
@@ -107,7 +136,7 @@ const insertBuildingData = async (customerId, customerData) => {
     } else {
         throw new Error('Invalid building type');
     }
-    await db.dash.promise().query(insertQuery, queryParams);
+    await db.marketPlace.promise().query(insertQuery, queryParams);
 };
 
 
@@ -140,37 +169,110 @@ exports.getCustomersBySalesAgent = (salesAgentId) => {
     return new Promise((resolve, reject) => {
         const sqlQuery = `
             SELECT 
-                c.id ,
+                c.id,
                 c.cusId,
                 c.title,
                 c.firstName,
                 c.lastName,
+                c.phoneCode,
                 c.phoneNumber,
                 c.email,
                 c.buildingType,
                 COUNT(o.id) AS orderCount
-            FROM customer c
-            LEFT JOIN orders o ON c.id = o.customerId
+            FROM marketplaceusers c
+            LEFT JOIN orders o ON c.id = o.userId
             WHERE c.salesAgent = ?
             GROUP BY c.id
             ORDER BY c.id
         `;
 
-        db.dash.promise().query(sqlQuery, [salesAgentId])
-            .then(([rows]) => resolve(rows))
-            .catch(error => reject(error))
+        // Use marketPlace directly or db.marketPlace if you updated the config
+        db.marketPlace.promise().query(sqlQuery, [salesAgentId])
+            .then(([rows]) => {
+                console.log(`Found ${rows.length} customers for sales agent ${salesAgentId}`);
+
+                // Process each row to combine phoneCode and phoneNumber
+                const processedRows = rows.map(customer => {
+                    // Combine phoneCode and phoneNumber into a single phoneNumber field
+                    if (customer.phoneCode && customer.phoneNumber) {
+                        customer.phoneNumber = `${customer.phoneCode}${customer.phoneNumber}`;
+                    } else if (customer.phoneNumber && !customer.phoneCode) {
+                        // If only phoneNumber exists, keep it as is
+                        customer.phoneNumber = customer.phoneNumber;
+                    } else if (customer.phoneCode && !customer.phoneNumber) {
+                        // If only phoneCode exists, set phoneNumber to just the code
+                        customer.phoneNumber = `${customer.phoneCode}`;
+                    } else {
+                        // If neither exists, set to empty string
+                        customer.phoneNumber = '';
+                    }
+
+                    // Remove the separate phoneCode field since we've combined it
+                    delete customer.phoneCode;
+
+                    return customer;
+                });
+
+                console.log('Processed query result:', processedRows);
+                resolve(processedRows);
+            })
+            .catch(error => {
+                console.error('Database query error:', error);
+                reject(error);
+            });
     });
 };
 
 
 
 // Function to get customer data along with related building data (House or Apartment)
+// exports.getCustomerData = async (cusId) => {
+//     return new Promise((resolve, reject) => {
+
+//         const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
+
+//         db.marketPlace.promise().query(sqlCustomerQuery, [cusId])
+//             .then(async ([customerRows]) => {
+//                 console.log("Customer Rows: ", customerRows); // Log the result of the query
+
+//                 if (customerRows.length === 0) {
+//                     return reject(new Error('Customer not found'));
+//                 }
+
+//                 const customerData = customerRows[0];
+//                 let buildingDataQuery = '';
+//                 let buildingDataParams = [];
+
+//                 if (customerData.buildingType === 'House') {
+//                     buildingDataQuery = `SELECT * FROM house WHERE customerId = ?`;
+//                     buildingDataParams = [customerData.id];
+//                 } else if (customerData.buildingType === 'Apartment') {
+//                     buildingDataQuery = `SELECT * FROM apartment WHERE customerId = ?`;
+//                     buildingDataParams = [customerData.id];
+//                 } else {
+//                     return reject(new Error('Invalid building type'));
+//                 }
+
+//                 // Fetch building data
+//                 const [buildingData] = await db.marketPlace.promise().query(buildingDataQuery, buildingDataParams);
+
+//                 console.log("Building Data: ", buildingData); // Log the building data
+
+//                 // Combine customer data with building data
+//                 resolve({
+//                     customer: customerData,
+//                     building: buildingData.length > 0 ? buildingData[0] : null
+//                 });
+//             })
+//             .catch(error => reject(error));
+//     });
+// };
+
 exports.getCustomerData = async (cusId) => {
     return new Promise((resolve, reject) => {
+        const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
 
-        const sqlCustomerQuery = `SELECT * FROM customer WHERE id = ?`;
-
-        db.dash.promise().query(sqlCustomerQuery, [cusId])
+        db.marketPlace.promise().query(sqlCustomerQuery, [cusId])
             .then(async ([customerRows]) => {
                 console.log("Customer Rows: ", customerRows); // Log the result of the query
 
@@ -179,6 +281,24 @@ exports.getCustomerData = async (cusId) => {
                 }
 
                 const customerData = customerRows[0];
+
+                // Combine phoneCode and phoneNumber into a single phoneNumber field
+                if (customerData.phoneCode && customerData.phoneNumber) {
+                    customerData.phoneNumber = `${customerData.phoneCode}${customerData.phoneNumber}`;
+                } else if (customerData.phoneNumber && !customerData.phoneCode) {
+                    // If only phoneNumber exists, keep it as is
+                    customerData.phoneNumber = customerData.phoneNumber;
+                } else if (customerData.phoneCode && !customerData.phoneNumber) {
+                    // If only phoneCode exists, set phoneNumber to just the code
+                    customerData.phoneNumber = `${customerData.phoneCode}`;
+                } else {
+                    // If neither exists, set to empty string
+                    customerData.phoneNumber = '';
+                }
+
+                // Remove the separate phoneCode field since we've combined it
+                delete customerData.phoneCode;
+
                 let buildingDataQuery = '';
                 let buildingDataParams = [];
 
@@ -193,7 +313,7 @@ exports.getCustomerData = async (cusId) => {
                 }
 
                 // Fetch building data
-                const [buildingData] = await db.dash.promise().query(buildingDataQuery, buildingDataParams);
+                const [buildingData] = await db.marketPlace.promise().query(buildingDataQuery, buildingDataParams);
 
                 console.log("Building Data: ", buildingData); // Log the building data
 
@@ -208,18 +328,51 @@ exports.getCustomerData = async (cusId) => {
 };
 
 
+
 exports.updateCustomerData = async (cusId, customerData, buildingData) => {
     let connection;
 
     try {
         // Get a connection from the pool
-        connection = await db.dash.promise().getConnection();
+        connection = await db.marketPlace.promise().getConnection();
 
         // Start transaction
         await connection.beginTransaction();
 
+        // Parse phone number to extract phone code and number
+        let phoneCode = '';
+        let phoneNumber = '';
+
+        if (customerData.phoneNumber) {
+            const fullPhone = customerData.phoneNumber.toString();
+
+            // Check if phone number starts with +94 (Sri Lanka)
+            if (fullPhone.startsWith('+94')) {
+                phoneCode = '+94';
+                phoneNumber = fullPhone.substring(3); // Remove +94
+            }
+            // Check if phone number starts with 94 (without +)
+            else if (fullPhone.startsWith('94') && fullPhone.length > 9) {
+                phoneCode = '+94';
+                phoneNumber = fullPhone.substring(2); // Remove 94
+            }
+            // Check if phone number starts with 0 (local format)
+            else if (fullPhone.startsWith('0')) {
+                phoneCode = '+94';
+                phoneNumber = fullPhone.substring(1); // Remove leading 0
+            }
+            // Default case - assume it's already in correct format
+            else {
+                phoneCode = '+94'; // Default to Sri Lanka
+                phoneNumber = fullPhone;
+            }
+
+            // Clean up phone number (remove any spaces, dashes, etc.)
+            phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+        }
+
         // Check if customer exists
-        const getCustomerIdQuery = `SELECT id, phoneNumber, email, buildingType FROM customer WHERE id = ?`;
+        const getCustomerIdQuery = `SELECT id, phoneCode, phoneNumber, email, buildingType FROM marketplaceusers WHERE id = ?`;
         const [customerResult] = await connection.query(getCustomerIdQuery, [cusId]);
 
         console.log("Customer ID query result:", customerResult);
@@ -229,15 +382,16 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         }
 
         const customerId = customerResult[0].id;
+        const existingPhoneCode = customerResult[0].phoneCode;
         const existingPhoneNumber = customerResult[0].phoneNumber;
         const existingEmail = customerResult[0].email;
         const existingBuildingType = customerResult[0].buildingType;
         console.log("Using customerId:", customerId);
 
-        // Check for duplicate phone number
-        if (customerData.phoneNumber !== existingPhoneNumber) {
-            const checkPhoneQuery = `SELECT id FROM customer WHERE phoneNumber = ? AND id != ?`;
-            const [phoneResult] = await connection.query(checkPhoneQuery, [customerData.phoneNumber, customerId]);
+        // Check for duplicate phone number (compare both phoneCode and phoneNumber)
+        if (phoneCode !== existingPhoneCode || phoneNumber !== existingPhoneNumber) {
+            const checkPhoneQuery = `SELECT id FROM marketplaceusers WHERE phoneCode = ? AND phoneNumber = ? AND id != ?`;
+            const [phoneResult] = await connection.query(checkPhoneQuery, [phoneCode, phoneNumber, customerId]);
 
             if (phoneResult.length > 0) {
                 throw new Error('Phone number already exists.');
@@ -246,7 +400,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
         // Check for duplicate email
         if (customerData.email !== existingEmail) {
-            const checkEmailQuery = `SELECT id FROM customer WHERE email = ? AND id != ?`;
+            const checkEmailQuery = `SELECT id FROM marketplaceusers WHERE email = ? AND id != ?`;
             const [emailResult] = await connection.query(checkEmailQuery, [customerData.email, customerId]);
 
             if (emailResult.length > 0) {
@@ -254,17 +408,18 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
             }
         }
 
-        // Update customer
+        // Update customer with separated phone fields
         const updateCustomerQuery = `
-            UPDATE customer 
-            SET title = ?, firstName = ?, lastName = ?, phoneNumber = ?, email = ?, buildingType = ? 
+            UPDATE marketplaceusers 
+            SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? 
             WHERE id = ?`;
 
         const customerParams = [
             customerData.title,
             customerData.firstName,
             customerData.lastName,
-            customerData.phoneNumber,
+            phoneCode,
+            phoneNumber,
             customerData.email,
             customerData.buildingType,
             cusId
@@ -410,37 +565,36 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
 
 
-exports.findCustomerByPhoneOrEmail = (phoneNumber, email) => {
-    return new Promise((resolve, reject) => {
+exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
+    try {
         const sqlQuery = `
-            SELECT * FROM customer 
+            SELECT * FROM marketplaceusers 
             WHERE phoneNumber = ? OR email = ?`;
 
-        db.dash.promise().query(sqlQuery, [phoneNumber, email])
-            .then(([rows]) => {
-                if (rows.length > 0) {
-                    resolve(rows[0]);
-                } else {
-                    resolve(null);
-                }
-            })
-            .catch(error => {
-                console.error("Error finding customer:", error);
-                reject(error);
-            });
-    });
+        const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneNumber, email]);
+
+        return rows.length > 0 ? rows[0] : null;
+    } catch (error) {
+        console.error("Error finding customer:", error);
+        throw error;
+    }
 };
 
-exports.getCustomerCountBySalesAgent = async () => {
+exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
     try {
-        const connection = await db.dash.promise().getConnection();
+        const connection = await db.marketPlace.promise().getConnection();
         try {
             const [rows] = await connection.query(`
         SELECT salesAgent, COUNT(*) AS customerCount
-        FROM customer
+        FROM marketplaceusers
+        WHERE salesAgent = ?
         GROUP BY salesAgent
-      `);
-            return rows;
+      `, [salesAgentId]);
+
+
+            console.log("vfas", rows)
+            // Return the count for the specific agent, or default object if no customers found
+            return rows.length > 0 ? rows[0] : { salesAgent: parseInt(salesAgentId), customerCount: 0 };
         } finally {
             connection.release();
         }
@@ -449,7 +603,6 @@ exports.getCustomerCountBySalesAgent = async () => {
         throw new Error(`Failed to get customer count: ${error.message}`);
     }
 };
-
 
 
 

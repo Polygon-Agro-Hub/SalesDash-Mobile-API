@@ -1,4 +1,4 @@
-const orderDao = require('../dao/order-dao');
+const orderDao = require('../dao/orders-dao');
 const orderValidationSchema = require('../Validations/Order-validation');
 
 /**
@@ -6,50 +6,101 @@ const orderValidationSchema = require('../Validations/Order-validation');
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
+// exports.createOrder = async (req, res) => {
+//   try {
+//     // Validate the request body using the Joi schema
+//     //  await orderValidationSchema.validateAsync(req.body);  // Validate async to handle validation errors properly
+
+//     // Extract sales agent ID from the user (authenticated user)
+//     const salesAgentId = req.user.id;
+
+
+
+//     // Process the order using the DAO
+//     const result = await orderDao.processOrder(req.body, salesAgentId);
+//     console.log("-----------------", req.body)
+
+//     // Send a successful response with the order ID or relevant result
+//     res.status(201).json({
+//       success: true,
+//       message: 'Order created successfully',
+//       data: result // Or you can return order ID here depending on your DAO response
+//     });
+//   } catch (error) {
+//     // If validation fails or any other error occurs, catch it and send an error response
+//     console.error('Error creating order:', error);
+
+//     if (error.isJoi) {
+//       // Handle Joi validation errors
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Validation failed',
+//         error: error.details.map(err => err.message)  // Send detailed validation errors
+//       });
+//     }
+
+//     // Handle any other errors
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create order',
+//       error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+//     });
+//   }
+// };
+
+
 exports.createOrder = async (req, res) => {
   try {
-    // Validate the request body using the Joi schema
-    await orderValidationSchema.validateAsync(req.body);  // Validate async to handle validation errors properly
+    console.log('=== ENDPOINT DEBUG ===');
+    console.log('Full request body:', req.body);
+    console.log('Content-Type header:', req.headers['content-type']);
+    console.log('Request method:', req.method);
 
-    // Extract sales agent ID from the user (authenticated user)
+    // Validate the request body using the Joi schema
+    await orderValidationSchema.validateAsync(req.body);
     const salesAgentId = req.user.id;
 
 
+    const { orderData } = req.body;
 
-    // Process the order using the DAO
-    const result = await orderDao.processOrder(req.body, salesAgentId);
-    console.log("-----------------", req.body)
+    console.log('Extracted orderData:', orderData);
+    console.log('Extracted salesAgentId:', salesAgentId);
+    console.log('=== ENDPOINT DEBUG END ===');
 
-    // Send a successful response with the order ID or relevant result
-    res.status(201).json({
-      success: true,
-      message: 'Order created successfully',
-      data: result // Or you can return order ID here depending on your DAO response
-    });
-  } catch (error) {
-    // If validation fails or any other error occurs, catch it and send an error response
-    console.error('Error creating order:', error);
-
-    if (error.isJoi) {
-      // Handle Joi validation errors
+    // Validate required fields
+    if (!orderData || !salesAgentId) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        error: error.details.map(err => err.message)  // Send detailed validation errors
+        message: 'orderData and salesAgentId are required'
       });
     }
 
-    // Handle any other errors
+    if (!orderData.userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required in orderData'
+      });
+    }
+
+    console.log('before')
+    const result = await orderDao.processOrder(orderData, salesAgentId);
+    console.log('after')
+
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully',
+      data: result
+    });
+
+  } catch (error) {
+    console.error('Error creating order:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to create order',
-      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: 'Failed to create order',
+      error: error.message
     });
   }
 };
-
-
-
 
 
 
@@ -331,12 +382,17 @@ exports.getAgentAllStars = async (req, res) => {
 
 exports.getOrderCountBySalesAgent = async (req, res) => {
   try {
-    const result = await orderDao.getOrderCountBySalesAgent();
+    const salesAgentId = req.user.id; // Get from authenticated user
+    const result = await orderDao.getOrderCountBySalesAgent(salesAgentId);
+
 
     return res.status(200).json({
       success: true,
       data: result
+
     });
+
+
   } catch (error) {
     console.error('Error in getOrderCountBySalesAgent:', error);
     return res.status(500).json({
@@ -344,7 +400,9 @@ exports.getOrderCountBySalesAgent = async (req, res) => {
       message: 'Failed to fetch order count by sales agent',
       error: error.message
     });
+
   }
+
 };
 
 
