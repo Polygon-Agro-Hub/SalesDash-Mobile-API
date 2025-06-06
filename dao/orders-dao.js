@@ -425,6 +425,68 @@ async function insertProcessOrder(connection, orderId, orderData) {
 //     });
 // };
 
+// exports.getDataCustomerId = async (customerId) => {
+//     let connection;
+
+//     try {
+//         // Get connection from pool
+//         connection = await db.marketPlace.promise().getConnection();
+//         console.log('Database connection acquired');
+
+//         // First query to get basic customer info
+//         const customerSql = `
+//             SELECT 
+//                 id,
+//                 cusId,
+//                 salesAgent,
+//                 title,
+//                 firstName,
+//                 lastName,
+//                 phoneNumber,
+//                 email,
+//                 buildingType
+//             FROM marketplaceusers
+//             WHERE id = ?
+//         `;
+
+//         const [customerResults] = await connection.execute(customerSql, [customerId]);
+
+//         if (customerResults.length === 0) {
+//             return { message: 'No customer found with this ID' };
+//         }
+
+//         const customer = customerResults[0];
+//         const buildingType = customer.buildingType.toLowerCase();
+
+//         // Second query to get building details based on building type
+//         const buildingSql = `
+//             SELECT * FROM ${buildingType}
+//             WHERE customerId = ?
+//         `;
+
+//         const [buildingResults] = await connection.execute(buildingSql, [customerId]);
+
+//         // Combine customer info with building info
+//         const result = {
+//             ...customer,
+//             buildingDetails: buildingResults.length > 0 ? buildingResults[0] : null
+//         };
+
+//         return result;
+
+//     } catch (err) {
+//         console.error('Database error:', err);
+//         throw err;
+//     } finally {
+//         // Always release the connection back to the pool
+//         if (connection) {
+//             connection.release();
+//             console.log('Database connection released');
+//         }
+//     }
+// };
+
+
 exports.getDataCustomerId = async (customerId) => {
     let connection;
 
@@ -433,7 +495,7 @@ exports.getDataCustomerId = async (customerId) => {
         connection = await db.marketPlace.promise().getConnection();
         console.log('Database connection acquired');
 
-        // First query to get basic customer info
+        // First query to get basic customer info including phoneCode and phoneNumber
         const customerSql = `
             SELECT 
                 id,
@@ -442,6 +504,7 @@ exports.getDataCustomerId = async (customerId) => {
                 title,
                 firstName,
                 lastName,
+                phoneCode,
                 phoneNumber,
                 email,
                 buildingType
@@ -456,6 +519,24 @@ exports.getDataCustomerId = async (customerId) => {
         }
 
         const customer = customerResults[0];
+
+        // Combine phoneCode and phoneNumber into a single phoneNumber field
+        if (customer.phoneCode && customer.phoneNumber) {
+            customer.phoneNumber = `${customer.phoneCode}${customer.phoneNumber}`;
+        } else if (customer.phoneNumber && !customer.phoneCode) {
+            // If only phoneNumber exists, keep it as is
+            customer.phoneNumber = customer.phoneNumber;
+        } else if (customer.phoneCode && !customer.phoneNumber) {
+            // If only phoneCode exists, set phoneNumber to just the code
+            customer.phoneNumber = `${customer.phoneCode}`;
+        } else {
+            // If neither exists, set to empty string
+            customer.phoneNumber = '';
+        }
+
+        // Remove the separate phoneCode field since we've combined it
+        delete customer.phoneCode;
+
         const buildingType = customer.buildingType.toLowerCase();
 
         // Second query to get building details based on building type
@@ -485,9 +566,6 @@ exports.getDataCustomerId = async (customerId) => {
         }
     }
 };
-
-
-
 
 // exports.getOrderById = (orderId) => {
 //     return new Promise((resolve, reject) => {
