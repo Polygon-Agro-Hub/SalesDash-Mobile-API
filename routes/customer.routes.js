@@ -19,6 +19,6 @@ router.post("/check-customer", customerEp.checkCustomer);
 router.get('/cutomer-count', auth, customerEp.getCustomerCountBySalesAgent);
 
 
-
+router.get("/get-city", auth, customerEp.getAllPCity);
 
 module.exports = router;
