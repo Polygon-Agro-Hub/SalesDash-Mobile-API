@@ -709,6 +709,7 @@ exports.getOrderById = async (orderId) => {
         `;
 
         const [orderResults] = await connection.execute(sql, [orderId]);
+        console.log("oahcsn", orderResults)
 
         if (orderResults.length === 0) {
             return { message: 'No order found with the given ID' };
@@ -1138,80 +1139,65 @@ exports.cancelOrder = (orderId) => {
 
 ///// getorders
 
-// exports.getOrderCountBySalesAgent = async () => {
+
+
+
+// // Alternative function to get order counts for ALL sales agents
+// exports.getOrderCountBySalesAgent = async (salesAgentId) => {
 //     try {
 //         const connection = await db.marketPlace.promise().getConnection();
 //         try {
-//             const [rows] = await connection.query(`
-//         SELECT salesAgentId, COUNT(*) AS orderCount
-//         FROM orders
-//         GROUP BY salesAgentId
-//       `);
-//             return rows;
+//             // First get all customers assigned to this sales agent
+//             const customersQuery = `
+//                 SELECT id, firstName, lastName, salesAgent
+//                 FROM marketplaceusers 
+//                 WHERE salesAgent = ?
+//             `;
+
+//             const [customerRows] = await connection.query(customersQuery, [salesAgentId]);
+
+//             console.log("Customers for sales agent", salesAgentId, ":", customerRows);
+
+//             if (customerRows.length === 0) {
+//                 return {
+//                     salesAgentId: salesAgentId,
+//                     customerCount: 0,
+//                     orderCount: 0,
+//                     message: 'No customers assigned to this sales agent'
+//                 };
+//             }
+
+//             // Get customer IDs
+//             const customerIds = customerRows.map(customer => customer.id);
+
+//             // Get order count for all these customers
+//             const orderCountQuery = `
+//                 SELECT COUNT(*) as orderCount
+//                 FROM orders 
+//                 WHERE userId IN (${customerIds.map(() => '?').join(',')})
+//             `;
+
+//             const [orderRows] = await connection.query(orderCountQuery, customerIds);
+
+//             console.log("veukcsaj", orderRows)
+
+//             return {
+//                 salesAgentId: salesAgentId,
+//                 customerCount: customerRows.length,
+//                 orderCount: orderRows[0]?.orderCount || 0,
+//                 customers: customerRows // Optional: include customer details
+//             };
+
 //         } finally {
 //             connection.release();
 //         }
 //     } catch (error) {
 //         console.error('Error in getOrderCountBySalesAgent:', error);
-//         throw new Error(`Failed to get order count: ${error.message}`);
+//         throw error;
 //     }
 // };
 
 
-exports.getOrderCountBySalesAgent = async (salesAgentId) => {
-    try {
-        const connection = await db.marketPlace.promise().getConnection();
-        try {
-            // First verify the user is a sales agent
-            const userCheckQuery = `
-                SELECT id, firstName, lastName, salesAgent 
-                FROM marketplaceusers 
-                WHERE id = ? AND salesAgent IS NOT NULL AND salesAgent != ''
-            `;
-
-            const [userRows] = await connection.query(userCheckQuery, [salesAgentId]);
-
-            console.log("ksba", userRows);
-
-            if (userRows.length === 0) {
-                return {
-                    salesAgentUserId: salesAgentId,
-                    firstName: null,
-                    lastName: null,
-                    salesAgentCategory: null,
-                    orderCount: 0,
-                    message: 'User is not a sales agent or does not exist'
-                };
-            }
-
-            // Get order count for customers assigned to this sales agent
-            const orderCountQuery = `
-                SELECT COUNT(o.id) as orderCount
-                FROM orders o
-                INNER JOIN marketplaceusers mu ON o.userId = mu.id
-                WHERE mu.salesAgent = ?
-            `;
-
-            const [rows] = await connection.query(orderCountQuery, [salesAgentId]);
-
-            return {
-                salesAgentUserId: userRows[0].id,
-                firstName: userRows[0].firstName,
-                lastName: userRows[0].lastName,
-                salesAgentCategory: userRows[0].salesAgent,
-                orderCount: rows[0]?.orderCount || 0
-            };
-
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error in getOrderCountBySalesAgent:', error);
-        throw error;
-    }
-};
-
-// Alternative function to get order counts for ALL sales agents
 exports.getOrderCountBySalesAgent = async (salesAgentId) => {
     try {
         const connection = await db.marketPlace.promise().getConnection();
@@ -1239,21 +1225,25 @@ exports.getOrderCountBySalesAgent = async (salesAgentId) => {
             // Get customer IDs
             const customerIds = customerRows.map(customer => customer.id);
 
-            // Get order count for all these customers
+            // Get order count for current month only
             const orderCountQuery = `
                 SELECT COUNT(*) as orderCount
                 FROM orders 
                 WHERE userId IN (${customerIds.map(() => '?').join(',')})
+                AND YEAR(createdAt) = YEAR(CURDATE())
+                AND MONTH(createdAt) = MONTH(CURDATE())
             `;
 
             const [orderRows] = await connection.query(orderCountQuery, customerIds);
 
-            console.log("veukcsaj", orderRows)
+            console.log("Current month orders:", orderRows);
 
             return {
                 salesAgentId: salesAgentId,
                 customerCount: customerRows.length,
                 orderCount: orderRows[0]?.orderCount || 0,
+                month: new Date().getMonth() + 1, // Current month number
+                year: new Date().getFullYear(),   // Current year
                 customers: customerRows // Optional: include customer details
             };
 

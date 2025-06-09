@@ -607,6 +607,31 @@ exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
 
 
 
+exports.getAllCity = async () => {
+    console.log("hitpack")
+    return new Promise((resolve, reject) => {
+        const query = `
+        SELECT id, city, charge,   createdAt
+        FROM deliverycharge
+      
+        ORDER BY city ASC
+        `;
+
+        db.collectionofficer.query(query, (error, results) => {
+            if (error) {
+                console.error("Error fetching packages:", error);
+                reject(error);
+            } else {
+                resolve(results);
+            }
+        });
+    });
+};
+
+
+
+
+
 
 
 
