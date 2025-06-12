@@ -5,6 +5,8 @@ exports.getNotifications = async (req, res) => {
     const salesAgentId = req.user.id; // From auth middleware
     const { notifications, unreadCount } = await notificationDao.getNotificationsBySalesAgent(salesAgentId);
 
+    console.log("notification count", unreadCount)
+
     res.status(200).json({
       success: true,
       data: {
