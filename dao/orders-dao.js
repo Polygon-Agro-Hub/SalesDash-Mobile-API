@@ -143,7 +143,7 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
     const {
         userId,
         orderApp = 'Dash',
-        delivaryMethod = 'delivery',
+        delivaryMethod = 'Delivery',
         centerId = null, // Changed from 0 to null
         isCoupon = 0,
         couponValue = 0,
@@ -701,7 +701,9 @@ exports.getOrderById = async (orderId) => {
                 c.lastName,
                 c.phoneNumber,
                 c.buildingType,
-                p.invNo AS invoiceNumber
+                p.invNo AS invoiceNumber,
+                p.status As status,
+                p.reportStatus As reportStatus
             FROM orders o
             JOIN marketplaceusers c ON o.userId = c.id
             LEFT JOIN processorders p ON o.id = p.orderId

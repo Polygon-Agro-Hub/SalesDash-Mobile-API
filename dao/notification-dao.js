@@ -1,5 +1,53 @@
 const db = require('../startup/database');
 
+// exports.getNotificationsBySalesAgent = (salesAgentId) => {
+//   console.log(salesAgentId)
+//   return new Promise((resolve, reject) => {
+//     const query = `
+//     SELECT 
+//   dn.id,
+//   dn.orderId,
+//   dn.title,
+//   dn.readStatus,
+//   dn.createdAt,
+//   po.invNo,
+//   po.status,
+//   o.userId AS cusId,
+//   o.fullName AS customerName,
+//   CONCAT(o.phonecode1, o.phone1) AS phoneNumber
+// FROM dashnotification dn
+// JOIN processorders po ON dn.orderId = po.id
+// JOIN orders o ON  po.orderId = o.id
+// JOIN marketplaceusers mps ON o.userId = mps.id
+// WHERE mps.salesAgent = ?
+// ORDER BY dn.createdAt DESC
+
+//     `;
+
+//     const countQuery = `
+//       SELECT COUNT(*) AS unreadCount 
+//       FROM dashnotification dn
+//       JOIN orders o ON dn.orderId = o.id
+//       JOIN marketplaceusers mps ON o.userId = mps.id
+//       WHERE mps.salesAgent = ? AND dn.readStatus = 0
+//     `;
+
+//     db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
+//       if (err) return reject(err);
+
+//       db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
+//         if (err) return reject(err);
+
+//         resolve({
+//           notifications,
+//           unreadCount: countResult[0]?.unreadCount || 0
+//         });
+//       });
+//       console.log(notifications)
+//     });
+//   });
+// };
+
 exports.getNotificationsBySalesAgent = (salesAgentId) => {
   console.log(salesAgentId)
   return new Promise((resolve, reject) => {
@@ -21,13 +69,14 @@ JOIN orders o ON  po.orderId = o.id
 JOIN marketplaceusers mps ON o.userId = mps.id
 WHERE mps.salesAgent = ?
 ORDER BY dn.createdAt DESC
-
     `;
 
+    // Fixed count query with same JOIN pattern as main query
     const countQuery = `
       SELECT COUNT(*) AS unreadCount 
       FROM dashnotification dn
-      JOIN orders o ON dn.orderId = o.id
+      JOIN processorders po ON dn.orderId = po.id
+      JOIN orders o ON po.orderId = o.id
       JOIN marketplaceusers mps ON o.userId = mps.id
       WHERE mps.salesAgent = ? AND dn.readStatus = 0
     `;
@@ -103,6 +152,8 @@ exports.createPaymentReminders = async () => {
     try {
       const orders = await queryAsync(orderQuery, []);
 
+      console.log("orderdata", orders)
+
       if (!orders || orders.length === 0) {
         return resolve({ notificationCount: 0, smsCount: 0, orders: [] }); // No qualifying orders found
       }
@@ -114,7 +165,7 @@ exports.createPaymentReminders = async () => {
         orders: []
       };
 
-      console.log("check notifi ",results)
+      console.log("check notifi ", results)
 
       for (const order of orders) {
         try {

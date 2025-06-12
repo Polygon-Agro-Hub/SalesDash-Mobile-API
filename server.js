@@ -51,36 +51,36 @@ DatabaseConnection(collectionofficer, "CollectionOfficer");
 DatabaseConnection(marketPlace, "MarketPlace");
 DatabaseConnection(admin, "Admin");
 
-    const routes = {
-        auth: require('./routes/user.routes'),
-        customer: require('./routes/customer.routes'),
-        complain: require('./routes/complain.routes'),
-        packages: require('./routes/package.routes'),
-        orders: require('./routes/order.routes'),
-        notifications: require('./routes/notification.routes')
-    };
+const routes = {
+    auth: require('./routes/user.routes'),
+    customer: require('./routes/customer.routes'),
+    complain: require('./routes/complain.routes'),
+    packages: require('./routes/package.routes'),
+    orders: require('./routes/order.routes'),
+    notifications: require('./routes/notification.routes')
+};
 
-    app.use(`${BASE_PATH}/api/auth`, routes.auth);
-    app.use(`${BASE_PATH}/api/customer`, routes.customer);
-    app.use(`${BASE_PATH}/api/complain`, routes.complain);
-    app.use(`${BASE_PATH}/api/packages`, routes.packages);
-    app.use(`${BASE_PATH}/api/orders`, routes.orders);
-    app.use(`${BASE_PATH}/api/notifications`, routes.notifications);
+app.use(`${BASE_PATH}/api/auth`, routes.auth);
+app.use(`${BASE_PATH}/api/customer`, routes.customer);
+app.use(`${BASE_PATH}/api/complain`, routes.complain);
+app.use(`${BASE_PATH}/api/packages`, routes.packages);
+app.use(`${BASE_PATH}/api/orders`, routes.orders);
+app.use(`${BASE_PATH}/api/notifications`, routes.notifications);
 
-    // Error Handler
-    app.use((err, req, res, next) => {
-        console.error(err.stack);
-        res.status(500).send('Something broke!');
-    });
+// Error Handler
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
+});
 
-    // Start server
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-        console.log(`🚀 Server running on port ${PORT}`);
-        console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`📍 Base Path: ${BASE_PATH}`);
-        console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
-    });
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📍 Base Path: ${BASE_PATH}`);
+    console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
+});
 
 // dgsdgdsgdhdf
 
@@ -96,6 +96,8 @@ cron.schedule('00 18 * * *', async () => {
         console.error('Error creating payment reminders:', error);
     }
 });
+
+
 
 // cron.schedule('30 * * * * *', async () => {
 //     try {
