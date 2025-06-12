@@ -1107,37 +1107,126 @@ exports.reportOrder = (orderId, reportStatus) => {
 
 ///cancel Order
 
+// exports.cancelOrder = (orderId) => {
+//     return new Promise((resolve, reject) => {
+//         // Update order status to Cancelled
+//         const updateSql = `
+//       UPDATE market_place.processorders  
+//       SET status = 'Cancelled'
+//       WHERE orderId = ?
+//     `;
+
+//         db.marketPlace.query(updateSql, [orderId], (err, result) => {
+//             if (err) {
+//                 return reject(err);
+//             }
+
+//             // Check if any row was affected
+//             if (result.affectedRows === 0) {
+//                 return resolve({
+//                     message: 'Order not found or already cancelled'
+//                 });
+//             }
+
+//             // Return success
+//             resolve({
+//                 success: true,
+//                 message: 'Order cancelled successfully',
+//                 orderId: orderId
+//             });
+//         });
+//     });
+// };
+
 exports.cancelOrder = (orderId) => {
     return new Promise((resolve, reject) => {
-        // Update order status to Cancelled
-        const updateSql = `
-      UPDATE market_place.processorders  
-      SET status = 'Cancelled'
-      WHERE orderId = ?
-    `;
+        console.log('Starting cancelOrder for orderId:', orderId);
 
-        db.marketPlace.query(updateSql, [orderId], (err, result) => {
-            if (err) {
-                return reject(err);
+        // First, get the actual ID from processorders table
+        const selectSql = `
+            SELECT id FROM market_place.processorders 
+            WHERE orderId = ?
+        `;
+
+        db.marketPlace.query(selectSql, [orderId], (selectErr, selectResult) => {
+            if (selectErr) {
+                console.error('Error selecting order:', selectErr);
+                return reject(selectErr);
             }
 
-            // Check if any row was affected
-            if (result.affectedRows === 0) {
+            if (selectResult.length === 0) {
+                console.log('Order not found');
                 return resolve({
-                    message: 'Order not found or already cancelled'
+                    message: 'Order not found'
                 });
             }
 
-            // Return success
-            resolve({
-                success: true,
-                message: 'Order cancelled successfully',
-                orderId: orderId
+            const actualId = selectResult[0].id;
+            console.log('Found order with actual ID:', actualId);
+
+            // Update order status to Cancelled
+            const updateSql = `
+                UPDATE market_place.processorders 
+                SET status = 'Cancelled' 
+                WHERE orderId = ?
+            `;
+
+            db.marketPlace.query(updateSql, [orderId], (err, result) => {
+                if (err) {
+                    console.error('Error updating order:', err);
+                    return reject(err);
+                }
+
+                console.log('Order update result:', result);
+
+                // Check if any row was affected
+                if (result.affectedRows === 0) {
+                    console.log('No rows affected - order not found');
+                    return resolve({
+                        message: 'Order not found or already cancelled'
+                    });
+                }
+
+                // Insert notification using the actual ID (not orderId)
+                const notificationSql = `
+                    INSERT INTO dashnotification (
+                        orderId, title, readStatus, createdAt
+                    ) VALUES (?, ?, ?, NOW())
+                `;
+
+                console.log('Attempting to insert notification...');
+                console.log('Using actual ID:', actualId);
+
+                db.marketPlace.query(
+                    notificationSql,
+                    [actualId, "Order is Cancelled", 0], // Use actualId here
+                    (notifErr, notifResult) => {
+                        if (notifErr) {
+                            console.error('Failed to insert notification:', notifErr);
+                            return resolve({
+                                success: true,
+                                message: 'Order cancelled successfully but notification failed',
+                                orderId: orderId,
+                                notificationInserted: false,
+                                error: notifErr.message
+                            });
+                        }
+
+                        console.log('Notification inserted successfully:', notifResult);
+
+                        // Return success
+                        resolve({
+                            success: true,
+                            message: 'Order cancelled successfully',
+                            orderId: orderId,
+                            notificationInserted: true
+                        });
+                    }
+                );
             });
         });
     });
 };
-
 
 ///// getorders
 
