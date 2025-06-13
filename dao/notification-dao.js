@@ -61,6 +61,7 @@ exports.getNotificationsBySalesAgent = (salesAgentId) => {
   po.invNo,
   po.status,
   o.userId AS cusId,
+  mps.cusId As customerId,
   o.fullName AS customerName,
   CONCAT(o.phonecode1, o.phone1) AS phoneNumber
 FROM dashnotification dn
