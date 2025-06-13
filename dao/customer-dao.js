@@ -565,13 +565,61 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
 
 
+// exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
+//     try {
+//         const sqlQuery = `
+//             SELECT * FROM marketplaceusers 
+//             WHERE phoneNumber = ? OR email = ?`;
+
+//         const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneNumber, email]);
+
+//         return rows.length > 0 ? rows[0] : null;
+//     } catch (error) {
+//         console.error("Error finding customer:", error);
+//         throw error;
+//     }
+// };
+
+
 exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
     try {
+        // Parse the incoming phone number to extract phone code and number
+        let phoneCodeToCheck = '';
+        let phoneNumberToCheck = '';
+
+        if (phoneNumber) {
+            const fullPhone = phoneNumber.toString();
+
+            // Check if phone number starts with +94 (Sri Lanka)
+            if (fullPhone.startsWith('+94')) {
+                phoneCodeToCheck = '+94';
+                phoneNumberToCheck = fullPhone.substring(3); // Remove +94
+            }
+            // Check if phone number starts with 94 (without +)
+            else if (fullPhone.startsWith('94') && fullPhone.length > 9) {
+                phoneCodeToCheck = '+94';
+                phoneNumberToCheck = fullPhone.substring(2); // Remove 94
+            }
+            // Check if phone number starts with 0 (local format)
+            else if (fullPhone.startsWith('0')) {
+                phoneCodeToCheck = '+94';
+                phoneNumberToCheck = fullPhone.substring(1); // Remove leading 0
+            }
+            // Default case - assume it's already in correct format
+            else {
+                phoneCodeToCheck = '+94'; // Default to Sri Lanka
+                phoneNumberToCheck = fullPhone;
+            }
+
+            // Clean up phone number (remove any spaces, dashes, etc.)
+            phoneNumberToCheck = phoneNumberToCheck.replace(/[\s\-\(\)]/g, '');
+        }
+
         const sqlQuery = `
             SELECT * FROM marketplaceusers 
-            WHERE phoneNumber = ? OR email = ?`;
+            WHERE (phoneCode = ? AND phoneNumber = ?) OR email = ?`;
 
-        const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneNumber, email]);
+        const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneCodeToCheck, phoneNumberToCheck, email]);
 
         return rows.length > 0 ? rows[0] : null;
     } catch (error) {
