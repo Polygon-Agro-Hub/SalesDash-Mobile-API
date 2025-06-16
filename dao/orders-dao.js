@@ -152,7 +152,8 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
         discount = 0,
         sheduleType = 'One Time',
         sheduleDate,
-        sheduleTime
+        sheduleTime,
+        isPackage
     } = orderData;
 
     // Get title, fullName, and phone details from marketplaceusers table
@@ -186,8 +187,8 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
           userId, orderApp, delivaryMethod, centerId, buildingType,
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
-          sheduleType, sheduleDate, sheduleTime, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          sheduleType, sheduleDate, sheduleTime, isPackage ,createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, NOW())`,
         [
             userId,
             orderApp,
@@ -207,7 +208,8 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
             discount,
             sheduleType,
             formattedDate,
-            sheduleTime
+            sheduleTime,
+            isPackage
         ]
     );
 
@@ -696,6 +698,7 @@ exports.getOrderById = async (orderId) => {
                 o.total,
                 o.discount,
                 o.fullTotal,
+                o.isPackage,
                 c.title,
                 c.firstName,
                 c.lastName,
@@ -787,46 +790,108 @@ exports.getOrderById = async (orderId) => {
 
 
 
-exports.getOrderByCustomerId = (customerId) => {
+// exports.getOrderByCustomerId = (customerId) => {
+//     return new Promise((resolve, reject) => {
+//         const sql = `
+//             SELECT 
+//                 o.id AS orderId,
+//                 o.userId,
+//                 o.sheduleType,
+//                 o.sheduleDate,
+//                 o.sheduleTime,
+
+
+//                 o.createdAt,
+
+
+//                 o.total,
+//                 o.discount,
+//                 o.fullTotal,
+//                 p.invNo AS InvNo,
+//                 p.reportStatus AS reportStatus,
+//                 p.paymentMethod AS paymentMethod,
+//                 p.status As status
+//             FROM orders o
+//             LEFT JOIN market_place.processorders p ON o.id = p.orderId
+//             WHERE o.userId = ?
+//         `;
+
+//         db.marketPlace.query(sql, [customerId], (err, orderResults) => {
+//             if (err) {
+//                 return reject(err);
+//             }
+
+//             if (orderResults.length === 0) {
+//                 return resolve({ message: 'No orders found for this customer' });
+//             }
+
+//             resolve(orderResults);
+//         });
+//     });
+// };
+
+exports.getOrderByCustomerId = (customerId, page = 1, limit = 5) => {
     return new Promise((resolve, reject) => {
-        const sql = `
-            SELECT 
-                o.id AS orderId,
-                o.userId,
-                o.sheduleType,
-                o.sheduleDate,
-                o.sheduleTime,
-               
-            
-                o.createdAt,
-        
-             
-                o.total,
-                o.discount,
-                o.fullTotal,
-                p.invNo AS InvNo,
-                p.reportStatus AS reportStatus,
-                p.paymentMethod AS paymentMethod,
-                p.status As status
+        // Calculate offset for pagination
+        const offset = (page - 1) * limit;
+
+        // First, get the total count of orders for this customer
+        const countSql = `
+            SELECT COUNT(*) as totalCount
             FROM orders o
             LEFT JOIN market_place.processorders p ON o.id = p.orderId
             WHERE o.userId = ?
         `;
 
-        db.marketPlace.query(sql, [customerId], (err, orderResults) => {
+        db.marketPlace.query(countSql, [customerId], (err, countResult) => {
             if (err) {
                 return reject(err);
             }
 
-            if (orderResults.length === 0) {
+            const totalCount = countResult[0].totalCount;
+
+            if (totalCount === 0) {
                 return resolve({ message: 'No orders found for this customer' });
             }
 
-            resolve(orderResults);
+            // Now get the paginated orders
+            const ordersSql = `
+                SELECT 
+                    o.id AS orderId,
+                    o.userId,
+                    o.sheduleType,
+                    o.sheduleDate,
+                    o.sheduleTime,
+                    o.createdAt,
+                    o.total,
+                    o.discount,
+                    o.fullTotal,
+                    p.invNo AS InvNo,
+                    p.reportStatus AS reportStatus,
+                    p.paymentMethod AS paymentMethod,
+                    p.status As status
+                FROM orders o
+                LEFT JOIN market_place.processorders p ON o.id = p.orderId
+                WHERE o.userId = ?
+                ORDER BY o.createdAt DESC
+                LIMIT ? OFFSET ?
+            `;
+
+            db.marketPlace.query(ordersSql, [customerId, limit, offset], (err, orderResults) => {
+                if (err) {
+                    return reject(err);
+                }
+
+                console.log("bidshkic", orderResults)
+
+                resolve({
+                    orders: orderResults,
+                    totalCount: totalCount
+                });
+            });
         });
     });
 };
-
 
 
 
@@ -954,7 +1019,7 @@ exports.getOrderByCustomerId = (customerId) => {
 //     });
 // };
 
-exports.getAllOrderDetails = async (salesAgentId) => {
+exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     let connection;
 
     try {
@@ -962,6 +1027,31 @@ exports.getAllOrderDetails = async (salesAgentId) => {
         connection = await db.marketPlace.promise().getConnection();
         console.log('Database connection acquired');
 
+        // Ensure page and limit are integers
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const offset = (pageNum - 1) * limitNum;
+
+        console.log('Pagination params:', { page: pageNum, limit: limitNum, offset });
+
+        // First, get the total count
+        let countSql = `
+            SELECT COUNT(*) as totalCount
+            FROM orders o
+            LEFT JOIN market_place.processorders p ON o.id = p.orderId
+            LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
+        `;
+
+        const countParams = [];
+        if (salesAgentId) {
+            countSql += ` WHERE m.salesAgent = ?`;
+            countParams.push(salesAgentId);
+        }
+
+        const [countResult] = await connection.execute(countSql, countParams);
+        const totalCount = countResult[0].totalCount;
+
+        // Main query with pagination - using string interpolation for LIMIT and OFFSET
         let sql = `
             SELECT 
                 o.id AS orderId,
@@ -991,10 +1081,19 @@ exports.getAllOrderDetails = async (salesAgentId) => {
             params.push(salesAgentId);
         }
 
+        // Add ORDER BY and LIMIT/OFFSET using string interpolation
+        sql += ` ORDER BY o.createdAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
+
+        //console.log('Final SQL:', sql);
+        console.log('Params:', params);
+
         const [orderResults] = await connection.execute(sql, params);
 
         if (orderResults.length === 0) {
-            return { message: 'No orders found' };
+            return {
+                orders: [],
+                totalCount: totalCount
+            };
         }
 
         // Process each order to get corresponding address details
@@ -1056,7 +1155,10 @@ exports.getAllOrderDetails = async (salesAgentId) => {
             });
         }
 
-        return processedOrders;
+        return {
+            orders: processedOrders,
+            totalCount: totalCount
+        };
 
     } catch (err) {
         console.error('Database error:', err);

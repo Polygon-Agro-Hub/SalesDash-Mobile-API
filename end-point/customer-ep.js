@@ -186,21 +186,39 @@ exports.customerData = async (req, res) => {
 //     }
 // });
 
+// Endpoint
 exports.getCustomers = asyncHandler(async (req, res) => {
     try {
         // Get the sales agent ID from the decoded token
         const salesAgentId = req.user.id;
 
-        console.log("id", salesAgentId)
+        // Get pagination parameters from query string
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
 
-        // Get only customers assigned to this sales agent
-        const customers = await customerDAO.getCustomersBySalesAgent(salesAgentId);
+        console.log("Sales agent ID:", salesAgentId);
+        console.log("Pagination - Page:", page, "Limit:", limit);
 
-        //console.log("customers", customers)
+        // Get paginated customers assigned to this sales agent
+        const result = await customerDAO.getCustomersBySalesAgent(salesAgentId, page, limit);
 
-        res.status(200).json(customers);
+        console.log("Customers result:", result);
+
+        res.status(200).json({
+            success: true,
+            data: result.customers,
+            currentPage: result.currentPage,
+            totalPages: result.totalPages,
+            totalCount: result.totalCount,
+            hasMore: result.hasMore,
+            limit: result.limit
+        });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("Error in getCustomers endpoint:", error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 });
 
