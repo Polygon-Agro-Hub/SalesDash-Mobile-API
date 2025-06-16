@@ -105,30 +105,53 @@ exports.createOrder = async (req, res) => {
 
 
 
-exports.getAllOrderDetails = (req, res) => {
+// exports.getAllOrderDetails = (req, res) => {
 
-  const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
+//   const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
 
-  console.log("id", salesAgentId)
+//   console.log("id", salesAgentId)
 
-  orderDao.getAllOrderDetails(salesAgentId)
-    .then(orderDetails => {
-      res.status(200).json({
-        success: true,
-        count: orderDetails.length,
-        data: orderDetails
-      });
-    })
-    .catch(error => {
-      console.error('Error fetching all order details:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch order details',
-        error: error.message
-      });
+//   orderDao.getAllOrderDetails(salesAgentId)
+//     .then(orderDetails => {
+//       res.status(200).json({
+//         success: true,
+//         count: orderDetails.length,
+//         data: orderDetails
+//       });
+//     })
+//     .catch(error => {
+//       console.error('Error fetching all order details:', error);
+//       res.status(500).json({
+//         success: false,
+//         message: 'Failed to fetch order details',
+//         error: error.message
+//       });
+//     });
+// }
+
+
+exports.getAllOrderDetails = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
+
+    console.log("id", salesAgentId);
+
+    const orderDetails = await orderDao.getAllOrderDetails(salesAgentId);
+
+    res.status(200).json({
+      success: true,
+      count: orderDetails.length,
+      data: orderDetails,
     });
-}
-
+  } catch (error) {
+    console.error('Error fetching all order details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch order details',
+      error: error.message,
+    });
+  }
+};
 
 exports.getOrderById = async (req, res) => {
 
