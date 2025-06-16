@@ -4,6 +4,47 @@ const ValidationSchema = require('..//Validations/customer-validation'); // Impo
 const Joi = require('joi');
 
 
+// exports.customerData = async (req, res) => {
+//     console.log("Decoded user from token:", req.user);
+
+//     if (!req.user || !req.user.id) {
+//         return res.status(401).json({ error: "Unauthorized: No sales agent ID found" });
+//     }
+
+//     const customerData = req.body;
+//     console.log('--- Received Data -----', customerData);
+
+//     try {
+//         const salesAgent = req.user.id;
+
+//         // Validate phone number
+//         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+//         if (phoneNumberValidation.error) {
+//             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
+//         }
+
+//         // Validate email
+//         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+//         if (emailValidation.error) {
+//             return res.status(400).json({ error: emailValidation.error.details[0].message });
+//         }
+
+//         // Add customer
+//         const result = await customerDAO.addCustomer(customerData, salesAgent);
+
+//         res.status(200).json({
+//             status: "success",
+//             message: "Customer added successfully",
+//             customerId: result.customerId,
+//         });
+
+//     } catch (error) {
+//         console.error("Error while adding customer:", error);
+//         res.status(500).json({ error: error.message });
+//     }
+// };
+
+
 exports.customerData = async (req, res) => {
     console.log("Decoded user from token:", req.user);
 
@@ -17,16 +58,86 @@ exports.customerData = async (req, res) => {
     try {
         const salesAgent = req.user.id;
 
-        // Validate phone number
+        // Check if customer already exists
+        console.log('--- Checking if customer exists -----');
+        const existingCustomer = await customerDAO.findCustomerByPhoneOrEmail(customerData.phoneNumber, customerData.email);
+        if (existingCustomer) {
+            return res.status(400).json({
+                error: "Customer already exists with this phone number or email",
+                existingCustomer: {
+                    cusId: existingCustomer.cusId,
+                    firstName: existingCustomer.firstName,
+                    lastName: existingCustomer.lastName,
+                    email: existingCustomer.email,
+                    phoneNumber: existingCustomer.phoneCode + existingCustomer.phoneNumber
+                }
+            });
+        }
+
+
+
         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
         if (phoneNumberValidation.error) {
+            console.log('Phone validation error:', phoneNumberValidation.error.details[0].message);
             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
         }
 
         // Validate email
+
         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
         if (emailValidation.error) {
+            console.log('Email validation error:', emailValidation.error.details[0].message);
             return res.status(400).json({ error: emailValidation.error.details[0].message });
+        }
+
+        // Validate basic required fields
+
+        if (!customerData.firstName || customerData.firstName.trim() === '') {
+            return res.status(400).json({ error: "First name is required" });
+        }
+        if (!customerData.lastName || customerData.lastName.trim() === '') {
+            return res.status(400).json({ error: "Last name is required" });
+        }
+
+        // Validate building type
+        console.log('--- buildingtype -----', customerData.buildingType);
+        if (!customerData.buildingType) {
+            return res.status(400).json({ error: "Building type is required" });
+        }
+
+        if (!['House', 'Apartment'].includes(customerData.buildingType)) {
+            return res.status(400).json({ error: "Invalid building type. Must be either 'House' or 'Apartment'" });
+        }
+
+
+        if (customerData.buildingType === 'House') {
+            console.log('Validating house data...');
+            const houseData = {
+                houseNo: customerData.houseNo,
+                streetName: customerData.streetName,
+                city: customerData.city
+            };
+            const houseValidation = ValidationSchema.houseSchema.validate(houseData);
+            if (houseValidation.error) {
+                console.log('House validation error:', houseValidation.error.details[0].message);
+                return res.status(400).json({ error: houseValidation.error.details[0].message });
+            }
+        } else if (customerData.buildingType === 'Apartment') {
+            console.log('Validating apartment data...');
+            const apartmentData = {
+                buildingNo: customerData.buildingNo,
+                buildingName: customerData.buildingName,
+                unitNo: customerData.unitNo,
+                floorNo: customerData.floorNo,
+                houseNo: customerData.houseNo,
+                streetName: customerData.streetName,
+                city: customerData.city
+            };
+            const apartmentValidation = ValidationSchema.apartmentSchema.validate(apartmentData);
+            if (apartmentValidation.error) {
+                console.log('Apartment validation error:', apartmentValidation.error.details[0].message);
+                return res.status(400).json({ error: apartmentValidation.error.details[0].message });
+            }
         }
 
         // Add customer
@@ -40,10 +151,26 @@ exports.customerData = async (req, res) => {
 
     } catch (error) {
         console.error("Error while adding customer:", error);
-        res.status(500).json({ error: error.message });
+
+        // Handle specific database errors
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({
+                error: "Customer already exists with this information"
+            });
+        }
+
+        // Handle validation errors
+        if (error.message && error.message.includes('validation')) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        // Generic error response
+        res.status(500).json({
+            error: "An error occurred while adding the customer",
+            details: error.message
+        });
     }
 };
-
 
 // exports.getCustomers = asyncHandler(async (req, res) => {
 

@@ -21,18 +21,19 @@ exports.emailSchema = Joi.string().email().required().messages({
 
 
 // House schema (House-specific fields)
-const houseSchema = Joi.object({
+exports.houseSchema = Joi.object({
     houseNo: Joi.string().required(),  // Required for House
     streetName: Joi.string().required(),
     city: Joi.string().required(),
 });
 
 // Apartment schema (Apartment-specific fields)
-const apartmentSchema = Joi.object({
+exports.apartmentSchema = Joi.object({
     buildingNo: Joi.string().max(50),
     buildingName: Joi.string().max(100),
     unitNo: Joi.string().max(50),
     floorNo: Joi.string().max(10),
+    houseNo: Joi.string().max(10),
     streetName: Joi.string().max(100),
     city: Joi.string().max(50),
 });
