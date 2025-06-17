@@ -60,6 +60,7 @@ exports.getNotificationsBySalesAgent = (salesAgentId) => {
   dn.createdAt,
   po.invNo,
   po.status,
+  o.id as orderid,
   o.userId AS cusId,
   mps.cusId As customerId,
   o.fullName AS customerName,
