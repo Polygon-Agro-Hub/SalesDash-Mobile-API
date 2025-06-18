@@ -105,29 +105,59 @@ exports.createOrder = async (req, res) => {
 
 
 
-exports.getAllOrderDetails = (req, res) => {
+// exports.getAllOrderDetails = (req, res) => {
 
-  const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
+//   const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
 
-  console.log("id", salesAgentId)
+//   console.log("id", salesAgentId)
 
-  orderDao.getAllOrderDetails(salesAgentId)
-    .then(orderDetails => {
-      res.status(200).json({
-        success: true,
-        count: orderDetails.length,
-        data: orderDetails
-      });
-    })
-    .catch(error => {
-      console.error('Error fetching all order details:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch order details',
-        error: error.message
-      });
+//   orderDao.getAllOrderDetails(salesAgentId)
+//     .then(orderDetails => {
+//       res.status(200).json({
+//         success: true,
+//         count: orderDetails.length,
+//         data: orderDetails
+//       });
+//     })
+//     .catch(error => {
+//       console.error('Error fetching all order details:', error);
+//       res.status(500).json({
+//         success: false,
+//         message: 'Failed to fetch order details',
+//         error: error.message
+//       });
+//     });
+// }
+
+
+exports.getAllOrderDetails = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+
+    console.log("id", salesAgentId, "page", page, "limit", limit);
+
+    const result = await orderDao.getAllOrderDetails(salesAgentId, page, limit);
+
+    res.status(200).json({
+      success: true,
+      count: result.orders.length,
+      totalCount: result.totalCount,
+      currentPage: page,
+      totalPages: Math.ceil(result.totalCount / limit),
+      hasMore: page < Math.ceil(result.totalCount / limit),
+      data: result.orders,
     });
-}
+  } catch (error) {
+    console.error('Error fetching all order details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch order details',
+      error: error.message,
+    });
+  }
+};
 
 
 exports.getOrderById = async (req, res) => {
@@ -169,10 +199,46 @@ exports.getOrderById = async (req, res) => {
   }
 };
 
+// exports.getOrderByCustomerId = async (req, res) => {
+//   try {
+//     const customerId = req.params.id;
+
+
+//     if (!customerId || isNaN(parseInt(customerId))) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid customer ID'
+//       });
+//     }
+
+//     const orders = await orderDao.getOrderByCustomerId(customerId);
+
+//     if (orders.message) {
+//       return res.status(404).json({
+//         success: false,
+//         message: orders.message
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       data: orders
+//     });
+//   } catch (error) {
+//     console.error('Error fetching orders by customer ID:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch order details',
+//       error: error.message
+//     });
+//   }
+// };
+
 exports.getOrderByCustomerId = async (req, res) => {
   try {
     const customerId = req.params.id;
-
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
 
     if (!customerId || isNaN(parseInt(customerId))) {
       return res.status(400).json({
@@ -181,18 +247,29 @@ exports.getOrderByCustomerId = async (req, res) => {
       });
     }
 
-    const orders = await orderDao.getOrderByCustomerId(customerId);
+    if (page < 1 || limit < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Page and limit must be positive integers'
+      });
+    }
 
-    if (orders.message) {
+    const result = await orderDao.getOrderByCustomerId(customerId, page, limit);
+
+    if (result.message) {
       return res.status(404).json({
         success: false,
-        message: orders.message
+        message: result.message
       });
     }
 
     res.status(200).json({
       success: true,
-      data: orders
+      data: result.orders,
+      totalCount: result.totalCount,
+      currentPage: page,
+      totalPages: Math.ceil(result.totalCount / limit),
+      hasMore: page * limit < result.totalCount
     });
   } catch (error) {
     console.error('Error fetching orders by customer ID:', error);
@@ -203,6 +280,7 @@ exports.getOrderByCustomerId = async (req, res) => {
     });
   }
 };
+
 
 
 exports.getCustomerDetailsCustomerId = async (req, res) => {

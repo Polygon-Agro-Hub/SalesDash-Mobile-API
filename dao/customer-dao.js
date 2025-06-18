@@ -163,11 +163,23 @@ const insertBuildingData = async (customerId, customerData) => {
 //     });
 // };
 
-exports.getCustomersBySalesAgent = (salesAgentId) => {
-    console.log(`Getting customers for sales agent ID: ${salesAgentId}`);
+// DAO
+exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
+    console.log(`Getting customers for sales agent ID: ${salesAgentId}, Page: ${page}, Limit: ${limit}`);
 
     return new Promise((resolve, reject) => {
-        const sqlQuery = `
+        // Calculate offset for pagination
+        const offset = (page - 1) * limit;
+
+        // First, get the total count
+        const countQuery = `
+            SELECT COUNT(DISTINCT c.id) as totalCount
+            FROM marketplaceusers c
+            WHERE c.salesAgent = ?
+        `;
+
+        // Main query with pagination
+        const dataQuery = `
             SELECT 
                 c.id,
                 c.cusId,
@@ -182,39 +194,59 @@ exports.getCustomersBySalesAgent = (salesAgentId) => {
             FROM marketplaceusers c
             LEFT JOIN orders o ON c.id = o.userId
             WHERE c.salesAgent = ?
-            GROUP BY c.id
+            GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buildingType
             ORDER BY c.id
+            LIMIT ? OFFSET ?
         `;
 
-        // Use marketPlace directly or db.marketPlace if you updated the config
-        db.marketPlace.promise().query(sqlQuery, [salesAgentId])
-            .then(([rows]) => {
-                console.log(`Found ${rows.length} customers for sales agent ${salesAgentId}`);
+        // Execute count query first
+        db.marketPlace.promise().query(countQuery, [salesAgentId])
+            .then(([countResult]) => {
+                const totalCount = countResult[0].totalCount;
+                const totalPages = Math.ceil(totalCount / limit);
+                const hasMore = page < totalPages;
 
-                // Process each row to combine phoneCode and phoneNumber
-                const processedRows = rows.map(customer => {
-                    // Combine phoneCode and phoneNumber into a single phoneNumber field
-                    if (customer.phoneCode && customer.phoneNumber) {
-                        customer.phoneNumber = `${customer.phoneCode}${customer.phoneNumber}`;
-                    } else if (customer.phoneNumber && !customer.phoneCode) {
-                        // If only phoneNumber exists, keep it as is
-                        customer.phoneNumber = customer.phoneNumber;
-                    } else if (customer.phoneCode && !customer.phoneNumber) {
-                        // If only phoneCode exists, set phoneNumber to just the code
-                        customer.phoneNumber = `${customer.phoneCode}`;
-                    } else {
-                        // If neither exists, set to empty string
-                        customer.phoneNumber = '';
-                    }
+                console.log(`Total customers: ${totalCount}, Total pages: ${totalPages}, Current page: ${page}`);
 
-                    // Remove the separate phoneCode field since we've combined it
-                    delete customer.phoneCode;
+                // Execute data query
+                return db.marketPlace.promise().query(dataQuery, [salesAgentId, limit, offset])
+                    .then(([rows]) => {
+                        console.log(`Found ${rows.length} customers for sales agent ${salesAgentId} on page ${page}`);
 
-                    return customer;
-                });
+                        // Process each row to combine phoneCode and phoneNumber
+                        const processedRows = rows.map(customer => {
+                            // Combine phoneCode and phoneNumber into a single phoneNumber field
+                            if (customer.phoneCode && customer.phoneNumber) {
+                                customer.phoneNumber = `${customer.phoneCode}${customer.phoneNumber}`;
+                            } else if (customer.phoneNumber && !customer.phoneCode) {
+                                // If only phoneNumber exists, keep it as is
+                                customer.phoneNumber = customer.phoneNumber;
+                            } else if (customer.phoneCode && !customer.phoneNumber) {
+                                // If only phoneCode exists, set phoneNumber to just the code
+                                customer.phoneNumber = `${customer.phoneCode}`;
+                            } else {
+                                // If neither exists, set to empty string
+                                customer.phoneNumber = '';
+                            }
 
-                console.log('Processed query result:', processedRows);
-                resolve(processedRows);
+                            // Remove the separate phoneCode field since we've combined it
+                            delete customer.phoneCode;
+
+                            return customer;
+                        });
+
+                        const result = {
+                            customers: processedRows,
+                            currentPage: page,
+                            totalPages: totalPages,
+                            totalCount: totalCount,
+                            hasMore: hasMore,
+                            limit: limit
+                        };
+
+                        console.log('Processed query result:', result);
+                        resolve(result);
+                    });
             })
             .catch(error => {
                 console.error('Database query error:', error);
@@ -565,13 +597,61 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
 
 
 
+// exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
+//     try {
+//         const sqlQuery = `
+//             SELECT * FROM marketplaceusers 
+//             WHERE phoneNumber = ? OR email = ?`;
+
+//         const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneNumber, email]);
+
+//         return rows.length > 0 ? rows[0] : null;
+//     } catch (error) {
+//         console.error("Error finding customer:", error);
+//         throw error;
+//     }
+// };
+
+
 exports.findCustomerByPhoneOrEmail = async (phoneNumber, email) => {
     try {
+        // Parse the incoming phone number to extract phone code and number
+        let phoneCodeToCheck = '';
+        let phoneNumberToCheck = '';
+
+        if (phoneNumber) {
+            const fullPhone = phoneNumber.toString();
+
+            // Check if phone number starts with +94 (Sri Lanka)
+            if (fullPhone.startsWith('+94')) {
+                phoneCodeToCheck = '+94';
+                phoneNumberToCheck = fullPhone.substring(3); // Remove +94
+            }
+            // Check if phone number starts with 94 (without +)
+            else if (fullPhone.startsWith('94') && fullPhone.length > 9) {
+                phoneCodeToCheck = '+94';
+                phoneNumberToCheck = fullPhone.substring(2); // Remove 94
+            }
+            // Check if phone number starts with 0 (local format)
+            else if (fullPhone.startsWith('0')) {
+                phoneCodeToCheck = '+94';
+                phoneNumberToCheck = fullPhone.substring(1); // Remove leading 0
+            }
+            // Default case - assume it's already in correct format
+            else {
+                phoneCodeToCheck = '+94'; // Default to Sri Lanka
+                phoneNumberToCheck = fullPhone;
+            }
+
+            // Clean up phone number (remove any spaces, dashes, etc.)
+            phoneNumberToCheck = phoneNumberToCheck.replace(/[\s\-\(\)]/g, '');
+        }
+
         const sqlQuery = `
             SELECT * FROM marketplaceusers 
-            WHERE phoneNumber = ? OR email = ?`;
+            WHERE (phoneCode = ? AND phoneNumber = ?) OR email = ?`;
 
-        const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneNumber, email]);
+        const [rows] = await db.marketPlace.promise().query(sqlQuery, [phoneCodeToCheck, phoneNumberToCheck, email]);
 
         return rows.length > 0 ? rows[0] : null;
     } catch (error) {
