@@ -1,5 +1,6 @@
 const orderDao = require('../dao/orders-dao');
 const orderValidationSchema = require('../Validations/Order-validation');
+const smsService = require('../services/sms-service');
 
 /**
  * Create a new order
@@ -49,6 +50,61 @@ const orderValidationSchema = require('../Validations/Order-validation');
 // };
 
 
+// exports.createOrder = async (req, res) => {
+//   try {
+//     console.log('=== ENDPOINT DEBUG ===');
+//     console.log('Full request body:', req.body);
+//     console.log('Content-Type header:', req.headers['content-type']);
+//     console.log('Request method:', req.method);
+
+//     // Validate the request body using the Joi schema
+//     await orderValidationSchema.validateAsync(req.body);
+//     const salesAgentId = req.user.id;
+
+
+//     const { orderData } = req.body;
+
+//     console.log('Extracted orderData:', orderData);
+//     console.log('Extracted salesAgentId:', salesAgentId);
+//     console.log('=== ENDPOINT DEBUG END ===');
+
+//     // Validate required fields
+//     if (!orderData || !salesAgentId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'orderData and salesAgentId are required'
+//       });
+//     }
+
+//     if (!orderData.userId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'userId is required in orderData'
+//       });
+//     }
+
+//     console.log('before')
+//     const result = await orderDao.processOrder(orderData, salesAgentId);
+//     console.log('after')
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Order created successfully',
+//       data: result
+//     });
+
+//   } catch (error) {
+//     console.error('Error creating order:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create order',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
 exports.createOrder = async (req, res) => {
   try {
     console.log('=== ENDPOINT DEBUG ===');
@@ -59,7 +115,6 @@ exports.createOrder = async (req, res) => {
     // Validate the request body using the Joi schema
     await orderValidationSchema.validateAsync(req.body);
     const salesAgentId = req.user.id;
-
 
     const { orderData } = req.body;
 
@@ -82,9 +137,12 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    console.log('before')
+    console.log('before processOrder');
     const result = await orderDao.processOrder(orderData, salesAgentId);
-    console.log('after')
+    console.log('after processOrder');
+
+    // NOTE: SMS is already sent inside processOrder function
+    // No need to call it again here unless you want to send additional notifications
 
     res.status(201).json({
       success: true,
@@ -101,7 +159,6 @@ exports.createOrder = async (req, res) => {
     });
   }
 };
-
 
 
 
