@@ -708,11 +708,94 @@ exports.getAllCity = async () => {
     });
 };
 
+exports.getAllCrops = async () => {
+    try {
+        const query = `
+        SELECT 
+            mpi.id, mpi.varietyId, mpi.displayName,
+            pc.image
+        FROM marketplaceitems mpi
+        JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId
+         LEFT JOIN excludelist el ON mpi.id = el.mpItemId
+         WHERE el.mpItemId IS NULL
+        ORDER BY displayName ASC;
+        `;
+        const [results] = await db.marketPlace.promise().query(query);
+        return results;
+    } catch (error) {
+        console.error("Error fetching crops:", error);
+        throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+    }
+};
 
+exports.addExcludeList = async (customerId, selectedCrops) => {
+  try {
+    // Prepare the query to insert each selected crop into the ExcludeList table
+    const query = `
+      INSERT INTO excludelist (userId, mpItemId)
+      VALUES ?
+    `;
+    
+    const values = selectedCrops.map((cropId) => [customerId, cropId]);
+    console.log(values)
 
+    // Execute the query
+    await db.marketPlace.promise().query(query, [values]);
+    
+    return { message: "Exclude list updated successfully" };
+  } catch (error) {
+    console.error("Error adding exclude list:", error);
+    throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
+  }
+};
 
+exports.getExcludeList = async (customerId) => {
+  try {
+    // Correct query with parameterized customerId
+    const query = `
+      SELECT 
+        el.id AS excludeId, 
+        el.userId, 
+        mpi.id AS marketplaceItemId, 
+        mpi.displayName, 
+        pc.image,
+        mps.cusId,
+        mps.firstName,
+        mps.lastName,
+         mps.title
+      FROM excludelist el
+      LEFT JOIN marketplaceitems mpi ON mpi.id = el.mpItemId 
+      LEFT JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId  
+      LEFT JOIN marketplaceusers mps ON mps.id = el.userId  
+      WHERE el.userId = ? 
+      ORDER BY mpi.displayName ASC; 
+    `;
+    // Execute the query with customerId as a parameter
+    const [results] = await db.marketPlace.promise().query(query, [customerId]);
 
+    console.log("Exclude list for customer:", results);  // Log the results for debugging
+    return results;  // Return the exclude list data
+  } catch (error) {
+    console.error("Error fetching exclude list:", error);
+    throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+  }
+};
 
+exports.deleteExcludeItem = async (excludeId) => {
+    console.log(excludeId)
+  try {
+    const query = `
+      DELETE FROM excludelist 
+      WHERE Id = ?
+    `;
+    await db.marketPlace.promise().query(query, [excludeId]);
+    
+    return { message: "Exclude list updated successfully" };
+  } catch (error) {
+    console.error("Error adding exclude list:", error);
+    throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
+  }
+};
 
 
 
