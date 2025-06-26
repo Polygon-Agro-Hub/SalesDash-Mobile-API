@@ -708,7 +708,8 @@ exports.getAllCity = async () => {
     });
 };
 
-exports.getAllCrops = async () => {
+exports.getAllCrops = async (cusId) => {
+    const CustomerId = cusId.customerId
     try {
         const query = `
         SELECT 
@@ -716,11 +717,14 @@ exports.getAllCrops = async () => {
             pc.image
         FROM marketplaceitems mpi
         JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId
-         LEFT JOIN excludelist el ON mpi.id = el.mpItemId
-         WHERE el.mpItemId IS NULL
+       WHERE mpi.id NOT IN ( 
+        SELECT mpItemId 
+        FROM excludelist 
+        WHERE userId = ?
+      )
         ORDER BY displayName ASC;
         `;
-        const [results] = await db.marketPlace.promise().query(query);
+        const [results] = await db.marketPlace.promise().query(query, [CustomerId]);
         return results;
     } catch (error) {
         console.error("Error fetching crops:", error);
@@ -749,10 +753,42 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
   }
 };
 
+// exports.getExcludeList = async (customerId) => {
+//   try {
+//     // Correct query with parameterized customerId
+    // const query = `
+    //   SELECT 
+    //     el.id AS excludeId, 
+    //     el.userId, 
+    //     mpi.id AS marketplaceItemId, 
+    //     mpi.displayName, 
+    //     pc.image,
+    //     mps.cusId,
+    //     mps.firstName,
+    //     mps.lastName,
+    //      mps.title
+    //   FROM excludelist el
+    //   LEFT JOIN marketplaceitems mpi ON mpi.id = el.mpItemId 
+    //   LEFT JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId  
+    //   LEFT JOIN marketplaceusers mps ON mps.id = el.userId  
+    //   WHERE el.userId = ? 
+    //   ORDER BY mpi.displayName ASC; 
+    // `;
+//     // Execute the query with customerId as a parameter
+//     const [results] = await db.marketPlace.promise().query(query, [customerId]);
+
+//     console.log("Exclude list for customer:", results);  // Log the results for debugging
+//     return results;  // Return the exclude list data
+//   } catch (error) {
+//     console.error("Error fetching exclude list:", error);
+//     throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+//   }
+// };
 exports.getExcludeList = async (customerId) => {
+    console.log("cuuuuuuuuuuuu", customerId)
   try {
     // Correct query with parameterized customerId
-    const query = `
+     const query = `
       SELECT 
         el.id AS excludeId, 
         el.userId, 
@@ -762,12 +798,12 @@ exports.getExcludeList = async (customerId) => {
         mps.cusId,
         mps.firstName,
         mps.lastName,
-         mps.title
-      FROM excludelist el
+        mps.title
+      FROM marketplaceusers mps
+      LEFT JOIN excludelist el ON el.userId = mps.id
       LEFT JOIN marketplaceitems mpi ON mpi.id = el.mpItemId 
       LEFT JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId  
-      LEFT JOIN marketplaceusers mps ON mps.id = el.userId  
-      WHERE el.userId = ? 
+      WHERE mps.id = ?  -- Filter by customerId
       ORDER BY mpi.displayName ASC; 
     `;
     // Execute the query with customerId as a parameter
@@ -780,7 +816,6 @@ exports.getExcludeList = async (customerId) => {
     throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
   }
 };
-
 exports.deleteExcludeItem = async (excludeId) => {
     console.log(excludeId)
   try {

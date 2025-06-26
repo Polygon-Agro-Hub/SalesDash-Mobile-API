@@ -359,7 +359,9 @@ exports.getAllPCity = asyncHandler(async (req, res) => {
 
 exports.getAllCrops = asyncHandler(async (req, res) => {
     try {
-        const crops = await customerDAO.getAllCrops();
+        const cusId = req.query
+        console.log("ccccccccccccccccc",cusId)
+        const crops = await customerDAO.getAllCrops(cusId);
         if (!crops || crops.length === 0) {
             return res.status(404).json({ message: "No crops found" });
         }
@@ -377,6 +379,7 @@ exports.addExcludeList = asyncHandler(async (req,res) =>{
   
     try{
           const { customerId, selectedCrops } = req.body;
+
         if (!customerId || !Array.isArray(selectedCrops)) {
       return res.status(400).json({ message: "Invalid request. 'customerId' and 'selectedCrops' are required." });
     }

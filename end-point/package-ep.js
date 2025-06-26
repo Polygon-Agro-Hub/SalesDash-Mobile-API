@@ -96,9 +96,11 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
 
 exports.getAllCrops = asyncHandler(async (req, res) => {
     console.log("✅ API /crops/all hit!");
+  const cusId = req.query;
+  console.log(cusId)
 
     try {
-        const crops = await packageDAO.getAllCrops();
+        const crops = await packageDAO.getAllCrops(cusId);
         if (!crops || crops.length === 0) {
             console.log("🚨 No crops found in DB");
             return res.status(404).json({ message: "No crops found" });
