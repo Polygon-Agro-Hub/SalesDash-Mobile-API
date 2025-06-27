@@ -21,4 +21,9 @@ router.get('/cutomer-count', auth, customerEp.getCustomerCountBySalesAgent);
 
 router.get("/get-city", auth, customerEp.getAllPCity);
 
+router.get('/croplist', auth, customerEp.getAllCrops);
+router.post('/add/excludelist', customerEp.addExcludeList)
+router.get('/excludelist', customerEp.getCustomerExludelist)
+
+router.delete('/excludelist/delete', customerEp.deleteExcludeItem)
 module.exports = router;
