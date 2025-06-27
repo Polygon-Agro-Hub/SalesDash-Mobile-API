@@ -357,9 +357,89 @@ exports.getAllPCity = asyncHandler(async (req, res) => {
 });
 
 
+exports.getAllCrops = asyncHandler(async (req, res) => {
+    try {
+        const cusId = req.query
+        console.log("ccccccccccccccccc",cusId)
+        const crops = await customerDAO.getAllCrops(cusId);
+        if (!crops || crops.length === 0) {
+            return res.status(404).json({ message: "No crops found" });
+        }
+        res.status(200).json({
+            message: "Crops fetched successfully",
+            data: crops,
+        });
+    } catch (error) {
+        console.error("❌ Error fetching crops:", error);
+        res.status(500).json({ message: "Failed to fetch crops", error: error.message });
+    }
+});
 
+exports.addExcludeList = asyncHandler(async (req,res) =>{
+  
+    try{
+          const { customerId, selectedCrops } = req.body;
 
+        if (!customerId || !Array.isArray(selectedCrops)) {
+      return res.status(400).json({ message: "Invalid request. 'customerId' and 'selectedCrops' are required." });
+    }
 
+    // Call DAO to add selected crops to the exclude list
+      const result = await customerDAO.addExcludeList(customerId, selectedCrops);
+
+     if (result) {
+      return res.status(200).json({ message: "Exclude list updated successfully" });
+    } else {
+      return res.status(404).json({ message: "Customer not found or no crops to update" });
+    }
+  } catch (err) {
+    console.error("Error in addExcludeList controller:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+})
+
+exports.getCustomerExludelist = asyncHandler(async (req, res) => {
+    try {
+        const { customerId } = req.query;
+        console.log(customerId)
+        const crops = await customerDAO.getExcludeList(customerId);
+        if (!crops || crops.length === 0) {
+            return res.status(404).json({ message: "No crops found" });
+        }
+        res.status(200).json({
+            message: "Crops fetched successfully",
+            data: crops,
+        });
+    } catch (error) {
+        console.error("❌ Error fetching crops:", error);
+        res.status(500).json({ message: "Failed to fetch crops", error: error.message });
+    }
+});
+
+exports.deleteExcludeItem = asyncHandler(async (req, res) => {
+    console.log("hittt")
+  try {
+    const { excludeId } = req.query;  // Use req.body for DELETE request
+    console.log(excludeId)
+
+    if (!excludeId) {
+      return res.status(400).json({ message: "excludeId is required" });
+    }
+
+    console.log("Deleting exclude item with ID:", excludeId);
+
+    // Call the DAO to delete the item
+    const result = await customerDAO.deleteExcludeItem(excludeId);
+
+    res.status(200).json({
+      message: "Item deleted successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("❌ Error deleting item:", error);
+    res.status(500).json({ message: "Failed to delete item", error: error.message });
+  }
+});
 
 
 
