@@ -233,6 +233,8 @@ exports.getOrderById = async (req, res) => {
 
     const order = await orderDao.getOrderById(orderId);
 
+    console.log("data order hhhhhhhhhhhh", order)
+
     if (order.message) {
       return res.status(404).json({
         success: false,
