@@ -154,18 +154,15 @@ exports.getMarketplacePackage = async (packageId) => {
 
 
 
-
-
-
 // exports.getAllCrops = async () => {
 //     try {
 //         const query = `
 //         SELECT 
-//             id, varietyId, displayName, category, 
-//             normalPrice, discountedPrice, discount, 
-//             promo, unitType, startValue, changeby,tags
-//         FROM marketplaceitems;
-
+//             id, varietyId, displayName, category,
+//             normalPrice, discountedPrice, discount,
+//             promo, unitType, startValue, changeby, tags
+//         FROM marketplaceitems
+//         ORDER BY displayName ASC;
 //         `;
 
 //         console.log("Executing query:", query);
@@ -179,28 +176,76 @@ exports.getMarketplacePackage = async (packageId) => {
 //     }
 // };
 
-exports.getAllCrops = async () => {
+// exports.getAllCrops = async (cusId) => {
+//     let query;
+//     let queryParams = [];
+
+//     if (cusId && cusId.id) {
+//         // If cusId is provided, filter by customer and category
+//         const customerId = cusId.id;
+//         query = `
+//         SELECT 
+//             mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
+//             mpi.normalPrice, mpi.discountedPrice, mpi.discount,
+//             mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
+//         FROM marketplaceitems mpi
+//         LEFT JOIN excludelist el ON el.mpItemId = mpi.id AND el.userId = ?
+//         WHERE el.mpItemId IS NULL  
+//         AND mpi.category = 'Retail'
+//         ORDER BY mpi.displayName ASC;
+//         `;
+//         queryParams = [customerId]; // Using customerId for the query
+//     } else {
+//         // If cusId is not provided, fetch all marketplace items with 'Retail' category
+//         query = `
+//         SELECT 
+//             id, varietyId, displayName, category,
+//             normalPrice, discountedPrice, discount,
+//             promo, unitType, startValue, changeby, tags
+//         FROM marketplaceitems
+//         WHERE category = 'Retail'
+//         ORDER BY displayName ASC;
+//         `;
+//         queryParams = []; // No need for a customerId filter
+//     }
+
+//     try {
+//         console.log("Executing query:", query);
+//         const [results] = await db.marketPlace.promise().query(query, queryParams);
+
+//         console.log("Results fetched from DB:", results);
+//         return results;
+//     } catch (error) {
+//         console.error("Error fetching crops:", error);
+//         throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+//     }
+// };
+
+exports.getAllCrops = async (cusId) => {
+    const customerId = cusId.id;
     try {
         const query = `
         SELECT 
-            id, varietyId, displayName, category,
-            normalPrice, discountedPrice, discount,
-            promo, unitType, startValue, changeby, tags
-        FROM marketplaceitems
-        ORDER BY displayName ASC;
+            mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
+            mpi.normalPrice, mpi.discountedPrice, mpi.discount,
+            mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
+        FROM marketplaceitems mpi
+        LEFT JOIN excludelist el ON el.mpItemId = mpi.id AND el.userId = ?
+        WHERE el.mpItemId IS NULL  
+        AND mpi.category = 'Retail'
+        ORDER BY mpi.displayName ASC;
         `;
 
         console.log("Executing query:", query);
-        const [results] = await db.marketPlace.promise().query(query);
+        const [results] = await db.marketPlace.promise().query(query, [customerId]);
 
         console.log("Results fetched from DB:", results);
         return results;
     } catch (error) {
         console.error("Error fetching crops:", error);
-        throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+        throw new Error("Database error: " + error.message);  
     }
 };
-
 
 
 exports.getCropById = async (id) => {
