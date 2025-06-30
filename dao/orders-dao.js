@@ -1188,10 +1188,16 @@ exports.getOrderById = async (orderId) => {
                 c.buildingType,
                 p.invNo AS invoiceNumber,
                 p.status As status,
-                p.reportStatus As reportStatus
+                p.reportStatus As reportStatus,
+                oai.qty,
+                oai.productId,
+                oai.unit,
+                oai.price,
+                oai.discount
             FROM orders o
             JOIN marketplaceusers c ON o.userId = c.id
             LEFT JOIN processorders p ON o.id = p.orderId
+            LEFT JOIN orderadditionalitems oai ON oai.orderId = o.id
             WHERE o.id = ?
         `;
 
@@ -1207,6 +1213,14 @@ exports.getOrderById = async (orderId) => {
         const buildingType = order.buildingType;
 
         let formattedAddress = '';
+
+          const items = orderResults.map(item => ({
+            productId: item.productId,
+            qty: parseFloat(item.qty),  // Ensure qty is a number
+            unit: item.unit,
+            price: parseFloat(item.price),  // Ensure price is a number
+            discount: parseFloat(item.discount)  // Ensure discount is a number
+        }));
 
         if (buildingType === 'House') {
             const addressSql = `
@@ -1253,9 +1267,11 @@ exports.getOrderById = async (orderId) => {
             }
         }
 
+        console.log("items", items)
         return {
             ...order,
-            fullAddress: formattedAddress
+            fullAddress: formattedAddress,
+            items : items
         };
 
     } catch (err) {
