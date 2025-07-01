@@ -381,7 +381,7 @@ const smsService = require('../services/sms-service');
  * Process a complete order with transaction support for Market Place
  * @param {Object} orderData - Complete order data from request
  * @param {Number} salesAgentId - ID of the sales agent
- * @returns {Promise<{orderId: number}>} Object containing the new order ID
+ * @returns {Promise<{orderId: number, processOrderId: number}>} Object containing the new order ID and process order ID
  */
 exports.processOrder = async (orderData, salesAgentId) => {
     console.time('process-order');
@@ -402,21 +402,25 @@ exports.processOrder = async (orderData, salesAgentId) => {
         const userDetails = await getUserDetails(connection, orderData.userId);
         console.log(`User details retrieved for ID: ${orderData.userId}`);
 
-        // STEP 2: Insert main order record
+        // STEP 2: Insert main order record FIRST
         const orderId = await insertMainOrder(connection, orderData, salesAgentId, userDetails);
         console.log(`Main order created with ID: ${orderId}`);
 
-        // STEP 3: Insert address data based on building type
+        // STEP 3: Insert into processorders table SECOND
+        const processOrderId = await insertProcessOrder(connection, orderId, orderData);
+        console.log(`Process order record created with ID: ${processOrderId}`);
+
+        // STEP 4: Insert address data based on building type
         await insertAddressData(connection, orderId, orderData, userDetails);
         console.log('Address data inserted');
 
         await updateSalesAgentStars(connection, salesAgentId);
         console.log('Sales agent stars updated');
 
-        // STEP 4: Process order based on isPackage flag
+        // STEP 5: Process order based on isPackage flag
         if (orderData.isPackage === 1) {
-            // Package order - Insert into orderpackage table
-            await insertOrderPackage(connection, orderId, orderData);
+            // Package order - Insert into orderpackage table using processOrderId
+            await insertOrderPackage(connection, processOrderId, orderData);
             console.log('Package order inserted into orderpackage table');
 
             // Process items array for package orders (NEW LOGIC)
@@ -436,10 +440,6 @@ exports.processOrder = async (orderData, salesAgentId) => {
             console.log('Regular order items processed');
         }
 
-        // STEP 5: Insert into processorders table
-        await insertProcessOrder(connection, orderId, orderData);
-        console.log('Process order record created');
-
         // Commit transaction if everything succeeded
         await connection.commit();
         transactionStarted = false;
@@ -447,7 +447,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
 
         // STEP 6: Send order confirmation SMS after successful order processing
         try {
-            await sendOrderConfirmationSMS(orderId, orderData.userId, userDetails, orderData, connection);
+            await sendOrderConfirmationSMS(orderId, processOrderId, orderData.userId, userDetails, orderData, connection);
             console.log('Enhanced order confirmation SMS sent successfully');
         } catch (smsError) {
             // Log SMS error but don't fail the entire order since it's already committed
@@ -456,7 +456,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
         }
 
         console.timeEnd('process-order');
-        return { orderId };
+        return { orderId, processOrderId };
 
     } catch (error) {
         console.error('Error in processOrder:', error);
@@ -595,6 +595,45 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
     return result.insertId;
 }
 
+// Helper function to insert process order record - NOW RETURNS THE processOrderId
+async function insertProcessOrder(connection, orderId, orderData) {
+    // Generate Invoice Number (YYMMDDRRRR)
+    const today = new Date();
+    const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+    // Get the current max sequence number for today
+    const [sequenceResult] = await connection.query(
+        'SELECT MAX(invNo) as maxInvNo FROM processorders WHERE invNo LIKE ?',
+        [`${datePrefix}%`]
+    );
+
+    let sequenceNumber = 1;
+    if (sequenceResult[0] && sequenceResult[0].maxInvNo) {
+        sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+    }
+
+    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+
+    // Insert process order record
+    const [result] = await connection.query(
+        `INSERT INTO processorders (
+          orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+            orderId,
+            invNo,
+            orderData.transactionId || '',
+            orderData.paymentMethod || 'cash',
+            0,
+            0,
+            'Ordered'
+        ]
+    );
+
+    console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
+    return result.insertId; // Return the processOrderId
+}
+
 // Helper function to insert address data (house/apartment)
 async function insertAddressData(connection, orderId, orderData, userDetails) {
     const buildingTypeInt = getBuildingTypeInt(userDetails.buildingType);
@@ -683,20 +722,21 @@ async function updateSalesAgentStars(connection, salesAgentId) {
     }
 }
 
-// Helper function to insert package order into orderpackage table
-async function insertOrderPackage(connection, orderId, orderData) {
+// FIXED: Helper function to insert package order into orderpackage table using processOrderId
+async function insertOrderPackage(connection, processOrderId, orderData) {
     const { packageId } = orderData;
 
     if (!packageId) {
         throw new Error('Package ID is required for package orders (isPackage = 1)');
     }
 
+    // Now using processOrderId instead of orderId
     await connection.query(
         'INSERT INTO orderpackage (orderid, packageId, createdAt) VALUES (?, ?, NOW())',
-        [orderId, packageId]
+        [processOrderId, packageId]
     );
 
-    console.log(`Package order inserted: orderId=${orderId}, packageId=${packageId}`);
+    console.log(`Package order inserted: processOrderId=${processOrderId}, packageId=${packageId}`);
 }
 
 // Helper function to process regular order items (isPackage = 0)
@@ -729,44 +769,8 @@ async function insertAdditionalItems(connection, orderId, items) {
     }
 }
 
-// Helper function to insert process order record
-async function insertProcessOrder(connection, orderId, orderData) {
-    // Generate Invoice Number (YYMMDDRRRR)
-    const today = new Date();
-    const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
-
-    // Get the current max sequence number for today
-    const [sequenceResult] = await connection.query(
-        'SELECT MAX(invNo) as maxInvNo FROM processorders WHERE invNo LIKE ?',
-        [`${datePrefix}%`]
-    );
-
-    let sequenceNumber = 1;
-    if (sequenceResult[0] && sequenceResult[0].maxInvNo) {
-        sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
-    }
-
-    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
-
-    // Insert process order record
-    await connection.query(
-        `INSERT INTO processorders (
-          orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [
-            orderId,
-            invNo,
-            orderData.transactionId || '',
-            orderData.paymentMethod || 'cash',
-            0,
-            0,
-            'Ordered'
-        ]
-    );
-}
-
 // FIXED: Enhanced helper function to send order confirmation SMS with total price, schedule date, and invoice number
-async function sendOrderConfirmationSMS(orderId, userId, userDetails, orderData, connection) {
+async function sendOrderConfirmationSMS(orderId, processOrderId, userId, userDetails, orderData, connection) {
     try {
         // Format phone number
         const phoneNumber = `${userDetails.phoneCode}${userDetails.phoneNumber}`;
@@ -774,13 +778,13 @@ async function sendOrderConfirmationSMS(orderId, userId, userDetails, orderData,
         // Create SMS message
         const customerName = `${userDetails.firstName} ${userDetails.lastName}`.trim();
 
-        // Get the invoice number from processorders table
+        // Get the invoice number from processorders table using processOrderId
         const [invoiceResult] = await connection.query(
-            'SELECT invNo FROM processorders WHERE orderid = ?',
-            [orderId]
+            'SELECT invNo FROM processorders WHERE id = ?',
+            [processOrderId]
         );
 
-        const invoiceNo = invoiceResult && invoiceResult[0] ? invoiceResult[0].invNo : orderId;
+        const invoiceNo = invoiceResult && invoiceResult[0] ? invoiceResult[0].invNo : processOrderId;
 
         // Format total price (assuming it's in LKR)
         const totalPrice = parseFloat(orderData.fullTotal);
@@ -823,7 +827,6 @@ async function sendOrderConfirmationSMS(orderId, userId, userDetails, orderData,
 
         if (formattedScheduleDate) {
             smsMessage += `Delivery Date: ${formattedScheduleDate}`;
-
             smsMessage += `\n`;
         }
 
@@ -851,7 +854,6 @@ async function sendOrderConfirmationSMS(orderId, userId, userDetails, orderData,
         throw error;
     }
 }
-
 // Export the SMS function so it can be used elsewhere if needed
 exports.sendOrderConfirmationSMS = sendOrderConfirmationSMS;
 /////get customer data
@@ -1193,35 +1195,47 @@ exports.getOrderById = async (orderId) => {
                 oai.productId,
                 oai.unit,
                 oai.price,
-                oai.discount
+                oai.discount AS itemDiscount,
+                op.packageId,
+                mpp.displayName AS packageDisplayName,
+                mpp.productPrice AS packagePrice,
+                mpp.packingFee AS packagePackingFee,
+                mpp.serviceFee AS packageServiceFee,
+                mpp.status AS packageStatus
             FROM orders o
             JOIN marketplaceusers c ON o.userId = c.id
             LEFT JOIN processorders p ON o.id = p.orderId
             LEFT JOIN orderadditionalitems oai ON oai.orderId = o.id
+            LEFT JOIN orderpackage op ON op.orderId = p.id
+            LEFT JOIN marketplacepackages mpp ON mpp.id = op.packageId
             WHERE o.id = ?
         `;
 
         const [orderResults] = await connection.execute(sql, [orderId]);
-        console.log("oahcsn", orderResults)
+        console.log("Order results:", orderResults);
 
         if (orderResults.length === 0) {
             return { message: 'No order found with the given ID' };
         }
 
         const order = orderResults[0];
-        const customerId = order.userId; // Fixed: should be userId, not customerId
+        const customerId = order.userId;
         const buildingType = order.buildingType;
 
         let formattedAddress = '';
 
-          const items = orderResults.map(item => ({
-            productId: item.productId,
-            qty: parseFloat(item.qty),  // Ensure qty is a number
-            unit: item.unit,
-            price: parseFloat(item.price),  // Ensure price is a number
-            discount: parseFloat(item.discount)  // Ensure discount is a number
-        }));
+        // Filter out null/undefined items and create additional items array
+        const additionalItems = orderResults
+            .filter(item => item.productId !== null && item.productId !== undefined)
+            .map(item => ({
+                productId: item.productId,
+                qty: parseFloat(item.qty) || 0,
+                unit: item.unit || '',
+                price: parseFloat(item.price) || 0,
+                discount: parseFloat(item.itemDiscount) || 0
+            }));
 
+        // Handle address based on building type
         if (buildingType === 'House') {
             const addressSql = `
                 SELECT
@@ -1267,12 +1281,120 @@ exports.getOrderById = async (orderId) => {
             }
         }
 
-        console.log("items", items)
-        return {
-            ...order,
+        // Get package details if it's a package order
+        let packageDetails = [];
+        let packageInfo = null;
+
+        if (order.isPackage === 1) {
+            console.log("This is a package order, packageId:", order.packageId);
+
+            if (order.packageId) {
+                const packageDetailsSql = `
+                    SELECT
+                        pd.id,
+                        pd.packageId,
+                        pd.productTypeId,
+                        pd.qty,
+                        pt.typeName AS productTypeName
+                    FROM packagedetails pd
+                    JOIN producttypes pt ON pt.id = pd.productTypeId
+                    WHERE pd.packageId = ?
+                    ORDER BY pd.id ASC
+                `;
+
+                const [packageDetailsResults] = await connection.execute(packageDetailsSql, [order.packageId]);
+                console.log("Package details query results:", packageDetailsResults);
+
+                packageDetails = packageDetailsResults.map(detail => ({
+                    id: detail.id,
+                    productTypeId: detail.productTypeId,
+                    productTypeName: detail.productTypeName,
+                    qty: detail.qty
+                }));
+
+                // Create package info object
+                packageInfo = {
+                    packageId: order.packageId,
+                    displayName: order.packageDisplayName,
+                    productPrice: order.packagePrice,
+                    packingFee: order.packagePackingFee,
+                    serviceFee: order.packageServiceFee,
+                    status: order.packageStatus,
+                    packageDetails: packageDetails
+                };
+            } else {
+                console.log("Package order but no packageId found");
+            }
+        }
+
+        // Get product details for additional items if they exist
+        let enhancedAdditionalItems = [];
+        if (additionalItems.length > 0) {
+            const productIds = additionalItems.map(item => item.productId);
+            const placeholders = productIds.map(() => '?').join(',');
+
+            const productDetailsSql = `
+                SELECT
+                    mi.id,
+                    mi.displayName,
+                    mi.varietyId
+                FROM marketplaceitems mi
+                WHERE mi.id IN (${placeholders})
+            `;
+
+            const [productResults] = await connection.execute(productDetailsSql, productIds);
+
+            // Map additional items with product details
+            enhancedAdditionalItems = additionalItems.map(item => {
+                const productDetail = productResults.find(p => p.id === item.productId);
+                return {
+                    ...item,
+                    displayName: productDetail ? productDetail.displayName : 'Unknown Product',
+                    varietyId: productDetail ? productDetail.varietyId : null
+                };
+            });
+        }
+
+        console.log("Package details:", packageDetails);
+        console.log("Package info:", packageInfo);
+        console.log("Enhanced Additional Items:", enhancedAdditionalItems);
+        console.log("Order packageId:", order.packageId);
+        console.log("Order isPackage:", order.isPackage);
+
+        // Return order data
+        const result = {
+            orderId: order.orderId,
+            userId: order.userId,
+            scheduleType: order.sheduleType,
+            scheduleDate: order.sheduleDate,
+            scheduleTime: order.sheduleTime,
+            createdAt: order.createdAt,
+            total: order.total,
+            discount: order.discount,
+            fullTotal: order.fullTotal,
+            isPackage: order.isPackage,
+            customerInfo: {
+                title: order.title,
+                firstName: order.firstName,
+                lastName: order.lastName,
+                phoneNumber: order.phoneNumber,
+                buildingType: order.buildingType
+            },
             fullAddress: formattedAddress,
-            items : items
+            orderStatus: {
+                invoiceNumber: order.invoiceNumber,
+                status: order.status,
+                reportStatus: order.reportStatus
+            },
+            additionalItems: enhancedAdditionalItems
         };
+
+        // Add package information if it's a package order
+        if (packageInfo) {
+            result.packageInfo = packageInfo;
+        }
+
+        return result;
 
     } catch (err) {
         console.error('Database error:', err);
@@ -1285,8 +1407,6 @@ exports.getOrderById = async (orderId) => {
         }
     }
 };
-
-
 
 // exports.getOrderByCustomerId = (customerId) => {
 //     return new Promise((resolve, reject) => {
