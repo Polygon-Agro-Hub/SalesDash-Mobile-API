@@ -357,6 +357,8 @@ exports.getCustomerDetailsCustomerId = async (req, res) => {
     // Make sure to import orderDao correctly
     const customerData = await orderDao.getDataCustomerId(customerId);
 
+    console.log("customerDataaaaaaaaaaaaaaaa", customerData)
+
     if (customerData.message) {
       return res.status(404).json({
         success: false,

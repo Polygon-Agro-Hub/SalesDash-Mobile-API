@@ -361,6 +361,49 @@ exports.getCustomerData = async (cusId) => {
 
 
 
+
+
+
+// In your customer-dao.js
+exports.getCusDataExc = async (customerId) => {
+    try {
+        const connection = await db.marketPlace.promise().getConnection();
+        try {
+            // First try the most likely case
+            const [results] = await connection.query(
+                "SELECT * FROM marketplaceusers WHERE cusId = ? OR id = ? LIMIT 1",
+                [customerId, customerId]
+            );
+
+            if (results.length === 0) {
+                // Return empty but successful response instead of error
+                return {
+                    success: true,
+                    data: null // Explicitly return null
+                };
+            }
+
+            const customerData = results[0];
+            return {
+                success: true,
+                data: {
+                    ...customerData,
+                    name: customerData.firstName || customerData.name,
+                    number: customerData.phoneNumber || customerData.number
+                }
+            };
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error("Error in getCusDataExc DAO:", error);
+        return {
+            success: false,
+            message: "Database error occurred"
+        };
+    }
+};
+
 exports.updateCustomerData = async (cusId, customerData, buildingData) => {
     let connection;
 
@@ -733,47 +776,47 @@ exports.getAllCrops = async (cusId) => {
 };
 
 exports.addExcludeList = async (customerId, selectedCrops) => {
-  try {
-    // Prepare the query to insert each selected crop into the ExcludeList table
-    const query = `
+    try {
+        // Prepare the query to insert each selected crop into the ExcludeList table
+        const query = `
       INSERT INTO excludelist (userId, mpItemId)
       VALUES ?
     `;
-    
-    const values = selectedCrops.map((cropId) => [customerId, cropId]);
-    console.log(values)
 
-    // Execute the query
-    await db.marketPlace.promise().query(query, [values]);
-    
-    return { message: "Exclude list updated successfully" };
-  } catch (error) {
-    console.error("Error adding exclude list:", error);
-    throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
-  }
+        const values = selectedCrops.map((cropId) => [customerId, cropId]);
+        console.log(values)
+
+        // Execute the query
+        await db.marketPlace.promise().query(query, [values]);
+
+        return { message: "Exclude list updated successfully" };
+    } catch (error) {
+        console.error("Error adding exclude list:", error);
+        throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
+    }
 };
 
 // exports.getExcludeList = async (customerId) => {
 //   try {
 //     // Correct query with parameterized customerId
-    // const query = `
-    //   SELECT 
-    //     el.id AS excludeId, 
-    //     el.userId, 
-    //     mpi.id AS marketplaceItemId, 
-    //     mpi.displayName, 
-    //     pc.image,
-    //     mps.cusId,
-    //     mps.firstName,
-    //     mps.lastName,
-    //      mps.title
-    //   FROM excludelist el
-    //   LEFT JOIN marketplaceitems mpi ON mpi.id = el.mpItemId 
-    //   LEFT JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId  
-    //   LEFT JOIN marketplaceusers mps ON mps.id = el.userId  
-    //   WHERE el.userId = ? 
-    //   ORDER BY mpi.displayName ASC; 
-    // `;
+// const query = `
+//   SELECT 
+//     el.id AS excludeId, 
+//     el.userId, 
+//     mpi.id AS marketplaceItemId, 
+//     mpi.displayName, 
+//     pc.image,
+//     mps.cusId,
+//     mps.firstName,
+//     mps.lastName,
+//      mps.title
+//   FROM excludelist el
+//   LEFT JOIN marketplaceitems mpi ON mpi.id = el.mpItemId 
+//   LEFT JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId  
+//   LEFT JOIN marketplaceusers mps ON mps.id = el.userId  
+//   WHERE el.userId = ? 
+//   ORDER BY mpi.displayName ASC; 
+// `;
 //     // Execute the query with customerId as a parameter
 //     const [results] = await db.marketPlace.promise().query(query, [customerId]);
 
@@ -786,9 +829,9 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
 // };
 exports.getExcludeList = async (customerId) => {
     console.log("cuuuuuuuuuuuu", customerId)
-  try {
-    // Correct query with parameterized customerId
-     const query = `
+    try {
+        // Correct query with parameterized customerId
+        const query = `
       SELECT 
         el.id AS excludeId, 
         el.userId, 
@@ -806,30 +849,30 @@ exports.getExcludeList = async (customerId) => {
       WHERE mps.id = ?  -- Filter by customerId
       ORDER BY mpi.displayName ASC; 
     `;
-    // Execute the query with customerId as a parameter
-    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+        // Execute the query with customerId as a parameter
+        const [results] = await db.marketPlace.promise().query(query, [customerId]);
 
-    console.log("Exclude list for customer:", results);  // Log the results for debugging
-    return results;  // Return the exclude list data
-  } catch (error) {
-    console.error("Error fetching exclude list:", error);
-    throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
-  }
+        console.log("Exclude list for customer:", results);  // Log the results for debugging
+        return results;  // Return the exclude list data
+    } catch (error) {
+        console.error("Error fetching exclude list:", error);
+        throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+    }
 };
 exports.deleteExcludeItem = async (excludeId) => {
     console.log(excludeId)
-  try {
-    const query = `
+    try {
+        const query = `
       DELETE FROM excludelist 
       WHERE Id = ?
     `;
-    await db.marketPlace.promise().query(query, [excludeId]);
-    
-    return { message: "Exclude list updated successfully" };
-  } catch (error) {
-    console.error("Error adding exclude list:", error);
-    throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
-  }
+        await db.marketPlace.promise().query(query, [excludeId]);
+
+        return { message: "Exclude list updated successfully" };
+    } catch (error) {
+        console.error("Error adding exclude list:", error);
+        throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
+    }
 };
 
 

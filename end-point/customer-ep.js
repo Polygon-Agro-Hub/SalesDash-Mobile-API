@@ -236,6 +236,24 @@ exports.getCustomerData = asyncHandler(async (req, res) => {
 });
 
 
+exports.getCusDataExc = asyncHandler(async (req, res) => {
+    const { customerId } = req.params;
+    console.log("Requested cusId: ", customerId);
+
+    try {
+        const result = await customerDAO.getCusDataExc(customerId);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error("Error in getCusDataExc controller:", error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+
+
 
 
 
@@ -360,7 +378,7 @@ exports.getAllPCity = asyncHandler(async (req, res) => {
 exports.getAllCrops = asyncHandler(async (req, res) => {
     try {
         const cusId = req.query
-        console.log("ccccccccccccccccc",cusId)
+        console.log("ccccccccccccccccc", cusId)
         const crops = await customerDAO.getAllCrops(cusId);
         if (!crops || crops.length === 0) {
             return res.status(404).json({ message: "No crops found" });
@@ -375,27 +393,27 @@ exports.getAllCrops = asyncHandler(async (req, res) => {
     }
 });
 
-exports.addExcludeList = asyncHandler(async (req,res) =>{
-  
-    try{
-          const { customerId, selectedCrops } = req.body;
+exports.addExcludeList = asyncHandler(async (req, res) => {
+
+    try {
+        const { customerId, selectedCrops } = req.body;
 
         if (!customerId || !Array.isArray(selectedCrops)) {
-      return res.status(400).json({ message: "Invalid request. 'customerId' and 'selectedCrops' are required." });
-    }
+            return res.status(400).json({ message: "Invalid request. 'customerId' and 'selectedCrops' are required." });
+        }
 
-    // Call DAO to add selected crops to the exclude list
-      const result = await customerDAO.addExcludeList(customerId, selectedCrops);
+        // Call DAO to add selected crops to the exclude list
+        const result = await customerDAO.addExcludeList(customerId, selectedCrops);
 
-     if (result) {
-      return res.status(200).json({ message: "Exclude list updated successfully" });
-    } else {
-      return res.status(404).json({ message: "Customer not found or no crops to update" });
+        if (result) {
+            return res.status(200).json({ message: "Exclude list updated successfully" });
+        } else {
+            return res.status(404).json({ message: "Customer not found or no crops to update" });
+        }
+    } catch (err) {
+        console.error("Error in addExcludeList controller:", err);
+        return res.status(500).json({ message: "Server error", error: err.message });
     }
-  } catch (err) {
-    console.error("Error in addExcludeList controller:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
-  }
 })
 
 exports.getCustomerExludelist = asyncHandler(async (req, res) => {
@@ -418,27 +436,27 @@ exports.getCustomerExludelist = asyncHandler(async (req, res) => {
 
 exports.deleteExcludeItem = asyncHandler(async (req, res) => {
     console.log("hittt")
-  try {
-    const { excludeId } = req.query;  // Use req.body for DELETE request
-    console.log(excludeId)
+    try {
+        const { excludeId } = req.query;  // Use req.body for DELETE request
+        console.log(excludeId)
 
-    if (!excludeId) {
-      return res.status(400).json({ message: "excludeId is required" });
+        if (!excludeId) {
+            return res.status(400).json({ message: "excludeId is required" });
+        }
+
+        console.log("Deleting exclude item with ID:", excludeId);
+
+        // Call the DAO to delete the item
+        const result = await customerDAO.deleteExcludeItem(excludeId);
+
+        res.status(200).json({
+            message: "Item deleted successfully",
+            data: result,
+        });
+    } catch (error) {
+        console.error("❌ Error deleting item:", error);
+        res.status(500).json({ message: "Failed to delete item", error: error.message });
     }
-
-    console.log("Deleting exclude item with ID:", excludeId);
-
-    // Call the DAO to delete the item
-    const result = await customerDAO.deleteExcludeItem(excludeId);
-
-    res.status(200).json({
-      message: "Item deleted successfully",
-      data: result,
-    });
-  } catch (error) {
-    console.error("❌ Error deleting item:", error);
-    res.status(500).json({ message: "Failed to delete item", error: error.message });
-  }
 });
 
 
