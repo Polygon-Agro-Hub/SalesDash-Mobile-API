@@ -55,6 +55,8 @@ exports.login = asyncHandler(async (req, res) => {
 exports.getUserProfile = asyncHandler(async (req, res) => {
   const id = req.user.id;
 
+  console.log("useriddd", id)
+
   try {
     const user = await userDao.getUserProfile(id);
     return res.status(200).json({
@@ -128,3 +130,22 @@ exports.updatePassword = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
+exports.getPassword = asyncHandler(async (req, res) => {
+  const id = req.user.id;
+
+  try {
+    const user = await userDao.getPassword(id);
+    return res.status(200).json({
+      success: true,
+      message: "Profile fetched successfully",
+      data: user,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
