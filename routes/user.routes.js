@@ -10,6 +10,8 @@ router.put("/user-updateUser", auth, userAuthEp.updateUserProfile);
 
 router.get('/user/profile', auth, userAuthEp.getUserProfile);
 
+router.get('/user/password-update', auth, userAuthEp.getPassword);
+
 router.put('/user/update-password', auth, userAuthEp.updatePassword);
 
 
