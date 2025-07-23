@@ -40,7 +40,7 @@ exports.createComplain = (saId, language, complain, category, status, refNo) => 
 exports.getAllComplaintsByUserId = async (userId) => {
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo
+        SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo,replyTime
         FROM dashcomplain 
         WHERE saId = ?
         ORDER BY createdAt DESC
