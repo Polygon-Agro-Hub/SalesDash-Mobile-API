@@ -38,14 +38,46 @@ const db = require("../startup/database");
 //     });
 // };
 
+// exports.getAllPackages = async () => {
+//     console.log("hitpack")
+//     return new Promise((resolve, reject) => {
+//         const query = `
+//         SELECT id, displayName, image, status, created_at AS createdAt, description, productPrice, packingFee, serviceFee
+//         FROM marketplacepackages
+//         WHERE status = 'Enabled'
+//         ORDER BY displayName ASC
+//         `;
+
+//         db.marketPlace.query(query, (error, results) => {
+//             if (error) {
+//                 console.error("Error fetching packages:", error);
+//                 reject(error);
+//             } else {
+//                 resolve(results);
+//             }
+//         });
+//     });
+// };
+
 exports.getAllPackages = async () => {
-    console.log("hitpack")
+    console.log("hitpack....")
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, displayName, image, status, created_at AS createdAt, description, productPrice, packingFee, serviceFee
-        FROM marketplacepackages
-        WHERE status = 'Enabled'
-        ORDER BY displayName ASC
+        SELECT DISTINCT 
+            mp.id, 
+            mp.displayName, 
+            mp.image, 
+            mp.status, 
+            mp.created_at AS createdAt, 
+            mp.description, 
+            mp.productPrice, 
+            mp.packingFee, 
+            mp.serviceFee
+        FROM marketplacepackages mp
+        INNER JOIN definepackage dp ON mp.id = dp.packageId
+        INNER JOIN definepackageitems dpi ON dp.id = dpi.definePackageId
+        WHERE mp.status = 'Enabled'
+        ORDER BY mp.displayName ASC
         `;
 
         db.marketPlace.query(query, (error, results) => {
@@ -243,7 +275,7 @@ exports.getAllCrops = async (cusId) => {
         return results;
     } catch (error) {
         console.error("Error fetching crops:", error);
-        throw new Error("Database error: " + error.message);  
+        throw new Error("Database error: " + error.message);
     }
 };
 
