@@ -5,6 +5,7 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
     console.log("hitt")
     try {
         const packages = await packageDAO.getAllPackages();
+        console.log(",,,,,,,,,,", packages)
 
         if (!packages || packages.length === 0) {
             return res.status(404).json({ message: "No packages found" });
@@ -96,8 +97,8 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
 
 exports.getAllCrops = asyncHandler(async (req, res) => {
     console.log("✅ API /crops/all hit!");
-  const cusId = req.query;
-  console.log(cusId)
+    const cusId = req.query;
+    console.log(cusId)
 
     try {
         const crops = await packageDAO.getAllCrops(cusId);
