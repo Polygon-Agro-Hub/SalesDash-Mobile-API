@@ -596,42 +596,97 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
 }
 
 // Helper function to insert process order record - NOW RETURNS THE processOrderId
+// async function insertProcessOrder(connection, orderId, orderData) {
+//     // Generate Invoice Number (YYMMDDRRRR)
+//     const today = new Date();
+//     const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+//     // Get the current max sequence number for today
+//     const [sequenceResult] = await connection.query(
+//         'SELECT MAX(invNo) as maxInvNo FROM processorders WHERE invNo LIKE ?',
+//         [`${datePrefix}%`]
+//     );
+
+//     let sequenceNumber = 1;
+//     if (sequenceResult[0] && sequenceResult[0].maxInvNo) {
+//         sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+//     }
+
+//     const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+
+//     // Insert process order record
+//     const [result] = await connection.query(
+//         `INSERT INTO processorders (
+//           orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
+//         ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+//         [
+//             orderId,
+//             invNo,
+//             orderData.transactionId || '',
+//             orderData.paymentMethod || 'cash',
+//             0,
+//             0,
+//             'Ordered'
+//         ]
+//     );
+
+//     console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
+//     return result.insertId; // Return the processOrderId
+// }
+
 async function insertProcessOrder(connection, orderId, orderData) {
-    // Generate Invoice Number (YYMMDDRRRR)
-    const today = new Date();
-    const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+    try {
+        // Generate date prefix (YYMMDD)
+        const today = new Date();
+        const year = today.getFullYear().toString().slice(-2); // Last 2 digits of year (25)
+        const month = (today.getMonth() + 1).toString().padStart(2, '0'); // Month (08)
+        const day = today.getDate().toString().padStart(2, '0'); // Day (04)
 
-    // Get the current max sequence number for today
-    const [sequenceResult] = await connection.query(
-        'SELECT MAX(invNo) as maxInvNo FROM processorders WHERE invNo LIKE ?',
-        [`${datePrefix}%`]
-    );
+        const datePrefix = `${year}${month}${day}`; // 250804
+        console.log(`Date prefix for invoice: ${datePrefix}`);
 
-    let sequenceNumber = 1;
-    if (sequenceResult[0] && sequenceResult[0].maxInvNo) {
-        sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+        // Get the current max sequence number for today (last 4 digits)
+        const [sequenceResult] = await connection.query(`
+            SELECT MAX(CAST(RIGHT(invNo, 4) AS UNSIGNED)) as maxSequence
+            FROM processorders 
+            WHERE invNo LIKE ? 
+              AND LENGTH(invNo) = 10
+              AND invNo REGEXP '^[0-9]+$'
+        `, [`${datePrefix}%`]);
+
+        // Calculate next sequence number (4 digits)
+        let sequenceNumber = 1;
+        if (sequenceResult[0] && sequenceResult[0].maxSequence !== null) {
+            sequenceNumber = sequenceResult[0].maxSequence + 1;
+        }
+
+        // Generate final 10-digit invoice number: YYMMDDXXXX
+        const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+        console.log(`Generated invoice number: ${invNo} (Date: ${datePrefix}, Sequence: ${sequenceNumber})`);
+
+        // Insert process order record
+        const [result] = await connection.query(
+            `INSERT INTO processorders (
+              orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+                orderId,
+                invNo,
+                orderData.transactionId || '',
+                orderData.paymentMethod || 'cash',
+                0, // ispaid
+                0, // amount
+                'Ordered' // status
+            ]
+        );
+
+        console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
+        return result.insertId; // Return the processOrderId
+
+    } catch (error) {
+        console.error('Error in insertProcessOrder:', error);
+        throw new Error(`Failed to insert process order: ${error.message}`);
     }
-
-    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
-
-    // Insert process order record
-    const [result] = await connection.query(
-        `INSERT INTO processorders (
-          orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [
-            orderId,
-            invNo,
-            orderData.transactionId || '',
-            orderData.paymentMethod || 'cash',
-            0,
-            0,
-            'Ordered'
-        ]
-    );
-
-    console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
-    return result.insertId; // Return the processOrderId
 }
 
 // Helper function to insert address data (house/apartment)
