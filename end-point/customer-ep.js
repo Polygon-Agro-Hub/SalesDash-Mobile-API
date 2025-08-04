@@ -257,6 +257,65 @@ exports.getCusDataExc = asyncHandler(async (req, res) => {
 
 
 
+// exports.updateCustomerData = asyncHandler(async (req, res) => {
+//     const { cusId } = req.params;
+//     console.log("Request Body:", req.body);
+
+//     // Initialize variables
+//     let customerData;
+//     let buildingData;
+
+//     // Detect request format and extract data accordingly
+//     if (req.body.customerData) {
+//         // Format: { customerData: {...}, buildingData: {...} }
+//         customerData = req.body.customerData;
+//         buildingData = req.body.buildingData;
+//     } else {
+//         // Format: { title: '...', firstName: '...', buildingData: {...} }
+//         customerData = {
+//             title: req.body.title,
+//             firstName: req.body.firstName,
+//             lastName: req.body.lastName,
+//             phoneNumber: req.body.phoneNumber,
+//             email: req.body.email,
+//             buildingType: req.body.buildingType
+//         };
+//         buildingData = req.body.buildingData;
+//     }
+
+//     console.log("Customer Data (extracted):", customerData);
+//     console.log("Building Data (extracted):", buildingData);
+
+//     try {
+//         // Validate the customer data exists
+//         if (!customerData || !customerData.phoneNumber || !customerData.email) {
+//             return res.status(400).json({ error: "Customer data is incomplete" });
+//         }
+
+//         // Validate phone number
+//         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+//         if (phoneNumberValidation.error) {
+//             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
+//         }
+
+//         // Validate email
+//         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+//         if (emailValidation.error) {
+//             return res.status(400).json({ error: emailValidation.error.details[0].message });
+//         }
+
+//         // Update customer data through DAO
+//         const result = await customerDAO.updateCustomerData(cusId, customerData, buildingData);
+
+//         // Send success response
+//         res.status(200).json({ message: "Customer data updated successfully", result });
+
+//     } catch (error) {
+//         console.error("Error while updating customer data:", error);
+//         res.status(500).json({ error: error.message });
+//     }
+// });
+
 exports.updateCustomerData = asyncHandler(async (req, res) => {
     const { cusId } = req.params;
     console.log("Request Body:", req.body);
@@ -289,42 +348,112 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
     try {
         // Validate the customer data exists
         if (!customerData || !customerData.phoneNumber || !customerData.email) {
-            return res.status(400).json({ error: "Customer data is incomplete" });
+            return res.status(400).json({
+                message: "Customer data is incomplete",
+                errors: { general: true }
+            });
         }
 
         // Validate phone number
         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
         if (phoneNumberValidation.error) {
-            return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });
+            return res.status(400).json({
+                message: phoneNumberValidation.error.details[0].message,
+                errors: { phoneNumber: true }
+            });
         }
 
         // Validate email
         const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
         if (emailValidation.error) {
-            return res.status(400).json({ error: emailValidation.error.details[0].message });
+            return res.status(400).json({
+                message: emailValidation.error.details[0].message,
+                errors: { email: true }
+            });
         }
 
         // Update customer data through DAO
         const result = await customerDAO.updateCustomerData(cusId, customerData, buildingData);
 
         // Send success response
-        res.status(200).json({ message: "Customer data updated successfully", result });
+        res.status(200).json({
+            message: "Customer data updated successfully",
+            result
+        });
 
     } catch (error) {
         console.error("Error while updating customer data:", error);
-        res.status(500).json({ error: error.message });
+
+        // Handle specific validation errors from DAO
+        if (error.message === "Email already exists.") {
+            return res.status(400).json({
+                message: "Email already exists.",
+                errors: {
+                    email: true,
+                    phoneNumber: false
+                }
+            });
+        } else if (error.message === "Phone number already exists.") {
+            return res.status(400).json({
+                message: "Mobile Number already exists.",
+                errors: {
+                    phoneNumber: true,
+                    email: false
+                }
+            });
+        } else if (error.message === "Customer not found") {
+            return res.status(404).json({
+                message: "Customer not found"
+            });
+        } else {
+            // Generic server error
+            return res.status(500).json({
+                message: "Internal server error during update",
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
     }
 });
 
+// exports.checkCustomer = (req, res) => {
+//     console.log("Check customer route hit.");
+//     const { phoneNumber, email } = req.body;
+
+//     customerDAO.findCustomerByPhoneOrEmail(phoneNumber, email)
+//         .then(existingCustomer => {
+//             console.log("Existing Customer:", existingCustomer);
+//             if (existingCustomer) {
+//                 return res.status(400).json({ message: "Phone number or email already exists." });
+//             }
+
+//             res.status(200).json({ message: "Valid new customer." });
+//         })
+//         .catch(error => {
+//             console.error("Error checking customer:", error);
+//             res.status(500).json({ message: "Internal server error" });
+//         });
+// };
+
 exports.checkCustomer = (req, res) => {
     console.log("Check customer route hit.");
-    const { phoneNumber, email } = req.body;
+    const { phoneNumber, email, excludeId } = req.body;
 
-    customerDAO.findCustomerByPhoneOrEmail(phoneNumber, email)
-        .then(existingCustomer => {
-            console.log("Existing Customer:", existingCustomer);
-            if (existingCustomer) {
-                return res.status(400).json({ message: "Phone number or email already exists." });
+    customerDAO.findCustomerByPhoneOrEmail(phoneNumber, email, excludeId)
+        .then(result => {
+            console.log("Customer check result:", result);
+
+            if (result.phoneExists && result.emailExists) {
+                return res.status(400).json({
+                    message: "Mobile Number and Email already exist."
+                });
+            } else if (result.phoneExists) {
+                return res.status(400).json({
+                    message: "Mobile Number already exists."
+                });
+            } else if (result.emailExists) {
+                return res.status(400).json({
+                    message: "Email already exists."
+                });
             }
 
             res.status(200).json({ message: "Valid new customer." });
