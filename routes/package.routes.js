@@ -8,6 +8,8 @@ router.get("/:packageId/items", auth, packagesEp.getItemsForPackage);
 
 router.get("/marketplace-item/:mpItemId", auth, packagesEp.getMarketplaceItemDetails);
 
+router.get("/getChnageby/:mpItemId", auth, packagesEp.getChangeByValue);
+
 router.get("/marketplace-package/:packageid", auth, packagesEp.getMarketplacePackage);
 
 

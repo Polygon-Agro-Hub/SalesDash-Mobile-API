@@ -60,23 +60,24 @@ exports.customerData = async (req, res) => {
 
         // Check if customer already exists
         console.log('--- Checking if customer exists -----');
-        const existingCustomer = await customerDAO.findCustomerByPhoneOrEmail(customerData.phoneNumber, customerData.email);
-        if (existingCustomer) {
-            return res.status(400).json({
-                error: "Customer already exists with this phone number or email",
-                existingCustomer: {
-                    cusId: existingCustomer.cusId,
-                    firstName: existingCustomer.firstName,
-                    lastName: existingCustomer.lastName,
-                    email: existingCustomer.email,
-                    phoneNumber: existingCustomer.phoneCode + existingCustomer.phoneNumber
-                }
-            });
-        }
+        // const existingCustomer = await customerDAO.findCustomerByPhoneOrEmail(customerData.phoneNumber, customerData.email);
+        // if (existingCustomer) {
+        //     return res.status(400).json({
+        //         error: "Customer already exists with this phone number or email",
+        //         existingCustomer: {
+        //             cusId: existingCustomer.cusId,
+        //             firstName: existingCustomer.firstName,
+        //             lastName: existingCustomer.lastName,
+        //             email: existingCustomer.email,
+        //             phoneNumber: existingCustomer.phoneCode + existingCustomer.phoneNumber
+        //         }
+        //     });
+        // }
 
 
-
+        console.log("before")
         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+        console.log("after")
         if (phoneNumberValidation.error) {
             console.log('Phone validation error:', phoneNumberValidation.error.details[0].message);
             return res.status(400).json({ error: phoneNumberValidation.error.details[0].message });

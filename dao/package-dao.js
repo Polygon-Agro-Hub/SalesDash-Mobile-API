@@ -360,3 +360,31 @@ exports.getPackageItemByProductId = async (packageId, productId) => {
     });
 };
 /////////// package
+
+exports.getChangeByValue = async (mpItemId) => {
+    return new Promise((resolve, reject) => {
+        const query = `
+        SELECT 
+          id,
+          
+          discountedPrice, 
+          unitType, 
+          startValue, 
+          changeby
+        FROM marketplaceitems
+        WHERE id = ?;
+        `;
+
+        console.log("Executing query:", query);
+        console.log("With itemId:", mpItemId);
+
+        db.marketPlace.query(query, [mpItemId], (error, results) => {
+            if (error) {
+                console.error("Error fetching marketplace item details:", error);
+                reject(error);
+            } else {
+                resolve(results.length > 0 ? results[0] : null);
+            }
+        });
+    });
+};
