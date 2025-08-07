@@ -724,13 +724,14 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
 
         if (apartmentResult && apartmentResult.length > 0) {
             await connection.query(
-                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?,?, ?, ?, ?, ?, ?)',
                 [
                     orderId,
                     apartmentResult[0].buildingNo,
                     apartmentResult[0].buildingName,
                     apartmentResult[0].unitNo,
                     apartmentResult[0].floorNo,
+                    apartmentResult[0].houseNo,
                     apartmentResult[0].streetName,
                     apartmentResult[0].city
                 ]
@@ -739,13 +740,14 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
         } else {
             // Insert default apartment data if not found
             await connection.query(
-                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?, ?,?, ?, ?, ?, ?)',
                 [
                     orderId,
                     orderData.buildingNo || '',
                     orderData.buildingName || '',
                     orderData.unitNo || '',
                     orderData.floorNo || '',
+                    orderData.houseNo || '',
                     orderData.streetName || '',
                     orderData.city || ''
                 ]
