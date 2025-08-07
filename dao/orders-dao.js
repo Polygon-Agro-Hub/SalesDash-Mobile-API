@@ -807,22 +807,46 @@ async function processRegularOrderItems(connection, orderId, orderData) {
 }
 
 // Helper function to insert additional items into orderadditionalitems table
+// async function insertAdditionalItems(connection, orderId, items) {
+//     if (!items || items.length === 0) return;
+
+//     for (const item of items) {
+//         await connection.query(
+//             'INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+//             [
+//                 orderId,
+//                 item.productId || item.id,
+//                 item.qty || item.quantity,
+//                 item.unit || item.unitType,
+//                 item.price || 0,
+//                 item.discount || 0
+//             ]
+//         );
+//         console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}`);
+//     }
+// }
+
 async function insertAdditionalItems(connection, orderId, items) {
     if (!items || items.length === 0) return;
 
     for (const item of items) {
+        const price = item.price || 0;
+        const discount = item.discount || 0;
+        const normalPrice = price + discount;
+
         await connection.query(
-            'INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+            'INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
             [
                 orderId,
                 item.productId || item.id,
                 item.qty || item.quantity,
                 item.unit || item.unitType,
-                item.price || 0,
-                item.discount || 0
+                price,
+                discount,
+                normalPrice
             ]
         );
-        console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}`);
+        console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}, normalPrice=${normalPrice}`);
     }
 }
 

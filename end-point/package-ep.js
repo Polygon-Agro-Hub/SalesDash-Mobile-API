@@ -1,20 +1,61 @@
 const asyncHandler = require("express-async-handler");
 const packageDAO = require("../dao/package-dao");
 
+// exports.getAllPackages = asyncHandler(async (req, res) => {
+//     console.log("hitt")
+//     try {
+//         const packages = await packageDAO.getAllPackages();
+//         console.log(",,,,,,,,,,", packages)
+
+//         if (!packages || packages.length === 0) {
+//             return res.status(404).json({ message: "No packages found" });
+//         }
+
+//         res.status(200).json({ message: "Packages fetched successfully", data: packages });
+//     } catch (error) {
+//         console.error("Error fetching packages:", error);
+//         res.status(500).json({ message: "Failed to fetch packages" });
+//     }
+// });
+
+
+// Enhanced Endpoint
 exports.getAllPackages = asyncHandler(async (req, res) => {
-    console.log("hitt")
+    console.log("getAllPackages endpoint hit");
     try {
-        const packages = await packageDAO.getAllPackages();
-        console.log(",,,,,,,,,,", packages)
+        // Extract query parameters for filtering
+        const filters = {
+            status: req.query.status || 'Enabled',
+            minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,
+            maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice) : null,
+            search: req.query.search || null,
+            limit: req.query.limit ? parseInt(req.query.limit) : null,
+            offset: req.query.offset ? parseInt(req.query.offset) : 0
+        };
+
+        const packages = await packageDAO.getAllPackages(filters);
+        console.log("Packages fetched:", packages?.length || 0);
 
         if (!packages || packages.length === 0) {
-            return res.status(404).json({ message: "No packages found" });
+            return res.status(404).json({
+                message: "No packages found",
+                data: [],
+                total: 0
+            });
         }
 
-        res.status(200).json({ message: "Packages fetched successfully", data: packages });
+        res.status(200).json({
+            message: "Packages fetched successfully",
+            data: packages,
+            total: packages.length,
+            filters: filters
+        });
     } catch (error) {
         console.error("Error fetching packages:", error);
-        res.status(500).json({ message: "Failed to fetch packages" });
+        res.status(500).json({
+            message: "Failed to fetch packages",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
