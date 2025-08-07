@@ -179,3 +179,32 @@ exports.getPackageItemByProductId = asyncHandler(async (req, res) => {
         });
     }
 });
+
+
+exports.getChangeByValue = asyncHandler(async (req, res) => {
+    const { mpItemId } = req.params;
+
+    console.log("[[[[[[[[[[[[[[[[[[[[[[[[")
+    // Validate mpItemId
+    if (!mpItemId || isNaN(mpItemId)) {
+        return res.status(400).json({ message: "Invalid marketplace item ID" });
+    }
+    try {
+        // Get marketplace item details
+        const marketplaceItem = await packageDAO.getChangeByValue(mpItemId);
+
+        // Check if marketplace item exists
+        if (!marketplaceItem) {
+            return res.status(404).json({ message: "Marketplace item not found" });
+        }
+
+        // Send successful response with the marketplace item details
+        res.status(200).json({
+            message: "Marketplace item fetched successfully",
+            data: marketplaceItem, // Directly returning the single record
+        });
+    } catch (error) {
+        console.error("Error fetching marketplace item:", error);
+        res.status(500).json({ message: "Failed to fetch marketplace item", error: error.message });
+    }
+});
