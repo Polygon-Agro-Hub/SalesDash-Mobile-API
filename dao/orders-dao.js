@@ -911,7 +911,7 @@ async function sendOrderConfirmationSMS(orderId, processOrderId, userId, userDet
             smsMessage += `\n`;
         }
 
-        smsMessage += `\nThank you for choosing AgroWorld! Our team will contact you shortly.\nSupport: +94 770111999`;
+        smsMessage += `\nThank you for choosing Polygon Agro! Our team will contact you shortly.\nSupport: +94 770111999`;
 
         console.log(`Preparing to send enhanced order confirmation SMS to ${phoneNumber}:`);
         console.log(`SMS Content: ${smsMessage}`);

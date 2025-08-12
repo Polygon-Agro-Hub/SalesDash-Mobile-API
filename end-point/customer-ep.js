@@ -85,11 +85,11 @@ exports.customerData = async (req, res) => {
 
         // Validate email
 
-        const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
-        if (emailValidation.error) {
-            console.log('Email validation error:', emailValidation.error.details[0].message);
-            return res.status(400).json({ error: emailValidation.error.details[0].message });
-        }
+        // const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+        // if (emailValidation.error) {
+        //     console.log('Email validation error:', emailValidation.error.details[0].message);
+        //     return res.status(400).json({ error: emailValidation.error.details[0].message });
+        // }
 
         // Validate basic required fields
 
@@ -317,6 +317,106 @@ exports.getCusDataExc = asyncHandler(async (req, res) => {
 //     }
 // });
 
+// exports.updateCustomerData = asyncHandler(async (req, res) => {
+//     const { cusId } = req.params;
+//     console.log("Request Body:", req.body);
+
+//     // Initialize variables
+//     let customerData;
+//     let buildingData;
+
+//     // Detect request format and extract data accordingly
+//     if (req.body.customerData) {
+//         // Format: { customerData: {...}, buildingData: {...} }
+//         customerData = req.body.customerData;
+//         buildingData = req.body.buildingData;
+//     } else {
+//         // Format: { title: '...', firstName: '...', buildingData: {...} }
+//         customerData = {
+//             title: req.body.title,
+//             firstName: req.body.firstName,
+//             lastName: req.body.lastName,
+//             phoneNumber: req.body.phoneNumber,
+//             email: req.body.email,
+//             buildingType: req.body.buildingType
+//         };
+//         buildingData = req.body.buildingData;
+//     }
+
+//     console.log("Customer Data (extracted):", customerData);
+//     console.log("Building Data (extracted):", buildingData);
+
+//     try {
+//         // Validate the customer data exists
+//         if (!customerData || !customerData.phoneNumber || !customerData.email) {
+//             return res.status(400).json({
+//                 message: "Customer data is incomplete",
+//                 errors: { general: true }
+//             });
+//         }
+
+//         // Validate phone number
+//         const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(customerData.phoneNumber);
+//         if (phoneNumberValidation.error) {
+//             return res.status(400).json({
+//                 message: phoneNumberValidation.error.details[0].message,
+//                 errors: { phoneNumber: true }
+//             });
+//         }
+
+//         // Validate email
+//         // const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+//         // if (emailValidation.error) {
+//         //     return res.status(400).json({
+//         //         message: emailValidation.error.details[0].message,
+//         //         errors: { email: true }
+//         //     });
+//         // }
+
+//         // Update customer data through DAO
+//         const result = await customerDAO.updateCustomerData(cusId, customerData, buildingData);
+
+//         // Send success response
+//         res.status(200).json({
+//             message: "Customer data updated successfully",
+//             result
+//         });
+
+//     } catch (error) {
+//         console.error("Error while updating customer data:", error);
+
+//         // Handle specific validation errors from DAO
+//         if (error.message === "Email already exists.") {
+//             return res.status(400).json({
+//                 message: "Email already exists.",
+//                 errors: {
+//                     email: true,
+//                     phoneNumber: false
+//                 }
+//             });
+//         } else if (error.message === "Phone number already exists.") {
+//             return res.status(400).json({
+//                 message: "Mobile Number already exists.",
+//                 errors: {
+//                     phoneNumber: true,
+//                     email: false
+//                 }
+//             });
+//         } else if (error.message === "Customer not found") {
+//             return res.status(404).json({
+//                 message: "Customer not found"
+//             });
+//         } else {
+//             // Generic server error
+//             return res.status(500).json({
+//                 message: "Internal server error during update",
+//                 error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//             });
+//         }
+//     }
+// });
+
+
 exports.updateCustomerData = asyncHandler(async (req, res) => {
     const { cusId } = req.params;
     console.log("Request Body:", req.body);
@@ -347,10 +447,10 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
     console.log("Building Data (extracted):", buildingData);
 
     try {
-        // Validate the customer data exists
-        if (!customerData || !customerData.phoneNumber || !customerData.email) {
+        // Validate the customer data exists (email is now optional)
+        if (!customerData || !customerData.phoneNumber) {
             return res.status(400).json({
-                message: "Customer data is incomplete",
+                message: "Customer data is incomplete - phone number is required",
                 errors: { general: true }
             });
         }
@@ -364,13 +464,15 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
             });
         }
 
-        // Validate email
-        const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
-        if (emailValidation.error) {
-            return res.status(400).json({
-                message: emailValidation.error.details[0].message,
-                errors: { email: true }
-            });
+        // Validate email only if provided
+        if (customerData.email && customerData.email.trim() !== '') {
+            const emailValidation = ValidationSchema.emailSchema.validate(customerData.email);
+            if (emailValidation.error) {
+                return res.status(400).json({
+                    message: emailValidation.error.details[0].message,
+                    errors: { email: true }
+                });
+            }
         }
 
         // Update customer data through DAO
