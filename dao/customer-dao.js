@@ -75,19 +75,17 @@ exports.addCustomer = (customerData, salesAgent) => {
 };
 
 // Function to generate a custom customer ID
-// const generateCustomerId = async () => {
-//     const sqlGetLastCustomerId = `SELECT cusId FROM customer ORDER BY cusId DESC LIMIT 1`;
-//     const [result] = await db.dash.promise().query(sqlGetLastCustomerId);
-//     let newCustomerId = 'CUS-1001';
-//     if (result.length > 0 && result[0].cusId) {
-//         const lastNumber = parseInt(result[0].cusId.split('-')[1], 10);
-//         newCustomerId = `CUS-${lastNumber + 1}`;
-//     }
-//     return newCustomerId;
-// };
 
 const generateCustomerId = async () => {
-    const sqlGetLastCustomerId = `SELECT cusId FROM marketplaceusers ORDER BY cusId DESC LIMIT 1`;
+    // Use CAST to convert the numeric part to integer for proper sorting
+    const sqlGetLastCustomerId = `
+        SELECT cusId 
+        FROM marketplaceusers 
+        WHERE cusId LIKE 'CUS-%' 
+        ORDER BY CAST(SUBSTRING(cusId, 5) AS UNSIGNED) DESC 
+        LIMIT 1
+    `;
+
     const [result] = await db.marketPlace.promise().query(sqlGetLastCustomerId);
 
     // Default starting ID if no customers exist
@@ -107,7 +105,6 @@ const generateCustomerId = async () => {
 
     return newCustomerId;
 };
-
 
 
 const insertBuildingData = async (customerId, customerData) => {
@@ -638,6 +635,269 @@ exports.getCusDataExc = async (customerId) => {
 //     }
 // };
 
+// exports.updateCustomerData = async (cusId, customerData, buildingData) => {
+//     let connection;
+
+//     try {
+//         // Get a connection from the pool
+//         connection = await db.marketPlace.promise().getConnection();
+
+//         // Start transaction
+//         await connection.beginTransaction();
+
+//         // Parse phone number to extract phone code and number
+//         let phoneCode = '';
+//         let phoneNumber = '';
+
+//         if (customerData.phoneNumber) {
+//             const fullPhone = customerData.phoneNumber.toString();
+
+//             // Check if phone number starts with +94 (Sri Lanka)
+//             if (fullPhone.startsWith('+94')) {
+//                 phoneCode = '+94';
+//                 phoneNumber = fullPhone.substring(3); // Remove +94
+//             }
+//             // Check if phone number starts with 94 (without +)
+//             else if (fullPhone.startsWith('94') && fullPhone.length > 9) {
+//                 phoneCode = '+94';
+//                 phoneNumber = fullPhone.substring(2); // Remove 94
+//             }
+//             // Check if phone number starts with 0 (local format)
+//             else if (fullPhone.startsWith('0')) {
+//                 phoneCode = '+94';
+//                 phoneNumber = fullPhone.substring(1); // Remove leading 0
+//             }
+//             // Default case - assume it's already in correct format
+//             else {
+//                 phoneCode = '+94'; // Default to Sri Lanka
+//                 phoneNumber = fullPhone;
+//             }
+
+//             // Clean up phone number (remove any spaces, dashes, etc.)
+//             phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+//         }
+
+//         // Check if customer exists
+//         const getCustomerIdQuery = `SELECT id, phoneCode, phoneNumber, email, buildingType FROM marketplaceusers WHERE id = ?`;
+//         const [customerResult] = await connection.query(getCustomerIdQuery, [cusId]);
+
+//         console.log("Customer ID query result:", customerResult);
+
+//         if (customerResult.length === 0) {
+//             throw new Error('Customer not found');
+//         }
+
+//         const customerId = customerResult[0].id;
+//         const existingPhoneCode = customerResult[0].phoneCode;
+//         const existingPhoneNumber = customerResult[0].phoneNumber;
+//         const existingEmail = customerResult[0].email;
+//         const existingBuildingType = customerResult[0].buildingType;
+//         console.log("Using customerId:", customerId);
+
+//         // Debug: Log what we're comparing
+//         console.log("Existing email:", existingEmail);
+//         console.log("New email:", customerData.email);
+//         console.log("Email comparison result:", customerData.email !== existingEmail);
+
+//         // Check for duplicate phone number (compare both phoneCode and phoneNumber)
+//         if (phoneCode !== existingPhoneCode || phoneNumber !== existingPhoneNumber) {
+//             console.log("Phone number is being changed, checking for duplicates...");
+//             const checkPhoneQuery = `SELECT id FROM marketplaceusers WHERE phoneCode = ? AND phoneNumber = ? AND id != ?`;
+//             const [phoneResult] = await connection.query(checkPhoneQuery, [phoneCode, phoneNumber, customerId]);
+
+//             if (phoneResult.length > 0) {
+//                 console.log("Phone number conflict found");
+//                 throw new Error('Phone number already exists.');
+//             }
+//             console.log("No phone number conflict");
+//         } else {
+//             console.log("Phone number not changed, skipping phone duplicate check");
+//         }
+
+//         // Check for duplicate email ONLY if email is being changed
+//         if (customerData.email && customerData.email.trim() !== existingEmail) {
+//             console.log("Email is being changed, checking for duplicates...");
+//             const checkEmailQuery = `SELECT id FROM marketplaceusers WHERE email = ? AND id != ?`;
+//             const [emailResult] = await connection.query(checkEmailQuery, [customerData.email.trim(), customerId]);
+
+//             console.log("Email check query:", checkEmailQuery);
+//             console.log("Email check params:", [customerData.email.trim(), customerId]);
+//             console.log("Email check result:", emailResult);
+
+//             if (emailResult.length > 0) {
+//                 console.log("Email conflict found with existing customer ID:", emailResult[0].id);
+//                 throw new Error('Email already exists.');
+//             }
+//             console.log("No email conflict found");
+//         } else {
+//             console.log("Email not changed or empty, skipping email duplicate check");
+//         }
+
+//         // Update customer with separated phone fields
+//         const updateCustomerQuery = `
+//             UPDATE marketplaceusers 
+//             SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? 
+//             WHERE id = ?`;
+
+//         const customerParams = [
+//             customerData.title,
+//             customerData.firstName,
+//             customerData.lastName,
+//             phoneCode,
+//             phoneNumber,
+//             customerData.email,
+//             customerData.buildingType,
+//             cusId
+//         ];
+
+//         await connection.query(updateCustomerQuery, customerParams);
+//         console.log("Customer data updated.");
+
+//         // Handle building type change
+//         if (customerData.buildingType !== existingBuildingType) {
+//             console.log(`Building type changed from ${existingBuildingType} to ${customerData.buildingType}`);
+
+//             // Delete existing building data no matter which type
+//             if (existingBuildingType === 'House') {
+//                 await connection.query('DELETE FROM house WHERE customerId = ?', [customerId]);
+//                 console.log("Deleted old house data.");
+//             } else if (existingBuildingType === 'Apartment') {
+//                 await connection.query('DELETE FROM apartment WHERE customerId = ?', [customerId]);
+//                 console.log("Deleted old apartment data.");
+//             }
+
+//             // Insert new building data
+//             if (customerData.buildingType === 'House') {
+//                 const insertHouseQuery = `
+//                     INSERT INTO house (customerId, houseNo, streetName, city) 
+//                     VALUES (?, ?, ?, ?)`;
+
+//                 await connection.query(insertHouseQuery, [
+//                     customerId,
+//                     buildingData.houseNo || '',
+//                     buildingData.streetName || '',
+//                     buildingData.city || ''
+//                 ]);
+//                 console.log("New house data created.");
+//             } else if (customerData.buildingType === 'Apartment') {
+//                 const insertApartmentQuery = `
+//                     INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
+//                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+//                 await connection.query(insertApartmentQuery, [
+//                     customerId,
+//                     buildingData.buildingNo || '',
+//                     buildingData.buildingName || '',
+//                     buildingData.unitNo || '',
+//                     buildingData.floorNo || '',
+//                     buildingData.houseNo || '',
+//                     buildingData.streetName || '',
+//                     buildingData.city || ''
+//                 ]);
+//                 console.log("New apartment data created.");
+//             }
+
+//         } else {
+//             // If building type didn't change, update the existing building data
+//             if (customerData.buildingType === 'House') {
+//                 const [houseExists] = await connection.query('SELECT * FROM house WHERE customerId = ?', [customerId]);
+//                 console.log("House exists check result:", houseExists);
+
+//                 if (houseExists.length > 0) {
+//                     const updateHouseQuery = `
+//                         UPDATE house 
+//                         SET houseNo = ?, streetName = ?, city = ? 
+//                         WHERE customerId = ?`;
+
+//                     const updateParams = [
+//                         buildingData.houseNo || '',
+//                         buildingData.streetName || '',
+//                         buildingData.city || '',
+//                         customerId
+//                     ];
+//                     console.log("House update parameters:", updateParams);
+
+//                     const [updateResult] = await connection.query(updateHouseQuery, updateParams);
+//                     console.log("House update result:", updateResult);
+
+//                     if (updateResult.affectedRows === 0) {
+//                         console.warn("Warning: House update query did not update any rows!");
+//                     } else {
+//                         console.log(`House update successful, affected rows: ${updateResult.affectedRows}`);
+//                     }
+//                 } else {
+//                     // Create house record if it doesn't exist
+//                     const insertHouseQuery = `
+//                         INSERT INTO house (customerId, houseNo, streetName, city) 
+//                         VALUES (?, ?, ?, ?)`;
+
+//                     await connection.query(insertHouseQuery, [
+//                         customerId,
+//                         buildingData.houseNo || '',
+//                         buildingData.streetName || '',
+//                         buildingData.city || ''
+//                     ]);
+//                     console.log("New house data created for existing house type.");
+//                 }
+//             } else if (customerData.buildingType === 'Apartment') {
+//                 const [apartmentExists] = await connection.query('SELECT 1 FROM apartment WHERE customerId = ?', [customerId]);
+
+//                 if (apartmentExists.length > 0) {
+//                     const updateApartmentQuery = `
+//                         UPDATE apartment 
+//                         SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
+//                         WHERE customerId = ?`;
+
+//                     await connection.query(updateApartmentQuery, [
+//                         buildingData.buildingNo || '',
+//                         buildingData.buildingName || '',
+//                         buildingData.unitNo || '',
+//                         buildingData.floorNo || '',
+//                         buildingData.houseNo || '',
+//                         buildingData.streetName || '',
+//                         buildingData.city || '',
+//                         customerId
+//                     ]);
+//                     console.log("Apartment data updated.");
+//                 } else {
+//                     const insertApartmentQuery = `
+//                         INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
+//                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+//                     await connection.query(insertApartmentQuery, [
+//                         customerId,
+//                         buildingData.buildingNo || '',
+//                         buildingData.buildingName || '',
+//                         buildingData.unitNo || '',
+//                         buildingData.floorNo || '',
+//                         buildingData.houseNo || '',
+//                         buildingData.streetName || '',
+//                         buildingData.city || ''
+//                     ]);
+//                     console.log("New apartment data created for existing apartment type.");
+//                 }
+//             }
+//         }
+
+//         // Commit the transaction
+//         await connection.commit();
+//         return "Customer and building data updated successfully.";
+
+//     } catch (error) {
+//         // If there's an error, roll back the transaction
+//         if (connection) {
+//             await connection.rollback();
+//         }
+//         console.error("Error during update: ", error);
+//         throw error;
+//     } finally {
+//         // Release the connection back to the pool
+//         if (connection) {
+//             connection.release();
+//         }
+//     }
+// };
+
 exports.updateCustomerData = async (cusId, customerData, buildingData) => {
     let connection;
 
@@ -700,7 +960,6 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         // Debug: Log what we're comparing
         console.log("Existing email:", existingEmail);
         console.log("New email:", customerData.email);
-        console.log("Email comparison result:", customerData.email !== existingEmail);
 
         // Check for duplicate phone number (compare both phoneCode and phoneNumber)
         if (phoneCode !== existingPhoneCode || phoneNumber !== existingPhoneNumber) {
@@ -717,23 +976,35 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
             console.log("Phone number not changed, skipping phone duplicate check");
         }
 
-        // Check for duplicate email ONLY if email is being changed
-        if (customerData.email && customerData.email.trim() !== existingEmail) {
-            console.log("Email is being changed, checking for duplicates...");
-            const checkEmailQuery = `SELECT id FROM marketplaceusers WHERE email = ? AND id != ?`;
-            const [emailResult] = await connection.query(checkEmailQuery, [customerData.email.trim(), customerId]);
+        // Handle email validation and duplicate check
+        let finalEmail = null;
 
-            console.log("Email check query:", checkEmailQuery);
-            console.log("Email check params:", [customerData.email.trim(), customerId]);
-            console.log("Email check result:", emailResult);
+        // Check if email is provided and not empty
+        if (customerData.email && customerData.email.trim() !== '') {
+            finalEmail = customerData.email.trim();
 
-            if (emailResult.length > 0) {
-                console.log("Email conflict found with existing customer ID:", emailResult[0].id);
-                throw new Error('Email already exists.');
+            // Check for duplicate email ONLY if email is being changed and is not null/empty
+            if (finalEmail !== existingEmail) {
+                console.log("Email is being changed, checking for duplicates...");
+                const checkEmailQuery = `SELECT id FROM marketplaceusers WHERE email = ? AND id != ?`;
+                const [emailResult] = await connection.query(checkEmailQuery, [finalEmail, customerId]);
+
+                console.log("Email check query:", checkEmailQuery);
+                console.log("Email check params:", [finalEmail, customerId]);
+                console.log("Email check result:", emailResult);
+
+                if (emailResult.length > 0) {
+                    console.log("Email conflict found with existing customer ID:", emailResult[0].id);
+                    throw new Error('Email already exists.');
+                }
+                console.log("No email conflict found");
+            } else {
+                console.log("Email not changed, skipping email duplicate check");
             }
-            console.log("No email conflict found");
         } else {
-            console.log("Email not changed or empty, skipping email duplicate check");
+            // Email is empty or not provided - set to null
+            finalEmail = null;
+            console.log("Email is empty or not provided, setting to null");
         }
 
         // Update customer with separated phone fields
@@ -748,7 +1019,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
             customerData.lastName,
             phoneCode,
             phoneNumber,
-            customerData.email,
+            finalEmail, // Use finalEmail which can be null
             customerData.buildingType,
             cusId
         ];
