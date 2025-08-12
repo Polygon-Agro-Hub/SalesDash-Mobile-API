@@ -596,42 +596,97 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
 }
 
 // Helper function to insert process order record - NOW RETURNS THE processOrderId
+// async function insertProcessOrder(connection, orderId, orderData) {
+//     // Generate Invoice Number (YYMMDDRRRR)
+//     const today = new Date();
+//     const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+//     // Get the current max sequence number for today
+//     const [sequenceResult] = await connection.query(
+//         'SELECT MAX(invNo) as maxInvNo FROM processorders WHERE invNo LIKE ?',
+//         [`${datePrefix}%`]
+//     );
+
+//     let sequenceNumber = 1;
+//     if (sequenceResult[0] && sequenceResult[0].maxInvNo) {
+//         sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+//     }
+
+//     const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+
+//     // Insert process order record
+//     const [result] = await connection.query(
+//         `INSERT INTO processorders (
+//           orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
+//         ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+//         [
+//             orderId,
+//             invNo,
+//             orderData.transactionId || '',
+//             orderData.paymentMethod || 'cash',
+//             0,
+//             0,
+//             'Ordered'
+//         ]
+//     );
+
+//     console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
+//     return result.insertId; // Return the processOrderId
+// }
+
 async function insertProcessOrder(connection, orderId, orderData) {
-    // Generate Invoice Number (YYMMDDRRRR)
-    const today = new Date();
-    const datePrefix = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+    try {
+        // Generate date prefix (YYMMDD)
+        const today = new Date();
+        const year = today.getFullYear().toString().slice(-2); // Last 2 digits of year (25)
+        const month = (today.getMonth() + 1).toString().padStart(2, '0'); // Month (08)
+        const day = today.getDate().toString().padStart(2, '0'); // Day (04)
 
-    // Get the current max sequence number for today
-    const [sequenceResult] = await connection.query(
-        'SELECT MAX(invNo) as maxInvNo FROM processorders WHERE invNo LIKE ?',
-        [`${datePrefix}%`]
-    );
+        const datePrefix = `${year}${month}${day}`; // 250804
+        console.log(`Date prefix for invoice: ${datePrefix}`);
 
-    let sequenceNumber = 1;
-    if (sequenceResult[0] && sequenceResult[0].maxInvNo) {
-        sequenceNumber = parseInt(sequenceResult[0].maxInvNo.slice(-4), 10) + 1;
+        // Get the current max sequence number for today (last 4 digits)
+        const [sequenceResult] = await connection.query(`
+            SELECT MAX(CAST(RIGHT(invNo, 4) AS UNSIGNED)) as maxSequence
+            FROM processorders 
+            WHERE invNo LIKE ? 
+              AND LENGTH(invNo) = 10
+              AND invNo REGEXP '^[0-9]+$'
+        `, [`${datePrefix}%`]);
+
+        // Calculate next sequence number (4 digits)
+        let sequenceNumber = 1;
+        if (sequenceResult[0] && sequenceResult[0].maxSequence !== null) {
+            sequenceNumber = sequenceResult[0].maxSequence + 1;
+        }
+
+        // Generate final 10-digit invoice number: YYMMDDXXXX
+        const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
+        console.log(`Generated invoice number: ${invNo} (Date: ${datePrefix}, Sequence: ${sequenceNumber})`);
+
+        // Insert process order record
+        const [result] = await connection.query(
+            `INSERT INTO processorders (
+              orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+                orderId,
+                invNo,
+                orderData.transactionId || '',
+                orderData.paymentMethod || 'cash',
+                0, // ispaid
+                0, // amount
+                'Ordered' // status
+            ]
+        );
+
+        console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
+        return result.insertId; // Return the processOrderId
+
+    } catch (error) {
+        console.error('Error in insertProcessOrder:', error);
+        throw new Error(`Failed to insert process order: ${error.message}`);
     }
-
-    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
-
-    // Insert process order record
-    const [result] = await connection.query(
-        `INSERT INTO processorders (
-          orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [
-            orderId,
-            invNo,
-            orderData.transactionId || '',
-            orderData.paymentMethod || 'cash',
-            0,
-            0,
-            'Ordered'
-        ]
-    );
-
-    console.log(`Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}`);
-    return result.insertId; // Return the processOrderId
 }
 
 // Helper function to insert address data (house/apartment)
@@ -669,13 +724,14 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
 
         if (apartmentResult && apartmentResult.length > 0) {
             await connection.query(
-                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?,?, ?, ?, ?, ?, ?)',
                 [
                     orderId,
                     apartmentResult[0].buildingNo,
                     apartmentResult[0].buildingName,
                     apartmentResult[0].unitNo,
                     apartmentResult[0].floorNo,
+                    apartmentResult[0].houseNo,
                     apartmentResult[0].streetName,
                     apartmentResult[0].city
                 ]
@@ -684,13 +740,14 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
         } else {
             // Insert default apartment data if not found
             await connection.query(
-                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?, ?,?, ?, ?, ?, ?)',
                 [
                     orderId,
                     orderData.buildingNo || '',
                     orderData.buildingName || '',
                     orderData.unitNo || '',
                     orderData.floorNo || '',
+                    orderData.houseNo || '',
                     orderData.streetName || '',
                     orderData.city || ''
                 ]
@@ -750,22 +807,46 @@ async function processRegularOrderItems(connection, orderId, orderData) {
 }
 
 // Helper function to insert additional items into orderadditionalitems table
+// async function insertAdditionalItems(connection, orderId, items) {
+//     if (!items || items.length === 0) return;
+
+//     for (const item of items) {
+//         await connection.query(
+//             'INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+//             [
+//                 orderId,
+//                 item.productId || item.id,
+//                 item.qty || item.quantity,
+//                 item.unit || item.unitType,
+//                 item.price || 0,
+//                 item.discount || 0
+//             ]
+//         );
+//         console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}`);
+//     }
+// }
+
 async function insertAdditionalItems(connection, orderId, items) {
     if (!items || items.length === 0) return;
 
     for (const item of items) {
+        const price = item.price || 0;
+        const discount = item.discount || 0;
+        const normalPrice = price + discount;
+
         await connection.query(
-            'INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+            'INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
             [
                 orderId,
                 item.productId || item.id,
                 item.qty || item.quantity,
                 item.unit || item.unitType,
-                item.price || 0,
-                item.discount || 0
+                price,
+                discount,
+                normalPrice
             ]
         );
-        console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}`);
+        console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}, normalPrice=${normalPrice}`);
     }
 }
 
@@ -830,7 +911,7 @@ async function sendOrderConfirmationSMS(orderId, processOrderId, userId, userDet
             smsMessage += `\n`;
         }
 
-        smsMessage += `\nThank you for choosing AgroWorld! Our team will contact you shortly.\nSupport: +94 770111999`;
+        smsMessage += `\nThank you for choosing Polygon Agro! Our team will contact you shortly.\nSupport: +94 770111999`;
 
         console.log(`Preparing to send enhanced order confirmation SMS to ${phoneNumber}:`);
         console.log(`SMS Content: ${smsMessage}`);
