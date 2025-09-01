@@ -1456,12 +1456,11 @@ exports.getAllCity = async () => {
     console.log("hitpack")
     return new Promise((resolve, reject) => {
         const query = `
-        SELECT id, city, charge,   createdAt
-        FROM deliverycharge
-      
-        ORDER BY city ASC
+        SELECT DISTINCT d.id, d.city, d.charge, d.createdAt
+        FROM deliverycharge d
+        INNER JOIN centerowncity c ON d.id = c.cityId
+        ORDER BY d.city ASC
         `;
-
         db.collectionofficer.query(query, (error, results) => {
             if (error) {
                 console.error("Error fetching packages:", error);

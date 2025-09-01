@@ -594,11 +594,9 @@ exports.getAllPCity = asyncHandler(async (req, res) => {
     console.log("hitt")
     try {
         const packages = await customerDAO.getAllCity();
-
         if (!packages || packages.length === 0) {
             return res.status(404).json({ message: "No City found" });
         }
-
         res.status(200).json({ message: "City fetched successfully", data: packages });
     } catch (error) {
         console.error("Error fetching city:", error);
