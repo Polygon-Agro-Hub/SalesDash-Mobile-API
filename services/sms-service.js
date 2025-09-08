@@ -267,7 +267,7 @@ exports.sendSMS = async (phoneNumber, message) => {
         console.log(`SMS_PROVIDER === 'mock': ${process.env.SMS_PROVIDER === 'mock'}`);
 
         const apiKey = process.env.SMS_API_KEY;
-        const senderId = process.env.SMS_SENDER_ID || 'AgroWorld';
+        const senderId = process.env.SMS_SENDER_ID || 'PolygonAgro';
 
         console.log(`API Key exists: ${!!apiKey}`);
         console.log(`API Key type: ${typeof apiKey}`);
