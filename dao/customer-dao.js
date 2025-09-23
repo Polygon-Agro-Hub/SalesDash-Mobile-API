@@ -1472,27 +1472,56 @@ exports.getAllCity = async () => {
     });
 };
 
+// exports.getAllCrops = async (cusId) => {
+//     const CustomerId = cusId.customerId
+//     try {
+//         const query = `
+//         SELECT 
+//             mpi.id, mpi.varietyId, mpi.displayName,mpi.category,
+//             pc.image
+//         FROM marketplaceitems mpi
+//         JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId
+//        WHERE mpi.id NOT IN ( 
+//         SELECT mpItemId 
+//         FROM excludelist 
+//         WHERE userId = ?
+//       )
+//         ORDER BY displayName ASC;
+//         `;
+//         const [results] = await db.marketPlace.promise().query(query, [CustomerId]);
+//         return results;
+//     } catch (error) {
+//         console.error("Error fetching crops:", error);
+//         throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+//     }
+// };
+
 exports.getAllCrops = async (cusId) => {
-    const CustomerId = cusId.customerId
+    const CustomerId = cusId.customerId;
     try {
         const query = `
         SELECT 
-            mpi.id, mpi.varietyId, mpi.displayName,
+            mpi.id, 
+            mpi.varietyId, 
+            mpi.displayName,
+            mpi.category,  -- Added category field
             pc.image
         FROM marketplaceitems mpi
         JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId
-       WHERE mpi.id NOT IN ( 
-        SELECT mpItemId 
-        FROM excludelist 
-        WHERE userId = ?
-      )
-        ORDER BY displayName ASC;
+        WHERE mpi.category = 'Retail'
+        AND mpi.id NOT IN (
+            SELECT mpItemId
+            FROM excludelist
+            WHERE userId = ?
+        )
+        ORDER BY mpi.displayName ASC;
         `;
+
         const [results] = await db.marketPlace.promise().query(query, [CustomerId]);
         return results;
     } catch (error) {
         console.error("Error fetching crops:", error);
-        throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
+        throw new Error("Database error: " + error.message);
     }
 };
 
