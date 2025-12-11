@@ -37,8 +37,8 @@ exports.addCustomer = (customerData, salesAgent) => {
                 phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
             }
 
-            const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, buildingType, salesAgent, isDashUser)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+            const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, buildingType, salesAgent, isDashUser,longitude,latitude)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?);`;
 
             db.marketPlace.query(sqlCustomer, [
                 newCustomerId,
@@ -51,6 +51,8 @@ exports.addCustomer = (customerData, salesAgent) => {
                 customerData.buildingType,
                 salesAgent,
                 1,
+                customerData.longitude,
+                customerData.latitude
             ], (err, customerResult) => {
                 if (err) {
                     return reject(err);
@@ -187,6 +189,8 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
                 c.phoneNumber,
                 c.email,
                 c.buildingType,
+                c.longitude,
+                c.latitude,
                 COUNT(o.id) AS orderCount
             FROM marketplaceusers c
             LEFT JOIN orders o ON c.id = o.userId
@@ -1010,7 +1014,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         // Update customer with separated phone fields
         const updateCustomerQuery = `
             UPDATE marketplaceusers 
-            SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? 
+            SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? , longitude = ? , latitude = ?
             WHERE id = ?`;
 
         const customerParams = [
@@ -1021,6 +1025,8 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
             phoneNumber,
             finalEmail, // Use finalEmail which can be null
             customerData.buildingType,
+            customerData.longitude,
+            customerData.latitude,
             cusId
         ];
 

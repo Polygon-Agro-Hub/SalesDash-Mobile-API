@@ -432,14 +432,25 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
         buildingData = req.body.buildingData;
     } else {
         // Format: { title: '...', firstName: '...', buildingData: {...} }
+        // customerData = {
+        //     title: req.body.title,
+        //     firstName: req.body.firstName,
+        //     lastName: req.body.lastName,
+        //     phoneNumber: req.body.phoneNumber,
+        //     email: req.body.email,
+        //     buildingType: req.body.buildingType
+        // };
         customerData = {
             title: req.body.title,
             firstName: req.body.firstName,
             lastName: req.body.lastName,
             phoneNumber: req.body.phoneNumber,
             email: req.body.email,
-            buildingType: req.body.buildingType
+            buildingType: req.body.buildingType,
+            latitude: req.body.latitude,      // ADD THIS LINE
+            longitude: req.body.longitude     // ADD THIS LINE
         };
+
         buildingData = req.body.buildingData;
     }
 

@@ -489,7 +489,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
 async function getUserDetails(connection, userId) {
     const [userResult] = await connection.query(
         `SELECT id, salesAgent, googleId, cusId, title, firstName, lastName, 
-         phoneCode, phoneNumber, buyerType, email, buildingType, billingTitle, billingName 
+         phoneCode, phoneNumber, buyerType, email, buildingType, billingTitle, billingName , longitude , latitude
          FROM marketplaceusers WHERE id = ?`,
         [userId]
     );
@@ -517,6 +517,83 @@ function getBuildingTypeInt(buildingType) {
 }
 
 // Helper function to insert main order record
+// async function insertMainOrder(connection, orderData, salesAgentId, userDetails) {
+//     const {
+//         userId,
+//         orderApp = 'Dash',
+//         delivaryMethod = 'Delivery',
+//         centerId = null,
+//         isCoupon = 0,
+//         couponValue = 0,
+//         total,
+//         fullTotal,
+//         discount = 0,
+//         sheduleType = 'One Time',
+//         sheduleDate,
+//         sheduleTime,
+//         isPackage
+//     } = orderData;
+
+//     // Get title, fullName, and phone details from marketplaceusers table
+//     const orderTitle = userDetails.title;
+//     const orderFullName = `${userDetails.firstName} ${userDetails.lastName}`.trim();
+//     const orderPhonecode1 = userDetails.phoneCode;
+//     const orderPhone1 = userDetails.phoneNumber;
+
+//     // Optional second phone from order data (if provided)
+//     const orderPhonecode2 = orderData.phonecode2 || null;
+//     const orderPhone2 = orderData.phone2 || null;
+
+//     // Use the original buildingType string for orders table
+//     const buildingTypeForOrder = userDetails.buildingType;
+//     console.log(`Using buildingType '${buildingTypeForOrder}' for orders table`);
+
+//     // Format date if needed
+//     let formattedDate = sheduleDate;
+//     if (sheduleDate && typeof sheduleDate === 'string' && sheduleDate.match(/^\d{1,2}\s[A-Za-z]{3}\s\d{4}$/)) {
+//         const dateParts = sheduleDate.split(' ');
+//         const day = parseInt(dateParts[0], 10);
+//         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+//         const month = monthNames.indexOf(dateParts[1]) + 1;
+//         const year = parseInt(dateParts[2], 10);
+//         formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+//     }
+
+//     // Insert order record with user data from marketplaceusers table
+//     const [result] = await connection.query(
+//         `INSERT INTO orders (
+//           userId, orderApp, delivaryMethod, centerId, buildingType,
+//           title, fullName, phonecode1, phone1, phonecode2, phone2,
+//           isCoupon, couponValue, total, fullTotal, discount,
+//           sheduleType, sheduleDate, sheduleTime, isPackage, createdAt
+//         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+//         [
+//             userId,
+//             orderApp,
+//             delivaryMethod,
+//             centerId,
+//             buildingTypeForOrder,
+//             orderTitle,
+//             orderFullName,
+//             orderPhonecode1,
+//             orderPhone1,
+//             orderPhonecode2,
+//             orderPhone2,
+//             isCoupon,
+//             couponValue,
+//             total,
+//             fullTotal,
+//             discount,
+//             sheduleType,
+//             formattedDate,
+//             sheduleTime,
+//             isPackage
+//         ]
+//     );
+
+//     console.log(`Order inserted with user data: Title=${orderTitle}, FullName=${orderFullName}, Phone=${orderPhonecode1}${orderPhone1}, BuildingType=${buildingTypeForOrder}`);
+//     return result.insertId;
+// }
 async function insertMainOrder(connection, orderData, salesAgentId, userDetails) {
     const {
         userId,
@@ -544,6 +621,10 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
     const orderPhonecode2 = orderData.phonecode2 || null;
     const orderPhone2 = orderData.phone2 || null;
 
+    // Get longitude and latitude from userDetails
+    const longitude = userDetails.longitude || null;
+    const latitude = userDetails.latitude || null;
+
     // Use the original buildingType string for orders table
     const buildingTypeForOrder = userDetails.buildingType;
     console.log(`Using buildingType '${buildingTypeForOrder}' for orders table`);
@@ -559,14 +640,15 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
         formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
     }
 
-    // Insert order record with user data from marketplaceusers table
+    // Insert order record with user data from marketplaceusers table INCLUDING longitude and latitude
     const [result] = await connection.query(
         `INSERT INTO orders (
           userId, orderApp, delivaryMethod, centerId, buildingType,
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
-          sheduleType, sheduleDate, sheduleTime, isPackage, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          sheduleType, sheduleDate, sheduleTime, isPackage, 
+          longitude, latitude, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
             userId,
             orderApp,
@@ -587,11 +669,13 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
             sheduleType,
             formattedDate,
             sheduleTime,
-            isPackage
+            isPackage,
+            longitude,    // Added
+            latitude      // Added
         ]
     );
 
-    console.log(`Order inserted with user data: Title=${orderTitle}, FullName=${orderFullName}, Phone=${orderPhonecode1}${orderPhone1}, BuildingType=${buildingTypeForOrder}`);
+    console.log(`Order inserted with user data: Title=${orderTitle}, FullName=${orderFullName}, Phone=${orderPhonecode1}${orderPhone1}, BuildingType=${buildingTypeForOrder}, Location=(${longitude}, ${latitude})`);
     return result.insertId;
 }
 
