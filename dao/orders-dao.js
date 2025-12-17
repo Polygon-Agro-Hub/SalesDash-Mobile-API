@@ -2479,3 +2479,55 @@ exports.getReturnReason = async (orderId) => {
         }
     }
 };
+
+
+exports.getHold = async (orderId) => {
+    let connection;
+    try {
+        connection = await db.marketPlace.promise().getConnection();
+        console.log('Database connection acquired for getHoldReason');
+
+        const holdCheckSql = `
+            SELECT 
+                po.orderId,
+                CASE 
+                    WHEN dho.id IS NOT NULL THEN 'HOLD'
+                    ELSE 'NOT HOLD'
+                END AS orderStatus,
+                dho.holdReasonId,
+                dho.createdAt as holdCreatedAt
+            FROM market_place.processorders po
+            LEFT JOIN collection_officer.driverorders do ON po.id = do.orderId
+            LEFT JOIN collection_officer.driverholdorders dho ON do.id = dho.drvOrderId
+            WHERE po.orderId = ?
+            LIMIT 1
+        `;
+
+        const [result] = await connection.query(holdCheckSql, [orderId]);
+
+        if (!result || result.length === 0) {
+            return {
+                success: false,
+                message: 'Order not found'
+            };
+        }
+
+        return {
+            success: true,
+            orderId: result[0].orderId,
+            isHold: result[0].orderStatus === 'HOLD',
+            orderStatus: result[0].orderStatus,
+            holdReasonId: result[0].holdReasonId || null,
+            holdCreatedAt: result[0].holdCreatedAt || null
+        };
+
+    } catch (err) {
+        console.error('Database error in getHoldReason:', err);
+        throw err;
+    } finally {
+        if (connection) {
+            connection.release();
+            console.log('Database connection released');
+        }
+    }
+};

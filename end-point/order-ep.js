@@ -585,3 +585,43 @@ exports.getReturnReason = async (req, res) => {
 };
 
 
+
+
+
+exports.getHold = async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    console.log("Checking hold status for orderId:", orderId);
+
+    if (!orderId || isNaN(parseInt(orderId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    const holdStatusData = await orderDao.getHold(orderId);
+
+    if (!holdStatusData.success) {
+      return res.status(404).json({
+        success: false,
+        message: holdStatusData.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: holdStatusData
+    });
+
+  } catch (error) {
+    console.error('Error fetching hold status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch hold status',
+      error: error.message
+    });
+  }
+};
+
+
