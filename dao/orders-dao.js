@@ -2438,3 +2438,44 @@ async function updateSalesAgentStars(connection, salesAgentId) {
     }
 }
 
+
+
+exports.getReturnReason = async (orderId) => {
+    let connection;
+    try {
+        // Get connection from pool
+        connection = await db.marketPlace.promise().getConnection();
+        console.log('Database connection acquired for getReturnReason');
+
+        // Single query with joins to get return reason directly
+        const returnReasonSql = `
+            SELECT rr.rsnEnglish as returnReason
+            FROM market_place.processorders po
+            INNER JOIN collection_officer.driverorders do ON do.orderId = po.id
+            INNER JOIN collection_officer.driverreturnorders dro ON dro.drvOrderId = do.id
+            INNER JOIN collection_officer.returnreason rr ON rr.id = dro.returnReasonId
+            WHERE po.orderId = ?
+            LIMIT 1
+        `;
+
+        const [result] = await connection.query(returnReasonSql, [orderId]);
+
+        if (!result || result.length === 0) {
+            return { message: 'Return reason not found' };
+        }
+
+        return {
+            returnReason: result[0].returnReason
+        };
+
+    } catch (err) {
+        console.error('Database error in getReturnReason:', err);
+        throw err;
+    } finally {
+        // Always release the connection back to the pool
+        if (connection) {
+            connection.release();
+            console.log('Database connection released');
+        }
+    }
+};
