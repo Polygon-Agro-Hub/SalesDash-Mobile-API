@@ -20,5 +20,9 @@ router.get('/get-All-Start', auth, orderEp.getAgentAllStars);
 
 router.get('/order-count', auth, orderEp.getOrderCountBySalesAgent);
 
+router.get('/get-return-reason/:orderId', orderEp.getReturnReason);
+
+router.get('/get-hold-reason/:orderId', orderEp.getHold);
+
 module.exports = router;
 
