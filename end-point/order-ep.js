@@ -602,6 +602,8 @@ exports.getHold = async (req, res) => {
 
     const holdStatusData = await orderDao.getHold(orderId);
 
+    console.log("----------------------", holdStatusData)
+
     if (!holdStatusData.success) {
       return res.status(404).json({
         success: false,
