@@ -701,6 +701,20 @@ exports.deleteExcludeItem = asyncHandler(async (req, res) => {
 });
 
 
+exports.getCustomerDataLocation = asyncHandler(async (req, res) => {
+    const { customerId } = req.params;  // Extract cusId from the URL params
+    console.log("Requested cusId: ", customerId);  // For debugging
+
+    try {
+        const result = await customerDAO.getCustomerDataLocation(customerId);
+        console.log("111111111111111", result)
+        res.status(200).json(result);  // Return combined customer and building data
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 
 
 

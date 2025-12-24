@@ -1632,6 +1632,46 @@ exports.deleteExcludeItem = async (excludeId) => {
 };
 
 
+exports.getCustomerDataLocation = async (customerId) => {
+    console.log("Fetching customer data for ID:", customerId);
+    return new Promise((resolve, reject) => {
+        const query = `
+            SELECT 
+                id,
+                salesAgent,
+                googleId,
+                cusId,
+                title,
+                firstName,
+                lastName,
+                phoneCode,
+                phoneCode2,
+                phoneNumber,
+                phoneNumber2,
+                buyerType,
+                email,
+                password,
+                image,
+                longitude,
+                latitude,
+                created_at
+            FROM marketplaceusers 
+            WHERE cusId = ?
+        `;
+
+        db.marketPlace.query(query, [customerId], (error, results) => {
+            if (error) {
+                console.error("Error fetching customer data:", error);
+                reject(error);
+            } else {
+                // Return the first result if exists, otherwise null
+                resolve(results.length > 0 ? results[0] : null);
+            }
+        });
+    });
+};
+
+
 
 
 

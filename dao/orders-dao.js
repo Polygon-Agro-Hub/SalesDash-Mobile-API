@@ -2489,11 +2489,11 @@ exports.getHold = async (orderId) => {
 
         const holdCheckSql = `
             SELECT 
-                po.orderId,
-                CASE 
-                    WHEN dho.id IS NOT NULL THEN 'HOLD'
-                    ELSE 'NOT HOLD'
-                END AS orderStatus,
+                po.orderId as businessOrderId,
+                po.id as processOrderId,
+                do.id as driverOrderId,
+                do.drvStatus,
+                dho.id as holdRecordId,
                 dho.holdReasonId,
                 dho.createdAt as holdCreatedAt
             FROM market_place.processorders po
@@ -2512,11 +2512,13 @@ exports.getHold = async (orderId) => {
             };
         }
 
+        // Check if holdRecordId exists to determine if order is on hold
+        const isHold = result[0].holdRecordId !== null;
+
         return {
             success: true,
-            orderId: result[0].orderId,
-            isHold: result[0].orderStatus === 'HOLD',
-            orderStatus: result[0].orderStatus,
+            orderId: result[0].businessOrderId,  // Fixed: use businessOrderId
+            isHold: isHold,  // Fixed: check if holdRecordId exists
             holdReasonId: result[0].holdReasonId || null,
             holdCreatedAt: result[0].holdCreatedAt || null
         };
