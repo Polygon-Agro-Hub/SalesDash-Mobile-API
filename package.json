@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.958.0",
     "base64-arraybuffer": "^1.0.2",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
