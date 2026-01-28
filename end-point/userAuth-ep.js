@@ -4,10 +4,8 @@ const { loginSchema, updateUserProfileSchema, updatePasswordSchema } = require("
 const asyncHandler = require("express-async-handler");
 
 exports.login = asyncHandler(async (req, res) => {
-  // Validate request body using Joi
   const { error } = loginSchema.validate(req.body, { abortEarly: false });
   console.log(error)
-
   if (error) {
     return res.status(400).json({
       success: false,
@@ -23,33 +21,68 @@ exports.login = asyncHandler(async (req, res) => {
     const result = await userDao.loginUser(empId, password);
     console.log("User login successful:", result);
 
-    // Create JWT token
     const token = jwt.sign(
       { empId: result.empId, id: result.id, passwordUpdate: result.passwordUpdate },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
 
-    // Send token as HTTP-only cookie (More Secure)
     res.cookie("authToken", token, {
-      httpOnly: true, // Prevents JavaScript access
-      secure: process.env.NODE_ENV === "production", // Secure flag for HTTPS in production
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "Strict",
-      // maxAge: 3600000, // 1 hour
       maxAge: 8 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      data: { empId: result.empId, token, id: result.id, passwordUpdate: result.passwordUpdate },
+      data: {
+        empId: result.empId,
+        token,
+        id: result.id,
+        passwordUpdate: result.passwordUpdate
+      },
     });
   } catch (err) {
     console.error("Login failed:", err.message);
-    return res.status(401).json({ success: false, message: err.message });
+
+    if (err.message === 'User not found') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid Employee ID'
+      });
+    }
+
+    if (err.message === 'Invalid password') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid password'
+      });
+    }
+
+    if (err.message === 'This Employee ID is rejected') {
+      return res.status(403).json({
+        success: false,
+        message: 'This Employee ID is rejected',
+        statusType: 'rejected'
+      });
+    }
+
+    if (err.message === 'This Employee ID is not approved') {
+      return res.status(403).json({
+        success: false,
+        message: 'This Employee ID is not approved',
+        statusType: 'not_approved'
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: err.message
+    });
   }
 });
-
 
 // Get User Profile
 exports.getUserProfile = asyncHandler(async (req, res) => {
