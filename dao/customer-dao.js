@@ -37,8 +37,8 @@ exports.addCustomer = (customerData, salesAgent) => {
                 phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
             }
 
-            const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, buildingType, salesAgent, isDashUser)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+            const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, buildingType, salesAgent, isDashUser,longitude,latitude)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?);`;
 
             db.marketPlace.query(sqlCustomer, [
                 newCustomerId,
@@ -51,6 +51,8 @@ exports.addCustomer = (customerData, salesAgent) => {
                 customerData.buildingType,
                 salesAgent,
                 1,
+                customerData.longitude,
+                customerData.latitude
             ], (err, customerResult) => {
                 if (err) {
                     return reject(err);
@@ -187,6 +189,8 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
                 c.phoneNumber,
                 c.email,
                 c.buildingType,
+                c.longitude,
+                c.latitude,
                 COUNT(o.id) AS orderCount
             FROM marketplaceusers c
             LEFT JOIN orders o ON c.id = o.userId
@@ -1010,7 +1014,7 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         // Update customer with separated phone fields
         const updateCustomerQuery = `
             UPDATE marketplaceusers 
-            SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? 
+            SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? , longitude = ? , latitude = ?
             WHERE id = ?`;
 
         const customerParams = [
@@ -1021,6 +1025,8 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
             phoneNumber,
             finalEmail, // Use finalEmail which can be null
             customerData.buildingType,
+            customerData.longitude,
+            customerData.latitude,
             cusId
         ];
 
@@ -1623,6 +1629,46 @@ exports.deleteExcludeItem = async (excludeId) => {
         console.error("Error adding exclude list:", error);
         throw new Error("Database error: " + error.message); // Throw error to be handled in the controller
     }
+};
+
+
+exports.getCustomerDataLocation = async (customerId) => {
+    console.log("Fetching customer data for ID:", customerId);
+    return new Promise((resolve, reject) => {
+        const query = `
+            SELECT 
+                id,
+                salesAgent,
+                googleId,
+                cusId,
+                title,
+                firstName,
+                lastName,
+                phoneCode,
+                phoneCode2,
+                phoneNumber,
+                phoneNumber2,
+                buyerType,
+                email,
+                password,
+                image,
+                longitude,
+                latitude,
+                created_at
+            FROM marketplaceusers 
+            WHERE cusId = ?
+        `;
+
+        db.marketPlace.query(query, [customerId], (error, results) => {
+            if (error) {
+                console.error("Error fetching customer data:", error);
+                reject(error);
+            } else {
+                // Return the first result if exists, otherwise null
+                resolve(results.length > 0 ? results[0] : null);
+            }
+        });
+    });
 };
 
 

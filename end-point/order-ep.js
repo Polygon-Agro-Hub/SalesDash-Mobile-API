@@ -7,47 +7,10 @@ const smsService = require('../services/sms-service');
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-// exports.createOrder = async (req, res) => {
-//   try {
-//     // Validate the request body using the Joi schema
-//     //  await orderValidationSchema.validateAsync(req.body);  // Validate async to handle validation errors properly
-
-//     // Extract sales agent ID from the user (authenticated user)
-//     const salesAgentId = req.user.id;
 
 
 
-//     // Process the order using the DAO
-//     const result = await orderDao.processOrder(req.body, salesAgentId);
-//     console.log("-----------------", req.body)
 
-//     // Send a successful response with the order ID or relevant result
-//     res.status(201).json({
-//       success: true,
-//       message: 'Order created successfully',
-//       data: result // Or you can return order ID here depending on your DAO response
-//     });
-//   } catch (error) {
-//     // If validation fails or any other error occurs, catch it and send an error response
-//     console.error('Error creating order:', error);
-
-//     if (error.isJoi) {
-//       // Handle Joi validation errors
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Validation failed',
-//         error: error.details.map(err => err.message)  // Send detailed validation errors
-//       });
-//     }
-
-//     // Handle any other errors
-//     res.status(500).json({
-//       success: false,
-//       message: error.message || 'Failed to create order',
-//       error: process.env.NODE_ENV === 'development' ? error.stack : undefined
-//     });
-//   }
-// };
 
 
 // exports.createOrder = async (req, res) => {
@@ -60,7 +23,6 @@ const smsService = require('../services/sms-service');
 //     // Validate the request body using the Joi schema
 //     await orderValidationSchema.validateAsync(req.body);
 //     const salesAgentId = req.user.id;
-
 
 //     const { orderData } = req.body;
 
@@ -83,9 +45,12 @@ const smsService = require('../services/sms-service');
 //       });
 //     }
 
-//     console.log('before')
+//     console.log('before processOrder');
 //     const result = await orderDao.processOrder(orderData, salesAgentId);
-//     console.log('after')
+//     console.log('after processOrder');
+
+//     // NOTE: SMS is already sent inside processOrder function
+//     // No need to call it again here unless you want to send additional notifications
 
 //     res.status(201).json({
 //       success: true,
@@ -102,63 +67,6 @@ const smsService = require('../services/sms-service');
 //     });
 //   }
 // };
-
-
-
-exports.createOrder = async (req, res) => {
-  try {
-    console.log('=== ENDPOINT DEBUG ===');
-    console.log('Full request body:', req.body);
-    console.log('Content-Type header:', req.headers['content-type']);
-    console.log('Request method:', req.method);
-
-    // Validate the request body using the Joi schema
-    await orderValidationSchema.validateAsync(req.body);
-    const salesAgentId = req.user.id;
-
-    const { orderData } = req.body;
-
-    console.log('Extracted orderData:', orderData);
-    console.log('Extracted salesAgentId:', salesAgentId);
-    console.log('=== ENDPOINT DEBUG END ===');
-
-    // Validate required fields
-    if (!orderData || !salesAgentId) {
-      return res.status(400).json({
-        success: false,
-        message: 'orderData and salesAgentId are required'
-      });
-    }
-
-    if (!orderData.userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'userId is required in orderData'
-      });
-    }
-
-    console.log('before processOrder');
-    const result = await orderDao.processOrder(orderData, salesAgentId);
-    console.log('after processOrder');
-
-    // NOTE: SMS is already sent inside processOrder function
-    // No need to call it again here unless you want to send additional notifications
-
-    res.status(201).json({
-      success: true,
-      message: 'Order created successfully',
-      data: result
-    });
-
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create order',
-      error: error.message
-    });
-  }
-};
 
 
 
@@ -185,6 +93,103 @@ exports.createOrder = async (req, res) => {
 //       });
 //     });
 // }
+
+exports.createOrder = async (req, res) => {
+  try {
+    console.log('=== ENDPOINT DEBUG ===');
+    console.log('Full request body:', req.body);
+    console.log('Content-Type header:', req.headers['content-type']);
+    console.log('Request method:', req.method);
+
+    // Validate the request body using the Joi schema
+    try {
+      await orderValidationSchema.validateAsync(req.body);
+    } catch (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        error: validationError.details ? validationError.details[0].message : validationError.message
+      });
+    }
+
+    const salesAgentId = req.user.id;
+    const { orderData } = req.body;
+
+    console.log('Extracted orderData:', orderData);
+    console.log('Extracted salesAgentId:', salesAgentId);
+    console.log('=== ENDPOINT DEBUG END ===');
+
+    // Validate required fields
+    if (!orderData || !salesAgentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields',
+        error: 'orderData and salesAgentId are required'
+      });
+    }
+
+    if (!orderData.userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing user information',
+        error: 'userId is required in orderData'
+      });
+    }
+
+    console.log('before processOrder');
+    const result = await orderDao.processOrder(orderData, salesAgentId);
+    console.log('after processOrder');
+
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully',
+      data: result
+    });
+
+  } catch (error) {
+    console.error('Error creating order:', error);
+
+    // Handle specific error types
+    if (error.message.includes('User not found')) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        error: 'The specified user does not exist in the system'
+      });
+    }
+
+    if (error.message.includes('connection') || error.message.includes('ECONNREFUSED')) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection failed',
+        error: 'Unable to connect to the database. Please try again later.'
+      });
+    }
+
+    if (error.message.includes('Transaction') || error.message.includes('rollback')) {
+      return res.status(500).json({
+        success: false,
+        message: 'Transaction failed',
+        error: 'Order processing was interrupted. Please try again.'
+      });
+    }
+
+    if (error.message.includes('QR Code')) {
+      return res.status(500).json({
+        success: false,
+        message: 'QR code generation failed',
+        error: 'Failed to generate invoice QR code. Please contact support.'
+      });
+    }
+
+    // Default error response
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create order',
+      error: error.message || 'An unexpected error occurred while processing your order'
+    });
+  }
+};
 
 
 exports.getAllOrderDetails = async (req, res) => {
@@ -546,6 +551,84 @@ exports.getOrderCountBySalesAgent = async (req, res) => {
 
 
 
+exports.getReturnReason = async (req, res) => {
+  try {
+    const orderId = req.params.orderId; // Changed from req.params.id
 
+    console.log("-----------------------", orderId)
+
+    // Validate orderId
+    if (!orderId || isNaN(parseInt(orderId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Get return reason
+    const returnReasonData = await orderDao.getReturnReason(orderId);
+
+    if (returnReasonData.message) {
+      return res.status(404).json({
+        success: false,
+        message: returnReasonData.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: returnReasonData
+    });
+  } catch (error) {
+    console.error('Error fetching return reason:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch return reason',
+      error: error.message
+    });
+  }
+};
+
+
+
+
+
+exports.getHold = async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    console.log("Checking hold status for orderId:", orderId);
+
+    if (!orderId || isNaN(parseInt(orderId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    const holdStatusData = await orderDao.getHold(orderId);
+
+    console.log("----------------------", holdStatusData)
+
+    if (!holdStatusData.success) {
+      return res.status(404).json({
+        success: false,
+        message: holdStatusData.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: holdStatusData
+    });
+
+  } catch (error) {
+    console.error('Error fetching hold status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch hold status',
+      error: error.message
+    });
+  }
+};
 
 

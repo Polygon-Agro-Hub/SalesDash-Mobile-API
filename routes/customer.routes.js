@@ -21,6 +21,7 @@ router.post("/check-customer", customerEp.checkCustomer);
 router.get('/cutomer-count', auth, customerEp.getCustomerCountBySalesAgent);
 
 
+
 router.get("/get-city", auth, customerEp.getAllPCity);
 
 router.get('/croplist', auth, customerEp.getAllCrops);
@@ -28,4 +29,6 @@ router.post('/add/excludelist', customerEp.addExcludeList)
 router.get('/excludelist', customerEp.getCustomerExludelist)
 
 router.delete('/excludelist/delete', customerEp.deleteExcludeItem)
+
+router.get('/customerData/:customerId', auth, customerEp.getCustomerDataLocation);
 module.exports = router;

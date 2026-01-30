@@ -432,14 +432,25 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
         buildingData = req.body.buildingData;
     } else {
         // Format: { title: '...', firstName: '...', buildingData: {...} }
+        // customerData = {
+        //     title: req.body.title,
+        //     firstName: req.body.firstName,
+        //     lastName: req.body.lastName,
+        //     phoneNumber: req.body.phoneNumber,
+        //     email: req.body.email,
+        //     buildingType: req.body.buildingType
+        // };
         customerData = {
             title: req.body.title,
             firstName: req.body.firstName,
             lastName: req.body.lastName,
             phoneNumber: req.body.phoneNumber,
             email: req.body.email,
-            buildingType: req.body.buildingType
+            buildingType: req.body.buildingType,
+            latitude: req.body.latitude,      // ADD THIS LINE
+            longitude: req.body.longitude     // ADD THIS LINE
         };
+
         buildingData = req.body.buildingData;
     }
 
@@ -686,6 +697,20 @@ exports.deleteExcludeItem = asyncHandler(async (req, res) => {
     } catch (error) {
         console.error("❌ Error deleting item:", error);
         res.status(500).json({ message: "Failed to delete item", error: error.message });
+    }
+});
+
+
+exports.getCustomerDataLocation = asyncHandler(async (req, res) => {
+    const { customerId } = req.params;  // Extract cusId from the URL params
+    console.log("Requested cusId: ", customerId);  // For debugging
+
+    try {
+        const result = await customerDAO.getCustomerDataLocation(customerId);
+        console.log("111111111111111", result)
+        res.status(200).json(result);  // Return combined customer and building data
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
