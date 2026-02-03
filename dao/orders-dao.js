@@ -2,6 +2,7 @@ const db = require('../startup/database');
 const smsService = require('../services/sms-service');
 const QRCode = require('qrcode');
 const uploadFileToS3 = require('../Middlewares/s3upload');
+const notificationDao = require('./notification-dao');
 /**
  * Process a complete order with transaction support for Market Place
  * @param {Object} orderData - Complete order data from request
@@ -1447,7 +1448,7 @@ exports.reportOrder = (orderId, reportStatus) => {
 //     });
 // };
 
-exports.cancelOrder = (orderId) => {
+exports.cancelOrder = async (orderId) => {
     return new Promise((resolve, reject) => {
         console.log('Starting cancelOrder for orderId:', orderId);
 
@@ -1480,7 +1481,7 @@ exports.cancelOrder = (orderId) => {
                 WHERE orderId = ?
             `;
 
-            db.marketPlace.query(updateSql, [orderId], (err, result) => {
+            db.marketPlace.query(updateSql, [orderId], async (err, result) => {
                 if (err) {
                     console.error('Error updating order:', err);
                     return reject(err);
@@ -1496,47 +1497,38 @@ exports.cancelOrder = (orderId) => {
                     });
                 }
 
-                // Insert notification using the actual ID (not orderId)
-                const notificationSql = `
-                    INSERT INTO dashnotification (
-                        orderId, title, readStatus, createdAt
-                    ) VALUES (?, ?, ?, NOW())
-                `;
-
-                console.log('Attempting to insert notification...');
-                console.log('Using actual ID:', actualId);
-
-                db.marketPlace.query(
-                    notificationSql,
-                    [actualId, "Order is Cancelled", 0], // Use actualId here
-                    (notifErr, notifResult) => {
-                        if (notifErr) {
-                            console.error('Failed to insert notification:', notifErr);
-                            return resolve({
-                                success: true,
-                                message: 'Order cancelled successfully but notification failed',
-                                orderId: orderId,
-                                notificationInserted: false,
-                                error: notifErr.message
-                            });
-                        }
-
-                        console.log('Notification inserted successfully:', notifResult);
-
-                        // Return success
-                        resolve({
-                            success: true,
-                            message: 'Order cancelled successfully',
-                            orderId: orderId,
-                            notificationInserted: true
-                        });
-                    }
-                );
+                // IMPORTANT: Use createNotification instead of direct insert
+                // This will automatically emit the Socket.IO event
+                try {
+                    console.log('Creating cancellation notification...');
+                    console.log('Using actual ID:', actualId);
+                    
+                    await notificationDao.createNotification(actualId, "Order is Cancelled");
+                    
+                    console.log('✅ Notification created and emitted successfully');
+                    
+                    resolve({
+                        success: true,
+                        message: 'Order cancelled successfully',
+                        orderId: orderId,
+                        notificationInserted: true,
+                        notificationEmitted: true
+                    });
+                    
+                } catch (notifErr) {
+                    console.error('Failed to create notification:', notifErr);
+                    resolve({
+                        success: true,
+                        message: 'Order cancelled successfully but notification failed',
+                        orderId: orderId,
+                        notificationInserted: false,
+                        error: notifErr.message
+                    });
+                }
             });
         });
     });
 };
-
 ///// getorders
 
 

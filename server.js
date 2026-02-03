@@ -1,10 +1,14 @@
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 require('dotenv').config();
 const { plantcare, collectionofficer, marketPlace, admin } = require('./startup/database');
+const { initializeSocket, setIO } = require('./config/socket.config');
 
 const app = express();
+// Create HTTP server
+const server = http.createServer(app);
 
 const BASE_PATH = '/agro-api/salesdash';
 
@@ -25,7 +29,8 @@ app.get([`${BASE_PATH}/health`, `${BASE_PATH}/healthz`], (req, res) => {
         timestamp: new Date(),
         uptime: process.uptime(),
         service: 'SalesDash Mobile API',
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        socketIO: 'enabled'
     });
 });
 
@@ -45,12 +50,19 @@ const DatabaseConnection = (db, name) => {
         }
     });
 };
+
 // Initial database connections
 DatabaseConnection(plantcare, "PlantCare");
 DatabaseConnection(collectionofficer, "CollectionOfficer");
 DatabaseConnection(marketPlace, "MarketPlace");
 DatabaseConnection(admin, "Admin");
 
+// Initialize Socket.IO
+const io = initializeSocket(server);
+setIO(io); // Store io instance for global access
+console.log('✅ Socket.IO initialized');
+
+// Routes
 const routes = {
     auth: require('./routes/user.routes'),
     customer: require('./routes/customer.routes'),
@@ -73,40 +85,53 @@ app.use((err, req, res, next) => {
     res.status(500).send('Something broke!');
 });
 
-// Start server
+// Start server with Socket.IO
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`📍 Base Path: ${BASE_PATH}`);
     console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
+    console.log(`🔌 Socket.IO Path: ${BASE_PATH}/socket.io`);
 });
 
-// dgsdgdsgdhdf
-
+// Cron Jobs
 const cron = require('node-cron');
 const notificationDao = require('./dao/notification-dao');
 
-// Run every day at midnight
+// Run every day at 6 PM (18:00)
 cron.schedule('00 18 * * *', async () => {
     try {
-        await notificationDao.createPaymentReminders();
-        console.log('Payment reminders created successfully');
+        console.log('⏰ Running payment reminders cron job...');
+        const result = await notificationDao.createPaymentReminders(io);
+        console.log(`✅ Payment reminders created successfully - Notifications: ${result.notificationCount}, SMS: ${result.smsCount}`);
     } catch (error) {
-        console.error('Error creating payment reminders:', error);
+        console.error('❌ Error creating payment reminders:', error);
     }
 });
 
-
-
-// cron.schedule('30 * * * * *', async () => {
+// Uncomment for testing - runs every 30 seconds
+// cron.schedule('*/30 * * * * *', async () => {
 //     try {
-//         await notificationDao.createPaymentReminders();
-//         console.log('Payment reminders created successfully');
+//         console.log('⏰ Running test payment reminders...');
+//         const result = await notificationDao.createPaymentReminders(io);
+//         console.log(`✅ Test reminders created - Notifications: ${result.notificationCount}, SMS: ${result.smsCount}`);
 //     } catch (error) {
-//         console.error('Error creating payment reminders:', error);
+//         console.error('❌ Error in test reminders:', error);
 //     }
 // });
 
-module.exports = app;
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        // Close database connections
+        plantcare.end();
+        collectionofficer.end();
+        marketPlace.end();
+        admin.end();
+    });
+});
 
+module.exports = { app, server, io };

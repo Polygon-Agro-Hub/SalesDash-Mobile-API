@@ -1,79 +1,32 @@
 const db = require('../startup/database');
-
-// exports.getNotificationsBySalesAgent = (salesAgentId) => {
-//   console.log(salesAgentId)
-//   return new Promise((resolve, reject) => {
-//     const query = `
-//     SELECT 
-//   dn.id,
-//   dn.orderId,
-//   dn.title,
-//   dn.readStatus,
-//   dn.createdAt,
-//   po.invNo,
-//   po.status,
-//   o.userId AS cusId,
-//   o.fullName AS customerName,
-//   CONCAT(o.phonecode1, o.phone1) AS phoneNumber
-// FROM dashnotification dn
-// JOIN processorders po ON dn.orderId = po.id
-// JOIN orders o ON  po.orderId = o.id
-// JOIN marketplaceusers mps ON o.userId = mps.id
-// WHERE mps.salesAgent = ?
-// ORDER BY dn.createdAt DESC
-
-//     `;
-
-//     const countQuery = `
-//       SELECT COUNT(*) AS unreadCount 
-//       FROM dashnotification dn
-//       JOIN orders o ON dn.orderId = o.id
-//       JOIN marketplaceusers mps ON o.userId = mps.id
-//       WHERE mps.salesAgent = ? AND dn.readStatus = 0
-//     `;
-
-//     db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
-//       if (err) return reject(err);
-
-//       db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
-//         if (err) return reject(err);
-
-//         resolve({
-//           notifications,
-//           unreadCount: countResult[0]?.unreadCount || 0
-//         });
-//       });
-//       console.log(notifications)
-//     });
-//   });
-// };
+const smsService = require('../services/sms-service');
+const { getIO, emitToAgent } = require('../config/socket.config');
 
 exports.getNotificationsBySalesAgent = (salesAgentId) => {
-  console.log(salesAgentId)
+  console.log('Fetching notifications for agent:', salesAgentId);
   return new Promise((resolve, reject) => {
     const query = `
     SELECT 
-  dn.id,
-  dn.orderId,
-  dn.title,
-  dn.readStatus,
-  dn.createdAt,
-  po.invNo,
-  po.status,
-  o.id as orderid,
-  o.userId AS cusId,
-  mps.cusId As customerId,
-  o.fullName AS customerName,
-  CONCAT(o.phonecode1, o.phone1) AS phoneNumber
-FROM dashnotification dn
-JOIN processorders po ON dn.orderId = po.id
-JOIN orders o ON  po.orderId = o.id
-JOIN marketplaceusers mps ON o.userId = mps.id
-WHERE mps.salesAgent = ?
-ORDER BY dn.createdAt DESC
+      dn.id,
+      dn.orderId,
+      dn.title,
+      dn.readStatus,
+      dn.createdAt,
+      po.invNo,
+      po.status,
+      o.id as orderid,
+      o.userId AS cusId,
+      mps.cusId As customerId,
+      o.fullName AS customerName,
+      CONCAT(o.phonecode1, o.phone1) AS phoneNumber
+    FROM dashnotification dn
+    JOIN processorders po ON dn.orderId = po.id
+    JOIN orders o ON po.orderId = o.id
+    JOIN marketplaceusers mps ON o.userId = mps.id
+    WHERE mps.salesAgent = ?
+    ORDER BY dn.createdAt DESC
     `;
 
-    // Fixed count query with same JOIN pattern as main query
     const countQuery = `
       SELECT COUNT(*) AS unreadCount 
       FROM dashnotification dn
@@ -94,13 +47,12 @@ ORDER BY dn.createdAt DESC
           unreadCount: countResult[0]?.unreadCount || 0
         });
       });
-      console.log(notifications)
     });
   });
 };
 
 exports.markNotificationsAsReadByOrderId = (id) => {
-  console.log(id)
+  console.log('Marking notification as read:', id);
   return new Promise((resolve, reject) => {
     const query = `
       UPDATE dashnotification 
@@ -110,7 +62,7 @@ exports.markNotificationsAsReadByOrderId = (id) => {
 
     db.marketPlace.query(query, [id], (err, result) => {
       if (err) return reject(err);
-      resolve(result.affectedRows); // Returns number of marked notifications
+      resolve(result.affectedRows);
     });
   });
 };
@@ -124,14 +76,89 @@ exports.deleteNotificationsByOrderId = (id) => {
 
     db.marketPlace.query(query, [id], (err, result) => {
       if (err) return reject(err);
-      resolve(result.affectedRows); // Returns number of deleted notifications
+      resolve(result.affectedRows);
     });
   });
 };
 
-const smsService = require('../services/sms-service');
+// Helper to get sales agent ID from order
+exports.getSalesAgentFromOrder = (orderId) => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      SELECT mps.salesAgent
+      FROM processorders po
+      JOIN orders o ON po.orderId = o.id
+      JOIN marketplaceusers mps ON o.userId = mps.id
+      WHERE po.id = ?
+    `;
 
-exports.createPaymentReminders = async () => {
+    db.marketPlace.query(query, [orderId], (err, result) => {
+      if (err) return reject(err);
+      resolve(result[0]?.salesAgent || null);
+    });
+  });
+};
+
+/**
+ * Create notification and emit via Socket.IO
+ * @param {number} orderId - Process order ID
+ * @param {string} title - Notification title
+ * @returns {Promise<Object>} Created notification result
+ */
+exports.createNotification = async (orderId, title) => {
+  return new Promise(async (resolve, reject) => {
+    const insertQuery = `
+      INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
+      VALUES (?, ?, 0, NOW())
+    `;
+
+    db.marketPlace.query(insertQuery, [orderId, title], async (err, result) => {
+      if (err) return reject(err);
+
+      try {
+        // Get sales agent ID
+        const salesAgentId = await exports.getSalesAgentFromOrder(orderId);
+        
+        if (salesAgentId) {
+          try {
+            // Fetch updated notifications for this sales agent
+            const { notifications, unreadCount } = await exports.getNotificationsBySalesAgent(salesAgentId);
+            
+            // Emit to the specific sales agent's room using helper function
+            const emitted = emitToAgent(salesAgentId, 'new_notification', {
+              notification: notifications[0], // The newly created notification
+              notifications: notifications,
+              unreadCount: unreadCount,
+              timestamp: new Date()
+            });
+
+            if (emitted) {
+              console.log(`📢 Notification emitted to sales agent ${salesAgentId}`);
+            } else {
+              console.log(`⚠️ Socket.IO not available, notification saved to DB only`);
+            }
+          } catch (socketError) {
+            console.error('Error emitting notification via Socket.IO:', socketError);
+            // Continue even if socket emit fails - notification is still in DB
+          }
+        }
+
+        resolve(result);
+      } catch (error) {
+        console.error('Error in notification creation process:', error);
+        // Still resolve since the notification was created in DB
+        resolve(result);
+      }
+    });
+  });
+};
+
+/**
+ * Create payment reminders for orders due in 3 days
+ * @param {Server} io - Socket.IO server instance (optional)
+ * @returns {Promise<Object>} Results with notification and SMS counts
+ */
+exports.createPaymentReminders = async (io) => {
   return new Promise(async (resolve, reject) => {
     const orderQuery = `
       SELECT 
@@ -139,7 +166,8 @@ exports.createPaymentReminders = async () => {
         po.invNo,
         o.userId AS customerId,
         o.fullName AS customerName,
-        CONCAT(o.phonecode1, o.phone1) AS phoneNumber
+        CONCAT(o.phonecode1, o.phone1) AS phoneNumber,
+        mps.salesAgent
       FROM processorders po
       JOIN orders o ON po.orderId = o.id
       JOIN marketplaceusers mps ON o.userId = mps.id
@@ -154,55 +182,79 @@ exports.createPaymentReminders = async () => {
     try {
       const orders = await queryAsync(orderQuery, []);
 
-      console.log("orderdata", orders)
+      console.log(`📋 Found ${orders.length} orders for payment reminders`);
 
       if (!orders || orders.length === 0) {
-        return resolve({ notificationCount: 0, smsCount: 0, orders: [] }); // No qualifying orders found
+        return resolve({ notificationCount: 0, smsCount: 0, orders: [] });
       }
 
-      // Create notifications for each qualifying order and send SMS
       const results = {
         notificationCount: 0,
         smsCount: 0,
         orders: []
       };
 
-      console.log("check notifi ", results)
-
       for (const order of orders) {
         try {
-          // 1. Create notification in database
+          // Create notification in DB
           const title = `Payment reminder `;
           await insertNotification(order.orderId, title);
           results.notificationCount++;
 
-          // 2. Send SMS to customer
-          if (order.phoneNumber) {
-            // Improved message format with more details
-            const message = `Hello ${order.customerName}, this is a reminder that your payment for order ${order.invNo} is due in 3 days. Please ensure timely payment to avoid any service interruptions. Thank you!`;
+          // Emit real-time notification via Socket.IO
+          if (order.salesAgent) {
+            try {
+              const { notifications, unreadCount } = await exports.getNotificationsBySalesAgent(order.salesAgent);
+              
+              // Use helper function to emit
+              const emitted = emitToAgent(order.salesAgent, 'new_notification', {
+                notification: notifications[0],
+                notifications: notifications,
+                unreadCount: unreadCount,
+                timestamp: new Date()
+              });
 
-            // Attempt to send the SMS
-            const smsResult = await smsService.sendSMS(order.phoneNumber, message);
-
-            // Log success or failure
-            if (smsResult && smsResult.success) {
-              console.log(`Successfully sent SMS to ${order.phoneNumber} for order ${order.invNo}`);
-              results.smsCount++;
-            } else {
-              console.error(`Failed to send SMS to ${order.phoneNumber} for order ${order.invNo}`);
+              if (emitted) {
+                console.log(`📢 Payment reminder emitted to agent ${order.salesAgent}`);
+              }
+            } catch (socketError) {
+              console.error('Error emitting payment reminder:', socketError);
             }
+          }
 
-            results.orders.push({
-              orderId: order.orderId,
-              invNo: order.invNo,
-              customerName: order.customerName,
-              phoneNumber: order.phoneNumber,
-              notificationSent: true,
-              smsSent: smsResult && smsResult.success,
-              smsProvider: smsResult ? smsResult.provider : 'unknown'
-            });
+          // Send SMS
+          if (order.phoneNumber) {
+            const message = `Hello ${order.customerName}, this is a reminder that your payment for order ${order.invNo} is due in 3 days. Please ensure timely payment. Thank you!`;
+            
+            try {
+              const smsResult = await smsService.sendSMS(order.phoneNumber, message);
+
+              if (smsResult && smsResult.success) {
+                results.smsCount++;
+                console.log(`📱 SMS sent to ${order.phoneNumber}`);
+              }
+
+              results.orders.push({
+                orderId: order.orderId,
+                invNo: order.invNo,
+                customerName: order.customerName,
+                phoneNumber: order.phoneNumber,
+                notificationSent: true,
+                smsSent: smsResult && smsResult.success
+              });
+            } catch (smsError) {
+              console.error(`SMS error for ${order.phoneNumber}:`, smsError);
+              results.orders.push({
+                orderId: order.orderId,
+                invNo: order.invNo,
+                customerName: order.customerName,
+                phoneNumber: order.phoneNumber,
+                notificationSent: true,
+                smsSent: false,
+                error: smsError.message
+              });
+            }
           } else {
-            console.warn(`No phone number available for customer ${order.customerName}, order ${order.invNo}`);
             results.orders.push({
               orderId: order.orderId,
               invNo: order.invNo,
@@ -215,7 +267,6 @@ exports.createPaymentReminders = async () => {
           }
         } catch (err) {
           console.error(`Error processing order ${order.orderId}:`, err);
-          // Continue with other orders even if one fails
           results.orders.push({
             orderId: order.orderId,
             invNo: order.invNo,
@@ -243,7 +294,6 @@ function queryAsync(query, params) {
   });
 }
 
-// Helper function to insert notification
 function insertNotification(orderId, title) {
   return new Promise((resolve, reject) => {
     const insertQuery = `
