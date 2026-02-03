@@ -1,11 +1,10 @@
 const notificationDao = require('../dao/notification-dao');
+const { getIO, emitToAgent } = require('../config/socket.config');
 
 exports.getNotifications = async (req, res) => {
   try {
-    const salesAgentId = req.user.id; // From auth middleware
+    const salesAgentId = req.user.id;
     const { notifications, unreadCount } = await notificationDao.getNotificationsBySalesAgent(salesAgentId);
-
-    console.log("notification count", unreadCount)
 
     res.status(200).json({
       success: true,
@@ -26,8 +25,7 @@ exports.getNotifications = async (req, res) => {
 exports.markAsReadByOrderId = async (req, res) => {
   try {
     const { id } = req.params;
-
-    console.log('Received orderId:', id); // Debugging line
+    const salesAgentId = req.user.id;
 
     if (!id || isNaN(id)) {
       return res.status(400).json({
@@ -37,6 +35,19 @@ exports.markAsReadByOrderId = async (req, res) => {
     }
 
     const affectedRows = await notificationDao.markNotificationsAsReadByOrderId(id);
+
+    // Emit updated notification list to the sales agent
+    try {
+      const { notifications, unreadCount } = await notificationDao.getNotificationsBySalesAgent(salesAgentId);
+      
+      emitToAgent(salesAgentId, 'notifications_update', {
+        notifications,
+        unreadCount
+      });
+    } catch (socketError) {
+      console.error('Error emitting notification update:', socketError);
+      // Continue even if socket emit fails
+    }
 
     res.status(200).json({
       success: true,
@@ -52,10 +63,10 @@ exports.markAsReadByOrderId = async (req, res) => {
   }
 };
 
-
 exports.deleteByOrderId = async (req, res) => {
   try {
     const { id } = req.params;
+    const salesAgentId = req.user.id;
 
     if (!id || isNaN(id)) {
       return res.status(400).json({
@@ -73,6 +84,18 @@ exports.deleteByOrderId = async (req, res) => {
       });
     }
 
+    // Emit update to the sales agent
+    try {
+      const { notifications, unreadCount } = await notificationDao.getNotificationsBySalesAgent(salesAgentId);
+      
+      emitToAgent(salesAgentId, 'notifications_update', {
+        notifications,
+        unreadCount
+      });
+    } catch (socketError) {
+      console.error('Error emitting notification update:', socketError);
+    }
+
     res.status(200).json({
       success: true,
       message: `Deleted ${affectedRows} notification(s)`,
@@ -87,29 +110,10 @@ exports.deleteByOrderId = async (req, res) => {
   }
 };
 
-// exports.createPaymentReminders = async (req, res) => {
-//   try {
-//     // Get orders with scheduleDate 3 days from now
-//     const remindersCreated = await notificationDao.createPaymentReminders();
-
-//     res.status(200).json({
-//       success: true,
-//       message: `Created ${remindersCreated} payment reminder notifications`,
-//       count: remindersCreated
-//     });
-//   } catch (error) {
-//     console.error('Error creating payment reminders:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to create payment reminders'
-//     });
-//   }
-// };
-
 exports.createPaymentReminders = async (req, res) => {
   try {
-    // Get orders with scheduleDate 3 days from now and send notifications
-    const remindersCreated = await notificationDao.createPaymentReminders();
+    const io = getIO();
+    const remindersCreated = await notificationDao.createPaymentReminders(io);
 
     res.status(200).json({
       success: true,
@@ -120,7 +124,85 @@ exports.createPaymentReminders = async (req, res) => {
     console.error('Error creating payment reminders:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create payment reminders'
+      message: 'Failed to create payment reminders',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Utility function to emit notification
+ * Can be called from anywhere in your app
+ * @param {number} orderId - Process order ID
+ * @param {string} title - Notification title
+ */
+exports.emitNotification = async (orderId, title) => {
+  try {
+    await notificationDao.createNotification(orderId, title);
+    return { success: true };
+  } catch (error) {
+    console.error('Error emitting notification:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Test endpoint to manually trigger a notification
+ * For development/testing purposes only
+ */
+exports.testNotification = async (req, res) => {
+  try {
+    const { orderId, title } = req.body;
+
+    if (!orderId || !title) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderId and title are required'
+      });
+    }
+
+    await notificationDao.createNotification(orderId, title);
+
+    res.status(200).json({
+      success: true,
+      message: 'Test notification sent successfully'
+    });
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send test notification',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get Socket.IO connection status
+ */
+exports.getConnectionStatus = async (req, res) => {
+  try {
+    const { getConnectedAgents, isAgentOnline, getAgentConnectionCount } = require('../config/socket.config');
+    const salesAgentId = req.user.id;
+    
+    const connectedAgents = getConnectedAgents();
+    const isOnline = isAgentOnline(salesAgentId);
+    const connectionCount = getAgentConnectionCount(salesAgentId);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        isOnline,
+        connectionCount,
+        totalConnectedAgents: connectedAgents.size,
+        salesAgentId
+      }
+    });
+  } catch (error) {
+    console.error('Error getting connection status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get connection status'
     });
   }
 };
