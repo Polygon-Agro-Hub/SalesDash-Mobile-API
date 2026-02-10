@@ -9,7 +9,6 @@ const Joi = require('joi');
 
 
 exports.createComplain = asyncHandler(async (req, res) => {
-    console.log("Creating complain...");
     try {
         const saId = req.user.id; // Get the user ID from the token
         const input = { ...req.body, saId };
@@ -64,7 +63,6 @@ exports.getComplains = asyncHandler(async (req, res) => {
         }
 
         res.status(200).json(complains);
-        // console.log("Complaints fetched successfully", complains);
     } catch (error) {
         console.error("Error fetching complaints:", error);
         res.status(500).json({ message: "Failed to fetch complaints" });
@@ -75,7 +73,6 @@ exports.getComplains = asyncHandler(async (req, res) => {
 exports.getComplainCategory = asyncHandler(async (req, res) => {
     try {
         const appName = req.params.appName;
-        console.log("Fetching categories for app:", appName);
         const categories = await complainDAO.getComplainCategories(appName);
 
         if (!categories || categories.length === 0) {

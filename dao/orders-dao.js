@@ -16,64 +16,60 @@ exports.processOrder = async (orderData, salesAgentId) => {
     try {
         // Get connection from pool
         connection = await db.marketPlace.promise().getConnection();
-        console.log('Database connection acquired');
 
         // Start transaction
         await connection.beginTransaction();
         transactionStarted = true;
-        console.log('Transaction started');
 
         // STEP 1: Get user details from marketplaceusers
         const userDetails = await getUserDetails(connection, orderData.userId);
-        console.log(`User details retrieved for ID: ${orderData.userId}`);
 
         // STEP 2: Insert main order record FIRST
         const orderId = await insertMainOrder(connection, orderData, salesAgentId, userDetails);
-        console.log(`Main order created with ID: ${orderId}`);
+       
 
         // STEP 3: Insert into processorders table SECOND
         const processOrderId = await insertProcessOrder(connection, orderId, orderData);
-        console.log(`Process order record created with ID: ${processOrderId}`);
+        
 
         // STEP 4: Insert address data based on building type
         await insertAddressData(connection, orderId, orderData, userDetails);
-        console.log('Address data inserted');
+
 
         await updateSalesAgentStars(connection, salesAgentId);
-        console.log('Sales agent stars updated');
 
         // STEP 5: Process order based on isPackage flag
         if (orderData.isPackage === 1) {
             // Package order - Insert into orderpackage table using processOrderId
             await insertOrderPackage(connection, processOrderId, orderData);
-            console.log('Package order inserted into orderpackage table');
+         
 
             // Process items array for package orders (NEW LOGIC)
             if (orderData.items && orderData.items.length > 0) {
                 await insertAdditionalItems(connection, orderId, orderData.items);
-                console.log('Package order items processed from items array');
+                
             }
 
             // Process additional items if present for package orders (EXISTING LOGIC)
             if (orderData.additionalItems && orderData.additionalItems.length > 0) {
                 await insertAdditionalItems(connection, orderId, orderData.additionalItems);
-                console.log('Additional items processed for package order');
+                
             }
         } else {
             // Regular order (isPackage = 0) - Items go to orderadditionalitems table
             await processRegularOrderItems(connection, orderId, orderData);
-            console.log('Regular order items processed');
+            
         }
 
         // Commit transaction if everything succeeded
         await connection.commit();
         transactionStarted = false;
-        console.log('Transaction committed successfully');
+        
 
         // STEP 6: Send order confirmation SMS after successful order processing
         try {
             await sendOrderConfirmationSMS(orderId, processOrderId, orderData.userId, userDetails, orderData, connection);
-            console.log('Enhanced order confirmation SMS sent successfully');
+            
         } catch (smsError) {
             // Log SMS error but don't fail the entire order since it's already committed
             console.error('Failed to send order confirmation SMS:', smsError);
@@ -90,7 +86,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
         if (connection && transactionStarted) {
             try {
                 await connection.rollback();
-                console.log('Transaction rolled back successfully - All data cleared');
+                
             } catch (rollbackError) {
                 console.error('Critical Error: Failed to rollback transaction:', rollbackError);
             }
@@ -175,7 +171,7 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
 
     // Use the original buildingType string for orders table
     const buildingTypeForOrder = userDetails.buildingType;
-    console.log(`Using buildingType '${buildingTypeForOrder}' for orders table`);
+    
 
     // Format date if needed
     let formattedDate = sheduleDate;
@@ -223,7 +219,7 @@ async function insertMainOrder(connection, orderData, salesAgentId, userDetails)
         ]
     );
 
-    console.log(`Order inserted with user data: Title=${orderTitle}, FullName=${orderFullName}, Phone=${orderPhonecode1}${orderPhone1}, BuildingType=${buildingTypeForOrder}, Location=(${longitude}, ${latitude})`);
+    
     return result.insertId;
 }
 
@@ -255,8 +251,6 @@ async function generateQRCode(text) {
 
         const publicUrl = await uploadFileToS3(qrCodeBuffer, fileName, keyPrefix);
 
-        console.log(`✅ QR Code generated and uploaded successfully for: ${text}`);
-        console.log(`📎 QR Code URL: ${publicUrl}`);
 
         return publicUrl;
     } catch (error) {
@@ -275,8 +269,7 @@ async function insertProcessOrder(connection, orderId, orderData) {
         const month = (today.getMonth() + 1).toString().padStart(2, '0'); // Month (08)
         const day = today.getDate().toString().padStart(2, '0'); // Day (04)
 
-        const datePrefix = `${year}${month}${day}`; // 250804
-        console.log(`Date prefix for invoice: ${datePrefix}`);
+        const datePrefix = `${year}${month}${day}`; 
 
         // Get the current max sequence number for today (last 4 digits)
         const [sequenceResult] = await connection.query(`
@@ -295,11 +288,11 @@ async function insertProcessOrder(connection, orderId, orderData) {
 
         // Generate final 10-digit invoice number: YYMMDDXXXX
         const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, '0')}`;
-        console.log(`Generated invoice number: ${invNo} (Date: ${datePrefix}, Sequence: ${sequenceNumber})`);
+       
 
         // ✨ GENERATE QR CODE containing the invoice number
         const qrCodeDataURL = await generateQRCode(invNo);
-        console.log(`QR Code generated for invoice: ${invNo}`);
+        
 
         // Insert process order record WITH QR CODE
         const [result] = await connection.query(
@@ -318,7 +311,6 @@ async function insertProcessOrder(connection, orderId, orderData) {
             ]
         );
 
-        console.log(`✅ Process order inserted with ID: ${result.insertId}, Invoice: ${invNo}, QR Code: Generated`);
         return result.insertId; // Return the processOrderId
 
     } catch (error) {
@@ -345,14 +337,14 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
                 'INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)',
                 [orderId, houseResult[0].houseNo, houseResult[0].streetName, houseResult[0].city]
             );
-            console.log(`House data inserted for orderId: ${orderId}`);
+            
         } else {
             // Insert default house data if not found
             await connection.query(
                 'INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)',
                 [orderId, orderData.houseNo || '', orderData.streetName || '', orderData.city || '']
             );
-            console.log(`Default house data inserted for orderId: ${orderId}`);
+            
         }
     } else if (buildingTypeInt === 2) { // Apartment
         // Get apartment details using customerid from apartment table
@@ -375,7 +367,7 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
                     apartmentResult[0].city
                 ]
             );
-            console.log(`Apartment data inserted for orderId: ${orderId}`);
+            
         } else {
             // Insert default apartment data if not found
             await connection.query(
@@ -391,7 +383,7 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
                     orderData.city || ''
                 ]
             );
-            console.log(`Default apartment data inserted for orderId: ${orderId}`);
+          
         }
     }
     // Handle other building types (condo=3, office=4) if needed
@@ -403,7 +395,7 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
 // Helper function to update sales agent stars
 async function updateSalesAgentStars(connection, salesAgentId) {
     if (!salesAgentId) {
-        console.log('No salesAgentId provided, skipping stars update');
+        
         return;
     }
 
@@ -412,7 +404,7 @@ async function updateSalesAgentStars(connection, salesAgentId) {
             'UPDATE salesagents SET stars = stars + 1 WHERE id = ?',
             [salesAgentId]
         );
-        console.log(`Sales agent ${salesAgentId} stars updated`);
+       
     } catch (error) {
         console.error('Error updating sales agent stars:', error);
     }
@@ -432,7 +424,7 @@ async function insertOrderPackage(connection, processOrderId, orderData) {
         [processOrderId, packageId]
     );
 
-    console.log(`Package order inserted: processOrderId=${processOrderId}, packageId=${packageId}`);
+   
 }
 
 // Helper function to process regular order items (isPackage = 0)
@@ -442,7 +434,7 @@ async function processRegularOrderItems(connection, orderId, orderData) {
     }
 
     await insertAdditionalItems(connection, orderId, orderData.items);
-    console.log(`Regular order items processed: ${orderData.items.length} items`);
+    
 }
 
 
@@ -467,7 +459,7 @@ async function insertAdditionalItems(connection, orderId, items) {
                 normalPrice
             ]
         );
-        console.log(`Additional item inserted: orderId=${orderId}, productId=${item.productId || item.id}, normalPrice=${normalPrice}`);
+       
     }
 }
 
@@ -534,16 +526,11 @@ async function sendOrderConfirmationSMS(orderId, processOrderId, userId, userDet
 
         smsMessage += `\nThank you for choosing Polygon Agro! Our team will contact you shortly.\nSupport: +94 770111999`;
 
-        console.log(`Preparing to send enhanced order confirmation SMS to ${phoneNumber}:`);
-        console.log(`SMS Content: ${smsMessage}`);
 
         // Actually call the SMS service
         const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
 
         if (smsResult && smsResult.success) {
-            console.log(`✅ Enhanced order confirmation SMS sent successfully to ${phoneNumber}`);
-            console.log(`SMS Details - Invoice: ${invoiceNo}, Total: ${formattedPrice}, Schedule: ${formattedScheduleDate} ${scheduleTime}`);
-            console.log(`SMS Provider: ${smsResult.provider || 'unknown'}`);
             return smsResult;
         } else {
             console.error(`❌ Failed to send SMS to ${phoneNumber}:`, smsResult);
@@ -568,7 +555,7 @@ exports.getDataCustomerId = async (customerId) => {
     try {
         // Get connection from pool
         connection = await db.marketPlace.promise().getConnection();
-        console.log('Database connection acquired');
+        
 
         // First query to get basic customer info including phoneCode and phoneNumber
         const customerSql = `
@@ -642,115 +629,6 @@ exports.getDataCustomerId = async (customerId) => {
     }
 };
 
-// exports.getOrderById = (orderId) => {
-//     return new Promise((resolve, reject) => {
-//         const sql = `
-//         SELECT 
-//            o.id AS orderId,
-//            o.userId,
-//            o.sheduleType,
-//            o.sheduleDate,
-//            o.sheduleTime,
-//            o.createdAt,
-//            o.total,
-//            o.discount,
-//            o.fullTotal,
-//            c.title,
-//            c.firstName,
-//            c.lastName,
-//            c.phoneNumber,
-//            c.buildingType,
-//            p.invNo AS invoiceNumber
-//         FROM orders o
-//         JOIN marketplaceusers c ON o.userId = c.id
-//         LEFT JOIN processorders p ON o.id = p.orderId
-//         WHERE o.id = ?
-//       `;
-
-//         db.marketPlace.query(sql, [orderId], (err, orderResults) => {
-//             if (err) {
-//                 return reject(err);
-//             }
-
-//             if (orderResults.length === 0) {
-//                 return resolve({ message: 'No order found with the given ID' });
-//             }
-
-//             const order = orderResults[0];
-//             const customerId = order.userId; // Fixed: should be userId, not customerId
-//             const buildingType = order.buildingType;
-
-//             if (buildingType === 'House') {
-//                 const addressSql = `
-//             SELECT 
-//                houseNo,
-//                streetName,
-//                city
-//             FROM house
-//             WHERE customerId = ?
-//           `;
-
-//                 db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
-//                     if (err) {
-//                         return reject(err);
-//                     }
-
-//                     let formattedAddress = '';
-//                     if (addressResults[0]) {
-//                         const addr = addressResults[0];
-//                         formattedAddress = `${addr.houseNo || ''}, ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-//                         formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
-//                     }
-
-//                     resolve({
-//                         ...order,
-//                         fullAddress: formattedAddress
-//                     });
-//                 });
-//             } else if (buildingType === 'Apartment') {
-//                 const addressSql = `
-//             SELECT 
-//                buildingNo,
-//                buildingName,
-//                unitNo,
-//                floorNo,
-//                houseNo,
-//                streetName,
-//                city
-//             FROM apartment
-//             WHERE customerId = ?
-//           `;
-
-//                 db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
-//                     if (err) {
-//                         return reject(err);
-//                     }
-
-//                     let formattedAddress = '';
-//                     if (addressResults[0]) {
-//                         const addr = addressResults[0];
-//                         formattedAddress = `${addr.buildingName || ''}, ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''}, ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-//                         formattedAddress = formattedAddress.replace(/\s+/g, ' ')
-//                             .replace(/, Unit ,/, ',')
-//                             .replace(/, Floor ,/, ',')
-//                             .trim();
-//                         formattedAddress = formattedAddress.replace(/,\s*$/, '');
-//                     }
-
-//                     resolve({
-//                         ...order,
-//                         fullAddress: formattedAddress
-//                     });
-//                 });
-//             } else {
-//                 resolve({
-//                     ...order,
-//                     fullAddress: ''
-//                 });
-//             }
-//         });
-//     });
-// };
 
 exports.getOrderById = async (orderId) => {
     let connection;
@@ -758,7 +636,7 @@ exports.getOrderById = async (orderId) => {
     try {
         // Get connection from pool
         connection = await db.marketPlace.promise().getConnection();
-        console.log('Database connection acquired');
+      
 
         const sql = `
             SELECT
@@ -801,7 +679,7 @@ exports.getOrderById = async (orderId) => {
         `;
 
         const [orderResults] = await connection.execute(sql, [orderId]);
-        console.log("Order results:", orderResults);
+       
 
         if (orderResults.length === 0) {
             return { message: 'No order found with the given ID' };
@@ -875,7 +753,7 @@ exports.getOrderById = async (orderId) => {
         let packageInfo = null;
 
         if (order.isPackage === 1) {
-            console.log("This is a package order, packageId:", order.packageId);
+           
 
             if (order.packageId) {
                 const packageDetailsSql = `
@@ -892,7 +770,7 @@ exports.getOrderById = async (orderId) => {
                 `;
 
                 const [packageDetailsResults] = await connection.execute(packageDetailsSql, [order.packageId]);
-                console.log("Package details query results:", packageDetailsResults);
+               
 
                 packageDetails = packageDetailsResults.map(detail => ({
                     id: detail.id,
@@ -944,12 +822,6 @@ exports.getOrderById = async (orderId) => {
             });
         }
 
-        console.log("Package details:", packageDetails);
-        console.log("Package info:", packageInfo);
-        console.log("Enhanced Additional Items:", enhancedAdditionalItems);
-        console.log("Order packageId:", order.packageId);
-        console.log("Order isPackage:", order.isPackage);
-
         // Return order data
         const result = {
             orderId: order.orderId,
@@ -997,45 +869,6 @@ exports.getOrderById = async (orderId) => {
     }
 };
 
-// exports.getOrderByCustomerId = (customerId) => {
-//     return new Promise((resolve, reject) => {
-//         const sql = `
-//             SELECT 
-//                 o.id AS orderId,
-//                 o.userId,
-//                 o.sheduleType,
-//                 o.sheduleDate,
-//                 o.sheduleTime,
-
-
-//                 o.createdAt,
-
-
-//                 o.total,
-//                 o.discount,
-//                 o.fullTotal,
-//                 p.invNo AS InvNo,
-//                 p.reportStatus AS reportStatus,
-//                 p.paymentMethod AS paymentMethod,
-//                 p.status As status
-//             FROM orders o
-//             LEFT JOIN market_place.processorders p ON o.id = p.orderId
-//             WHERE o.userId = ?
-//         `;
-
-//         db.marketPlace.query(sql, [customerId], (err, orderResults) => {
-//             if (err) {
-//                 return reject(err);
-//             }
-
-//             if (orderResults.length === 0) {
-//                 return resolve({ message: 'No orders found for this customer' });
-//             }
-
-//             resolve(orderResults);
-//         });
-//     });
-// };
 
 exports.getOrderByCustomerId = (customerId, page = 1, limit = 5) => {
     return new Promise((resolve, reject) => {
@@ -1089,7 +922,7 @@ exports.getOrderByCustomerId = (customerId, page = 1, limit = 5) => {
                     return reject(err);
                 }
 
-                console.log("bidshkic", orderResults)
+          
 
                 resolve({
                     orders: orderResults,
@@ -1101,130 +934,6 @@ exports.getOrderByCustomerId = (customerId, page = 1, limit = 5) => {
 };
 
 
-
-
-// exports.getAllOrderDetails = (salesAgentId) => {
-//     return new Promise((resolve, reject) => {
-//         let sql = `
-//       SELECT 
-//          o.id AS orderId,
-//                 o.userId,
-//                 o.sheduleType,
-//                 o.sheduleDate,
-//                 o.sheduleTime,
-//                 o.createdAt,
-//                 o.total,
-//                 o.discount,
-//                 o.fullTotal,
-//                 m.salesAgent,
-//                 p.invNo AS InvNo,
-//                 p.reportStatus AS reportStatus,
-//                 p.paymentMethod AS paymentMethod,
-//                 p.status As status
-//       FROM orders o
-//        LEFT JOIN market_place.processorders p ON o.id = p.orderId
-//         LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
-//     `;
-
-//         // Add WHERE clause if salesAgentId is provided
-//         const params = [];
-//         if (salesAgentId) {
-//             sql += ` WHERE m.salesAgent = ?`;
-//             params.push(salesAgentId);
-//         }
-
-//         db.marketPlace.query(sql, params, (err, orderResults) => {
-//             if (err) {
-//                 return reject(err);
-//             }
-
-//             if (orderResults.length === 0) {
-//                 return resolve({ message: 'No orders found' });
-//             }
-
-//             // Process each order to get corresponding address details
-//             const orderPromises = orderResults.map(order => {
-//                 return new Promise((resolveOrder, rejectOrder) => {
-//                     const customerId = order.customerId;
-//                     const buildingType = order.buildingType;
-
-//                     if (buildingType === 'House') {
-//                         const addressSql = `
-//               SELECT 
-//                 houseNo,
-//                 streetName,
-//                 city
-//               FROM house
-//               WHERE customerId = ?
-//             `;
-
-//                         db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
-//                             if (err) {
-//                                 return rejectOrder(err);
-//                             }
-
-//                             let formattedAddress = '';
-//                             if (addressResults[0]) {
-//                                 const addr = addressResults[0];
-//                                 formattedAddress = `${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-//                                 formattedAddress = formattedAddress.replace(/\s+/g, ' ').trim();
-//                             }
-
-//                             resolveOrder({
-//                                 ...order,
-//                                 fullAddress: formattedAddress
-//                             });
-//                         });
-//                     } else if (buildingType === 'Apartment') {
-//                         const addressSql = `
-//               SELECT 
-//                 buildingNo,
-//                 buildingName,
-//                 unitNo,
-//                 floorNo,
-//                 houseNo,
-//                 streetName,
-//                 city
-//               FROM apartment
-//               WHERE customerId = ?
-//             `;
-
-//                         db.marketPlace.query(addressSql, [customerId], (err, addressResults) => {
-//                             if (err) {
-//                                 return rejectOrder(err);
-//                             }
-
-//                             let formattedAddress = '';
-//                             if (addressResults[0]) {
-//                                 const addr = addressResults[0];
-//                                 formattedAddress = `${addr.buildingName || ''} ${addr.buildingNo || ''}, Unit ${addr.unitNo || ''}, Floor ${addr.floorNo || ''}, ${addr.houseNo || ''} ${addr.streetName || ''}, ${addr.city || ''}`.trim();
-//                                 formattedAddress = formattedAddress.replace(/\s+/g, ' ')
-//                                     .replace(/, Unit ,/, ',')
-//                                     .replace(/, Floor ,/, ',')
-//                                     .trim();
-//                                 formattedAddress = formattedAddress.replace(/,\s*$/, '');
-//                             }
-
-//                             resolveOrder({
-//                                 ...order,
-//                                 fullAddress: formattedAddress
-//                             });
-//                         });
-//                     } else {
-//                         resolveOrder({
-//                             ...order,
-//                             fullAddress: ''
-//                         });
-//                     }
-//                 });
-//             });
-
-//             Promise.all(orderPromises)
-//                 .then(results => resolve(results))
-//                 .catch(error => reject(error));
-//         });
-//     });
-// };
 
 exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     let connection;
@@ -1239,7 +948,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
         const limitNum = parseInt(limit);
         const offset = (pageNum - 1) * limitNum;
 
-        console.log('Pagination params:', { page: pageNum, limit: limitNum, offset });
+    
 
         // First, get the total count
         let countSql = `
@@ -1291,8 +1000,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
         // Add ORDER BY and LIMIT/OFFSET using string interpolation
         sql += ` ORDER BY o.createdAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
-        //console.log('Final SQL:', sql);
-        console.log('Params:', params);
+
 
         const [orderResults] = await connection.execute(sql, params);
 
@@ -1413,43 +1121,9 @@ exports.reportOrder = (orderId, reportStatus) => {
     });
 };
 
-
-///cancel Order
-
-// exports.cancelOrder = (orderId) => {
-//     return new Promise((resolve, reject) => {
-//         // Update order status to Cancelled
-//         const updateSql = `
-//       UPDATE market_place.processorders  
-//       SET status = 'Cancelled'
-//       WHERE orderId = ?
-//     `;
-
-//         db.marketPlace.query(updateSql, [orderId], (err, result) => {
-//             if (err) {
-//                 return reject(err);
-//             }
-
-//             // Check if any row was affected
-//             if (result.affectedRows === 0) {
-//                 return resolve({
-//                     message: 'Order not found or already cancelled'
-//                 });
-//             }
-
-//             // Return success
-//             resolve({
-//                 success: true,
-//                 message: 'Order cancelled successfully',
-//                 orderId: orderId
-//             });
-//         });
-//     });
-// };
-
 exports.cancelOrder = (orderId) => {
     return new Promise((resolve, reject) => {
-        console.log('Starting cancelOrder for orderId:', orderId);
+      
 
         // First, get the actual ID from processorders table
         const selectSql = `
@@ -1464,14 +1138,14 @@ exports.cancelOrder = (orderId) => {
             }
 
             if (selectResult.length === 0) {
-                console.log('Order not found');
+                
                 return resolve({
                     message: 'Order not found'
                 });
             }
 
             const actualId = selectResult[0].id;
-            console.log('Found order with actual ID:', actualId);
+         
 
             // Update order status to Cancelled
             const updateSql = `
@@ -1486,11 +1160,11 @@ exports.cancelOrder = (orderId) => {
                     return reject(err);
                 }
 
-                console.log('Order update result:', result);
+             
 
                 // Check if any row was affected
                 if (result.affectedRows === 0) {
-                    console.log('No rows affected - order not found');
+                    
                     return resolve({
                         message: 'Order not found or already cancelled'
                     });
@@ -1503,8 +1177,6 @@ exports.cancelOrder = (orderId) => {
                     ) VALUES (?, ?, ?, NOW())
                 `;
 
-                console.log('Attempting to insert notification...');
-                console.log('Using actual ID:', actualId);
 
                 db.marketPlace.query(
                     notificationSql,
@@ -1521,7 +1193,7 @@ exports.cancelOrder = (orderId) => {
                             });
                         }
 
-                        console.log('Notification inserted successfully:', notifResult);
+                       
 
                         // Return success
                         resolve({
@@ -1537,66 +1209,6 @@ exports.cancelOrder = (orderId) => {
     });
 };
 
-///// getorders
-
-
-
-
-// // Alternative function to get order counts for ALL sales agents
-// exports.getOrderCountBySalesAgent = async (salesAgentId) => {
-//     try {
-//         const connection = await db.marketPlace.promise().getConnection();
-//         try {
-//             // First get all customers assigned to this sales agent
-//             const customersQuery = `
-//                 SELECT id, firstName, lastName, salesAgent
-//                 FROM marketplaceusers 
-//                 WHERE salesAgent = ?
-//             `;
-
-//             const [customerRows] = await connection.query(customersQuery, [salesAgentId]);
-
-//             console.log("Customers for sales agent", salesAgentId, ":", customerRows);
-
-//             if (customerRows.length === 0) {
-//                 return {
-//                     salesAgentId: salesAgentId,
-//                     customerCount: 0,
-//                     orderCount: 0,
-//                     message: 'No customers assigned to this sales agent'
-//                 };
-//             }
-
-//             // Get customer IDs
-//             const customerIds = customerRows.map(customer => customer.id);
-
-//             // Get order count for all these customers
-//             const orderCountQuery = `
-//                 SELECT COUNT(*) as orderCount
-//                 FROM orders 
-//                 WHERE userId IN (${customerIds.map(() => '?').join(',')})
-//             `;
-
-//             const [orderRows] = await connection.query(orderCountQuery, customerIds);
-
-//             console.log("veukcsaj", orderRows)
-
-//             return {
-//                 salesAgentId: salesAgentId,
-//                 customerCount: customerRows.length,
-//                 orderCount: orderRows[0]?.orderCount || 0,
-//                 customers: customerRows // Optional: include customer details
-//             };
-
-//         } finally {
-//             connection.release();
-//         }
-//     } catch (error) {
-//         console.error('Error in getOrderCountBySalesAgent:', error);
-//         throw error;
-//     }
-// };
-
 
 exports.getOrderCountBySalesAgent = async (salesAgentId) => {
     try {
@@ -1611,7 +1223,7 @@ exports.getOrderCountBySalesAgent = async (salesAgentId) => {
 
             const [customerRows] = await connection.query(customersQuery, [salesAgentId]);
 
-            console.log("Customers for sales agent", salesAgentId, ":", customerRows);
+           
 
             if (customerRows.length === 0) {
                 return {
@@ -1636,7 +1248,7 @@ exports.getOrderCountBySalesAgent = async (salesAgentId) => {
 
             const [orderRows] = await connection.query(orderCountQuery, customerIds);
 
-            console.log("Current month orders:", orderRows);
+           
 
             return {
                 salesAgentId: salesAgentId,
@@ -1809,16 +1421,6 @@ exports.getAllAgentStats = async (salesAgentId) => {
 };
 
 
-/**
- * Update sales agent stars for the current date
- * Increments the 'completed' column by 1 for the given salesAgentId on current date
- * Updates numOfStars to 1 if completed equals target, otherwise leaves it unchanged
- * If no record exists for today, creates a new one
- * 
- * @param {Object} connection - Database connection
- * @param {Number} salesAgentId - ID of the sales agent
- * @returns {Promise<void>}
- */
 async function updateSalesAgentStars(connection, salesAgentId) {
     // Get current date in YYYY-MM-DD format
     const today = new Date();
@@ -1841,7 +1443,7 @@ async function updateSalesAgentStars(connection, salesAgentId) {
         let numOfStars = currentRecord.numOfStars || 0;
         if (newCompleted === targetValue) {
             numOfStars = 1;
-            console.log(`Sales agent ${salesAgentId} achieved target (${targetValue}), setting numOfStars to 1`);
+            
         }
 
         await connection.query(
@@ -1849,7 +1451,7 @@ async function updateSalesAgentStars(connection, salesAgentId) {
             [newCompleted, numOfStars, currentRecord.id]
         );
 
-        console.log(`Updated sales agent ${salesAgentId} stars: completed ${currentCompleted} -> ${newCompleted}`);
+       
     } else {
         // No record exists for today, create a new one with completed = 1
         // Note: We don't know the target yet, so numOfStars will be 0 initially
@@ -1858,7 +1460,6 @@ async function updateSalesAgentStars(connection, salesAgentId) {
             [salesAgentId, formattedDate, 1, 0, 0]  // Initialize with defaults
         );
 
-        console.log(`Created new sales agent ${salesAgentId} stars record with completed = 1`);
     }
 }
 
@@ -1869,7 +1470,7 @@ exports.getReturnReason = async (orderId) => {
     try {
         // Get connection from pool
         connection = await db.marketPlace.promise().getConnection();
-        console.log('Database connection acquired for getReturnReason');
+       
 
         // Single query with joins to get return reason directly
         const returnReasonSql = `
@@ -1909,7 +1510,7 @@ exports.getHold = async (orderId) => {
     let connection;
     try {
         connection = await db.marketPlace.promise().getConnection();
-        console.log('Database connection acquired for getHoldReason');
+     
 
         const holdCheckSql = `
             SELECT 

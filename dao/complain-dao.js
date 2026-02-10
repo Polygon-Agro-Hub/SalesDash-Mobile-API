@@ -5,7 +5,6 @@ exports.createComplain = (saId, language, complain, category, status, refNo) => 
     return new Promise((resolve, reject) => {
         const today = new Date();
         const datePrefix = today.toISOString().slice(2, 10).replace(/-/g, "");
-        console.log("datePrefix", datePrefix);
 
 
         const checkSql = `SELECT refNo FROM dashcomplain WHERE refNo LIKE ? ORDER BY refNo DESC LIMIT 1`;
@@ -70,7 +69,6 @@ exports.getComplainCategories = async (appName) => {
                 reject(error);
             } else {
 
-                console.log("Fetched categories:", results);
                 resolve(results);
             }
         });

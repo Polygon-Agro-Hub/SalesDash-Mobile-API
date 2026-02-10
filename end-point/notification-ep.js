@@ -5,7 +5,6 @@ exports.getNotifications = async (req, res) => {
     const salesAgentId = req.user.id; // From auth middleware
     const { notifications, unreadCount } = await notificationDao.getNotificationsBySalesAgent(salesAgentId);
 
-    console.log("notification count", unreadCount)
 
     res.status(200).json({
       success: true,
@@ -86,25 +85,6 @@ exports.deleteByOrderId = async (req, res) => {
     });
   }
 };
-
-// exports.createPaymentReminders = async (req, res) => {
-//   try {
-//     // Get orders with scheduleDate 3 days from now
-//     const remindersCreated = await notificationDao.createPaymentReminders();
-
-//     res.status(200).json({
-//       success: true,
-//       message: `Created ${remindersCreated} payment reminder notifications`,
-//       count: remindersCreated
-//     });
-//   } catch (error) {
-//     console.error('Error creating payment reminders:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to create payment reminders'
-//     });
-//   }
-// };
 
 exports.createPaymentReminders = async (req, res) => {
   try {

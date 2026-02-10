@@ -2,106 +2,9 @@ const orderDao = require('../dao/orders-dao');
 const orderValidationSchema = require('../Validations/Order-validation');
 const smsService = require('../services/sms-service');
 
-/**
- * Create a new order
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-
-
-
-
-
-
-// exports.createOrder = async (req, res) => {
-//   try {
-//     console.log('=== ENDPOINT DEBUG ===');
-//     console.log('Full request body:', req.body);
-//     console.log('Content-Type header:', req.headers['content-type']);
-//     console.log('Request method:', req.method);
-
-//     // Validate the request body using the Joi schema
-//     await orderValidationSchema.validateAsync(req.body);
-//     const salesAgentId = req.user.id;
-
-//     const { orderData } = req.body;
-
-//     console.log('Extracted orderData:', orderData);
-//     console.log('Extracted salesAgentId:', salesAgentId);
-//     console.log('=== ENDPOINT DEBUG END ===');
-
-//     // Validate required fields
-//     if (!orderData || !salesAgentId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'orderData and salesAgentId are required'
-//       });
-//     }
-
-//     if (!orderData.userId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'userId is required in orderData'
-//       });
-//     }
-
-//     console.log('before processOrder');
-//     const result = await orderDao.processOrder(orderData, salesAgentId);
-//     console.log('after processOrder');
-
-//     // NOTE: SMS is already sent inside processOrder function
-//     // No need to call it again here unless you want to send additional notifications
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Order created successfully',
-//       data: result
-//     });
-
-//   } catch (error) {
-//     console.error('Error creating order:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to create order',
-//       error: error.message
-//     });
-//   }
-// };
-
-
-
-// exports.getAllOrderDetails = (req, res) => {
-
-//   const salesAgentId = req.user.id; // Assuming the decoded token is available in req.user
-
-//   console.log("id", salesAgentId)
-
-//   orderDao.getAllOrderDetails(salesAgentId)
-//     .then(orderDetails => {
-//       res.status(200).json({
-//         success: true,
-//         count: orderDetails.length,
-//         data: orderDetails
-//       });
-//     })
-//     .catch(error => {
-//       console.error('Error fetching all order details:', error);
-//       res.status(500).json({
-//         success: false,
-//         message: 'Failed to fetch order details',
-//         error: error.message
-//       });
-//     });
-// }
-
 exports.createOrder = async (req, res) => {
   try {
-    console.log('=== ENDPOINT DEBUG ===');
-    console.log('Full request body:', req.body);
-    console.log('Content-Type header:', req.headers['content-type']);
-    console.log('Request method:', req.method);
 
-    // Validate the request body using the Joi schema
     try {
       await orderValidationSchema.validateAsync(req.body);
     } catch (validationError) {
@@ -114,10 +17,6 @@ exports.createOrder = async (req, res) => {
 
     const salesAgentId = req.user.id;
     const { orderData } = req.body;
-
-    console.log('Extracted orderData:', orderData);
-    console.log('Extracted salesAgentId:', salesAgentId);
-    console.log('=== ENDPOINT DEBUG END ===');
 
     // Validate required fields
     if (!orderData || !salesAgentId) {
@@ -136,9 +35,7 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    console.log('before processOrder');
     const result = await orderDao.processOrder(orderData, salesAgentId);
-    console.log('after processOrder');
 
     res.status(201).json({
       success: true,
@@ -198,7 +95,6 @@ exports.getAllOrderDetails = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 5;
 
-    console.log("id", salesAgentId, "page", page, "limit", limit);
 
     const result = await orderDao.getAllOrderDetails(salesAgentId, page, limit);
 
@@ -224,7 +120,6 @@ exports.getAllOrderDetails = async (req, res) => {
 
 exports.getOrderById = async (req, res) => {
 
-  console.log(",,,,,")
   try {
     const orderId = req.params.orderId;
 
@@ -238,7 +133,6 @@ exports.getOrderById = async (req, res) => {
 
     const order = await orderDao.getOrderById(orderId);
 
-    console.log("data order hhhhhhhhhhhh", order)
 
     if (order.message) {
       return res.status(404).json({
@@ -263,40 +157,6 @@ exports.getOrderById = async (req, res) => {
   }
 };
 
-// exports.getOrderByCustomerId = async (req, res) => {
-//   try {
-//     const customerId = req.params.id;
-
-
-//     if (!customerId || isNaN(parseInt(customerId))) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid customer ID'
-//       });
-//     }
-
-//     const orders = await orderDao.getOrderByCustomerId(customerId);
-
-//     if (orders.message) {
-//       return res.status(404).json({
-//         success: false,
-//         message: orders.message
-//       });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       data: orders
-//     });
-//   } catch (error) {
-//     console.error('Error fetching orders by customer ID:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch order details',
-//       error: error.message
-//     });
-//   }
-// };
 
 exports.getOrderByCustomerId = async (req, res) => {
   try {
@@ -361,8 +221,6 @@ exports.getCustomerDetailsCustomerId = async (req, res) => {
 
     // Make sure to import orderDao correctly
     const customerData = await orderDao.getDataCustomerId(customerId);
-
-    console.log("customerDataaaaaaaaaaaaaaaa", customerData)
 
     if (customerData.message) {
       return res.status(404).json({
@@ -553,9 +411,8 @@ exports.getOrderCountBySalesAgent = async (req, res) => {
 
 exports.getReturnReason = async (req, res) => {
   try {
-    const orderId = req.params.orderId; // Changed from req.params.id
+    const orderId = req.params.orderId;
 
-    console.log("-----------------------", orderId)
 
     // Validate orderId
     if (!orderId || isNaN(parseInt(orderId))) {
@@ -596,7 +453,7 @@ exports.getReturnReason = async (req, res) => {
 exports.getHold = async (req, res) => {
   try {
     const orderId = req.params.orderId;
-    console.log("Checking hold status for orderId:", orderId);
+
 
     if (!orderId || isNaN(parseInt(orderId))) {
       return res.status(400).json({
@@ -607,7 +464,6 @@ exports.getHold = async (req, res) => {
 
     const holdStatusData = await orderDao.getHold(orderId);
 
-    console.log("----------------------", holdStatusData)
 
     if (!holdStatusData.success) {
       return res.status(404).json({

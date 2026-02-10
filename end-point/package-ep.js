@@ -1,27 +1,7 @@
 const asyncHandler = require("express-async-handler");
 const packageDAO = require("../dao/package-dao");
 
-// exports.getAllPackages = asyncHandler(async (req, res) => {
-//     console.log("hitt")
-//     try {
-//         const packages = await packageDAO.getAllPackages();
-//         console.log(",,,,,,,,,,", packages)
-
-//         if (!packages || packages.length === 0) {
-//             return res.status(404).json({ message: "No packages found" });
-//         }
-
-//         res.status(200).json({ message: "Packages fetched successfully", data: packages });
-//     } catch (error) {
-//         console.error("Error fetching packages:", error);
-//         res.status(500).json({ message: "Failed to fetch packages" });
-//     }
-// });
-
-
-// Enhanced Endpoint
 exports.getAllPackages = asyncHandler(async (req, res) => {
-    console.log("getAllPackages endpoint hit");
     try {
         // Extract query parameters for filtering
         const filters = {
@@ -34,7 +14,6 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
         };
 
         const packages = await packageDAO.getAllPackages(filters);
-        console.log("Packages fetched:", packages?.length || 0);
 
         if (!packages || packages.length === 0) {
             return res.status(404).json({
@@ -62,9 +41,9 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
 
 
 exports.getItemsForPackage = asyncHandler(async (req, res) => {
-    console.log("get package item")
+
     const { packageId } = req.params;
-    console.log("packageid", packageId)
+
 
     try {
         const items = await packageDAO.getItemsByPackageId(packageId);
@@ -137,18 +116,17 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
 
 
 exports.getAllCrops = asyncHandler(async (req, res) => {
-    console.log("✅ API /crops/all hit!");
+
     const cusId = req.query;
-    console.log(cusId)
+
 
     try {
         const crops = await packageDAO.getAllCrops(cusId);
         if (!crops || crops.length === 0) {
-            console.log("🚨 No crops found in DB");
+
             return res.status(404).json({ message: "No crops found" });
         }
 
-        console.log("✅ Crops fetched:", crops);
         res.status(200).json({
             message: "Crops fetched successfully",
             data: crops,
@@ -160,19 +138,16 @@ exports.getAllCrops = asyncHandler(async (req, res) => {
 });
 
 exports.getCropById = async (req, res) => {
-    const cropId = req.params.cropId;  // Extract cropId from URL parameters
-    console.log("Fetching details for cropId:", cropId);
+    const cropId = req.params.cropId;
 
     try {
-        // Fetch crop details from the DAO method
+
         const crop = await packageDAO.getCropById(cropId);
 
         if (!crop) {
-            console.log("🚨 Crop not found");
-            return res.status(404).json({ message: "Crop not found" });  // If no crop found, send 404
+            return res.status(404).json({ message: "Crop not found" });
         }
 
-        console.log("✅ Crop details fetched:", crop);
         res.status(200).json({
             message: "Crop fetched successfully",
             data: crop,  // Return the crop data in the response
@@ -225,24 +200,21 @@ exports.getPackageItemByProductId = asyncHandler(async (req, res) => {
 exports.getChangeByValue = asyncHandler(async (req, res) => {
     const { mpItemId } = req.params;
 
-    console.log("[[[[[[[[[[[[[[[[[[[[[[[[")
-    // Validate mpItemId
     if (!mpItemId || isNaN(mpItemId)) {
         return res.status(400).json({ message: "Invalid marketplace item ID" });
     }
     try {
-        // Get marketplace item details
+
         const marketplaceItem = await packageDAO.getChangeByValue(mpItemId);
 
-        // Check if marketplace item exists
         if (!marketplaceItem) {
             return res.status(404).json({ message: "Marketplace item not found" });
         }
 
-        // Send successful response with the marketplace item details
+
         res.status(200).json({
             message: "Marketplace item fetched successfully",
-            data: marketplaceItem, // Directly returning the single record
+            data: marketplaceItem,
         });
     } catch (error) {
         console.error("Error fetching marketplace item:", error);

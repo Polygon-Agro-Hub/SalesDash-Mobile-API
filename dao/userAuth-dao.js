@@ -2,7 +2,7 @@ const db = require('../startup/database');
 const bcrypt = require('bcrypt');
 
 exports.loginUser = (empId, password) => {
-  console.log(empId)
+
   return new Promise(async (resolve, reject) => {
     try {
       const sql = 'SELECT empId, password, status, id, passwordUpdate FROM salesagent WHERE empId = ?';
@@ -86,9 +86,6 @@ exports.getUserProfile = (id) => {
       }
 
 
-      console.log("Raw DB result:", JSON.stringify(results[0]).substring(0, 200) + "...");
-      console.log("Image exists:", results[0].image ? "Yes" : "No");
-
 
       resolve(results[0]);
     });
@@ -97,7 +94,6 @@ exports.getUserProfile = (id) => {
 
 
 exports.updateUserProfile = (id, updatedData) => {
-  console.log("kkkkk")
   return new Promise((resolve, reject) => {
     const sql = `
           UPDATE salesagent
@@ -202,10 +198,6 @@ exports.getPassword = (id) => {
       if (results.length === 0) {
         return reject(new Error('User not found'));
       }
-
-
-      console.log("Raw DB result:", JSON.stringify(results[0]).substring(0, 200) + "...");
-      console.log("Image exists:", results[0].image ? "Yes" : "No");
 
 
       resolve(results[0]);

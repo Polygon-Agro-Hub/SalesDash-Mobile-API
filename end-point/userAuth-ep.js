@@ -15,11 +15,11 @@ exports.login = asyncHandler(async (req, res) => {
   }
 
   const { empId, password } = req.body;
-  console.log("Login request received:", req.body);
+
 
   try {
     const result = await userDao.loginUser(empId, password);
-    console.log("User login successful:", result);
+  
 
     const token = jwt.sign(
       { empId: result.empId, id: result.id, passwordUpdate: result.passwordUpdate },
@@ -84,11 +84,10 @@ exports.login = asyncHandler(async (req, res) => {
   }
 });
 
-// Get User Profile
 exports.getUserProfile = asyncHandler(async (req, res) => {
   const id = req.user.id;
 
-  console.log("useriddd", id)
+
 
   try {
     const user = await userDao.getUserProfile(id);
@@ -110,12 +109,11 @@ exports.getUserProfile = asyncHandler(async (req, res) => {
 exports.updateUserProfile = asyncHandler(async (req, res) => {
 
   const id = req.user.id;
-  console.log(id)
+
   const updatedData = req.body;
 
 
   const { error } = updateUserProfileSchema.validate(updatedData, { abortEarly: false });
-  console.log(error)
 
   if (error) {
     return res.status(400).json({

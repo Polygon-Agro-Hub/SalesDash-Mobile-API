@@ -1,55 +1,8 @@
 const db = require('../startup/database');
 
-// exports.getNotificationsBySalesAgent = (salesAgentId) => {
-//   console.log(salesAgentId)
-//   return new Promise((resolve, reject) => {
-//     const query = `
-//     SELECT 
-//   dn.id,
-//   dn.orderId,
-//   dn.title,
-//   dn.readStatus,
-//   dn.createdAt,
-//   po.invNo,
-//   po.status,
-//   o.userId AS cusId,
-//   o.fullName AS customerName,
-//   CONCAT(o.phonecode1, o.phone1) AS phoneNumber
-// FROM dashnotification dn
-// JOIN processorders po ON dn.orderId = po.id
-// JOIN orders o ON  po.orderId = o.id
-// JOIN marketplaceusers mps ON o.userId = mps.id
-// WHERE mps.salesAgent = ?
-// ORDER BY dn.createdAt DESC
 
-//     `;
-
-//     const countQuery = `
-//       SELECT COUNT(*) AS unreadCount 
-//       FROM dashnotification dn
-//       JOIN orders o ON dn.orderId = o.id
-//       JOIN marketplaceusers mps ON o.userId = mps.id
-//       WHERE mps.salesAgent = ? AND dn.readStatus = 0
-//     `;
-
-//     db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
-//       if (err) return reject(err);
-
-//       db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
-//         if (err) return reject(err);
-
-//         resolve({
-//           notifications,
-//           unreadCount: countResult[0]?.unreadCount || 0
-//         });
-//       });
-//       console.log(notifications)
-//     });
-//   });
-// };
 
 exports.getNotificationsBySalesAgent = (salesAgentId) => {
-  console.log(salesAgentId)
   return new Promise((resolve, reject) => {
     const query = `
     SELECT 
@@ -94,13 +47,13 @@ ORDER BY dn.createdAt DESC
           unreadCount: countResult[0]?.unreadCount || 0
         });
       });
-      console.log(notifications)
+    
     });
   });
 };
 
 exports.markNotificationsAsReadByOrderId = (id) => {
-  console.log(id)
+
   return new Promise((resolve, reject) => {
     const query = `
       UPDATE dashnotification 
@@ -154,7 +107,6 @@ exports.createPaymentReminders = async () => {
     try {
       const orders = await queryAsync(orderQuery, []);
 
-      console.log("orderdata", orders)
 
       if (!orders || orders.length === 0) {
         return resolve({ notificationCount: 0, smsCount: 0, orders: [] }); // No qualifying orders found
@@ -167,7 +119,6 @@ exports.createPaymentReminders = async () => {
         orders: []
       };
 
-      console.log("check notifi ", results)
 
       for (const order of orders) {
         try {
@@ -186,7 +137,6 @@ exports.createPaymentReminders = async () => {
 
             // Log success or failure
             if (smsResult && smsResult.success) {
-              console.log(`Successfully sent SMS to ${order.phoneNumber} for order ${order.invNo}`);
               results.smsCount++;
             } else {
               console.error(`Failed to send SMS to ${order.phoneNumber} for order ${order.invNo}`);
