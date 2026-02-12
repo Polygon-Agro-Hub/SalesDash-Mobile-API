@@ -313,7 +313,7 @@ exports.getCusDataExc = async (customerId) => {
         // Return empty but successful response instead of error
         return {
           success: true,
-          data: null, 
+          data: null,
         };
       }
 
@@ -785,7 +785,6 @@ exports.getExcludeList = async (customerId) => {
       WHERE mps.id = ?  -- Filter by customerId
       ORDER BY mpi.displayName ASC; 
     `;
-    r;
     const [results] = await db.marketPlace.promise().query(query, [customerId]);
 
     return results;
