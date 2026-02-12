@@ -1,22 +1,20 @@
-const { createXlsxHistoryTable } = require('../tables/collection-table');
-const { createMarketPriceTable } = require('../tables/collection-table');
-const { createMarketPriceServeTable } = require('../tables/collection-table');
-const { createCompany } = require('../tables/collection-table');
-const { createCollectionOfficer } = require('../tables/collection-table');
-const { createRegisteredFarmerPayments } = require('../tables/collection-table');
-const { createFarmerPaymensCrops } = require('../tables/collection-table');
-const { createCollectionCenter } = require('../tables/collection-table');
-const { createFarmerComplains } = require('../tables/collection-table');
-const { createMarketPriceRequestTable } = require('../tables/collection-table');
+const { createXlsxHistoryTable } = require("../tables/collection-table");
+const { createMarketPriceTable } = require("../tables/collection-table");
+const { createMarketPriceServeTable } = require("../tables/collection-table");
+const { createCompany } = require("../tables/collection-table");
+const { createCollectionOfficer } = require("../tables/collection-table");
+const {
+  createRegisteredFarmerPayments,
+} = require("../tables/collection-table");
+const { createFarmerPaymensCrops } = require("../tables/collection-table");
+const { createCollectionCenter } = require("../tables/collection-table");
+const { createFarmerComplains } = require("../tables/collection-table");
+const { createMarketPriceRequestTable } = require("../tables/collection-table");
 
-
-
-
-const {createAgroWorld} = require('../data/agroworldCompany')
-
+const { createAgroWorld } = require("../data/agroworldCompany");
 
 const seedCollection = async () => {
-    try {
+  try {
     const messageXlsxHistory = await createXlsxHistoryTable();
     console.log(messageXlsxHistory);
 
@@ -32,7 +30,8 @@ const seedCollection = async () => {
     const messageCreateCollectionOfficer = await createCollectionOfficer();
     console.log(messageCreateCollectionOfficer);
 
-    const messageCreateRegisteredFarmerPayments = await createRegisteredFarmerPayments();
+    const messageCreateRegisteredFarmerPayments =
+      await createRegisteredFarmerPayments();
     console.log(messageCreateRegisteredFarmerPayments);
 
     const messageCreateFarmerPaymensCrops = await createFarmerPaymensCrops();
@@ -44,22 +43,15 @@ const seedCollection = async () => {
     const messageMarketPriceServeTable = await createMarketPriceServeTable();
     console.log(messageMarketPriceServeTable);
 
-    const messageCreateMarketPriceRequestTable = await createMarketPriceRequestTable();
+    const messageCreateMarketPriceRequestTable =
+      await createMarketPriceRequestTable();
     console.log(messageCreateMarketPriceRequestTable);
 
-
-
-
-
-
-    
     const messagecreateAgroWorld = await createAgroWorld();
     console.log(messagecreateAgroWorld);
-
-} catch (err) {
-    console.error('Error seeding seedCollection:', err);
+  } catch (err) {
+    console.error("Error seeding seedCollection:", err);
   }
 };
-
 
 module.exports = seedCollection;

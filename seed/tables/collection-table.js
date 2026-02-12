@@ -1,8 +1,7 @@
-const { plantcare, collectionofficer } = require('../../startup/database');
-
+const { collectionofficer } = require("../../startup/database");
 
 const createCollectionCenter = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS collectioncenter (
       id INT AUTO_INCREMENT PRIMARY KEY,
       regCode VARCHAR(30) NOT NULL,
@@ -21,44 +20,38 @@ const createCollectionCenter = () => {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating collectioncenter table: ' + err);
-            } else {
-                resolve('collectioncenter table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating collectioncenter table: " + err);
+      } else {
+        resolve("collectioncenter table created successfully.");
+      }
     });
+  });
 };
 
-
 const createXlsxHistoryTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS xlsxhistory (
       id INT AUTO_INCREMENT PRIMARY KEY,
       xlName VARCHAR(50) NOT NULL,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating xlsxhistory table: ' + err);
-            } else {
-                resolve('xlsxhistory table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating xlsxhistory table: " + err);
+      } else {
+        resolve("xlsxhistory table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
-
 const createMarketPriceTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS marketprice (
       id INT AUTO_INCREMENT PRIMARY KEY,
       varietyId INT(11) DEFAULT NULL,
@@ -79,23 +72,19 @@ const createMarketPriceTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating market-price table: ' + err);
-            } else {
-                resolve('market-price table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating market-price table: " + err);
+      } else {
+        resolve("market-price table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createMarketPriceServeTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS marketpriceserve (
       id INT AUTO_INCREMENT PRIMARY KEY,
       marketPriceId INT(11) DEFAULT NULL,
@@ -111,23 +100,19 @@ const createMarketPriceServeTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating marketpriceserve table: ' + err);
-            } else {
-                resolve('mmarketpriceserve table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating marketpriceserve table: " + err);
+      } else {
+        resolve("mmarketpriceserve table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createCompany = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS company (
       id INT AUTO_INCREMENT PRIMARY KEY,
       regNumber VARCHAR(50) NOT NULL,
@@ -152,23 +137,19 @@ const createCompany = () => {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ccompany: ' + err);
-            } else {
-                resolve('company table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ccompany: " + err);
+      } else {
+        resolve("company table created successfully.");
+      }
     });
+  });
 };
 
-
-
-//Collection officer tables
-
 const createCollectionOfficer = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS collectionofficer (
       id INT AUTO_INCREMENT PRIMARY KEY,
       centerId INT NOT NULL,
@@ -218,23 +199,19 @@ const createCollectionOfficer = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating collection officer table: ' + err);
-            } else {
-                resolve('collection officer table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating collection officer table: " + err);
+      } else {
+        resolve("collection officer table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createRegisteredFarmerPayments = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS registeredfarmerpayments (
       id INT AUTO_INCREMENT PRIMARY KEY,
       userId INT,
@@ -249,20 +226,19 @@ const createRegisteredFarmerPayments = () => {
       
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating registeredfarmerpayments table: ' + err);
-            } else {
-                resolve('registeredfarmerpayments table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating registeredfarmerpayments table: " + err);
+      } else {
+        resolve("registeredfarmerpayments table created successfully.");
+      }
     });
+  });
 };
 
-
 const createFarmerPaymensCrops = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS farmerpaymentscrops (
       id INT AUTO_INCREMENT PRIMARY KEY,
       registerFarmerId INT,
@@ -283,21 +259,19 @@ const createFarmerPaymensCrops = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating farmerpaymentscrops table: ' + err);
-            } else {
-                resolve('farmerpaymentscrops table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating farmerpaymentscrops table: " + err);
+      } else {
+        resolve("farmerpaymentscrops table created successfully.");
+      }
     });
+  });
 };
 
-
-
-const createFarmerComplains  = () => {
-    const sql = `
+const createFarmerComplains = () => {
+  const sql = `
    CREATE TABLE IF NOT EXISTS farmerComplains (
     id INT AUTO_INCREMENT PRIMARY KEY,
     farmerId INT,
@@ -317,24 +291,19 @@ const createFarmerComplains  = () => {
         ON UPDATE CASCADE
 )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating market place users table: ' + err);
-            } else {
-                resolve('market place users table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating market place users table: " + err);
+      } else {
+        resolve("market place users table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
-
 const createMarketPriceRequestTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS marketpricerequest (
       id INT AUTO_INCREMENT PRIMARY KEY,
       marketPriceId INT(11) DEFAULT NULL,
@@ -354,28 +323,26 @@ const createMarketPriceRequestTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        collectionofficer.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating market-price request table: ' + err);
-            } else {
-                resolve('market-price table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collectionofficer.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating market-price request table: " + err);
+      } else {
+        resolve("market-price table created request successfully.");
+      }
     });
+  });
 };
 
-
-
 module.exports = {
-    createXlsxHistoryTable,
-    createMarketPriceTable,
-    createMarketPriceServeTable,
-    createCompany,
-    createCollectionOfficer,
-    createRegisteredFarmerPayments,
-    createFarmerPaymensCrops,
-    createCollectionCenter,
-    createFarmerComplains,
-    createMarketPriceRequestTable,
+  createXlsxHistoryTable,
+  createMarketPriceTable,
+  createMarketPriceServeTable,
+  createCompany,
+  createCollectionOfficer,
+  createRegisteredFarmerPayments,
+  createFarmerPaymensCrops,
+  createCollectionCenter,
+  createFarmerComplains,
+  createMarketPriceRequestTable,
 };

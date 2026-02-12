@@ -1,9 +1,7 @@
-
-
-const { db, plantcare, collectionofficer } = require('../../startup/database');
+const { plantcare } = require("../../startup/database");
 
 const createUsersTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
       firstName VARCHAR(50) NOT NULL,
@@ -21,43 +19,37 @@ const createUsersTable = () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating users table: ' + err);
-            } else {
-                resolve('Users table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating users table: " + err);
+      } else {
+        resolve("Users table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createAdminUserRolesTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS adminroles (
       id INT AUTO_INCREMENT PRIMARY KEY,
       role VARCHAR(100) NOT NULL
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating adminUserRoles table: ' + err);
-            } else {
-                resolve('adminUserRoles table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating adminUserRoles table: " + err);
+      } else {
+        resolve("adminUserRoles table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createAdminUsersTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS adminusers (
       id INT AUTO_INCREMENT PRIMARY KEY,
       mail VARCHAR(50) NOT NULL,
@@ -70,21 +62,19 @@ const createAdminUsersTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating adminUsers table: ' + err);
-            } else {
-                resolve('adminUsers table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating adminUsers table: " + err);
+      } else {
+        resolve("adminUsers table created successfully.");
+      }
     });
+  });
 };
 
-
-
 const createContentTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS content (
       id INT AUTO_INCREMENT PRIMARY KEY,
       titleEnglish TEXT NOT NULL,
@@ -104,22 +94,19 @@ const createContentTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating content table: ' + err);
-            } else {
-                resolve('Content table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating content table: " + err);
+      } else {
+        resolve("Content table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createCropGroup = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS cropgroup (
       id INT AUTO_INCREMENT PRIMARY KEY,
       cropNameEnglish VARCHAR(50) NOT NULL,
@@ -131,22 +118,19 @@ const createCropGroup = () => {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating cropgroup table: ' + err);
-            } else {
-                resolve('cropgroup table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating cropgroup table: " + err);
+      } else {
+        resolve("cropgroup table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createCropVariety = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS cropvariety (
       id INT AUTO_INCREMENT PRIMARY KEY,
       cropGroupId INT(11) NULL,
@@ -164,22 +148,19 @@ const createCropVariety = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating cropvariety table: ' + err);
-            } else {
-                resolve('cropvariety table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating cropvariety table: " + err);
+      } else {
+        resolve("cropvariety table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createCropCalenderTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS cropcalender (
       id INT AUTO_INCREMENT PRIMARY KEY,
       cropVarietyId INT(11) NULL,
@@ -193,22 +174,19 @@ const createCropCalenderTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating cropCalender table: ' + err);
-            } else {
-                resolve('CropCalender table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating cropCalender table: " + err);
+      } else {
+        resolve("CropCalender table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createCropCalenderDaysTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS cropcalendardays (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cropId INT(11) NOT NULL,
@@ -236,23 +214,19 @@ const createCropCalenderDaysTable = () => {
         ON UPDATE CASCADE
 );
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating cropCalenderDays table: ' + err);
-            } else {
-                resolve('CropCalenderDays table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating cropCalenderDays table: " + err);
+      } else {
+        resolve("CropCalenderDays table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createOngoingCultivationsTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS ongoingcultivations (
       id INT AUTO_INCREMENT PRIMARY KEY,
       userId INT,
@@ -262,23 +236,19 @@ const createOngoingCultivationsTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ongoingCultivations table: ' + err);
-            } else {
-                resolve('OngoingCultivations table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ongoingCultivations table: " + err);
+      } else {
+        resolve("OngoingCultivations table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createOngoingCultivationsCropsTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS ongoingcultivationscrops (
       id INT AUTO_INCREMENT PRIMARY KEY,
       ongoingCultivationId INT,
@@ -296,23 +266,19 @@ const createOngoingCultivationsCropsTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ongoingCultivationsCrops table: ' + err);
-            } else {
-                resolve('OngoingCultivationsCrops table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ongoingCultivationsCrops table: " + err);
+      } else {
+        resolve("OngoingCultivationsCrops table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createCurrentAssetTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS currentasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       userId INT,
@@ -334,23 +300,19 @@ const createCurrentAssetTable = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating current asset table: ' + err);
-            } else {
-                resolve('current asset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating current asset table: " + err);
+      } else {
+        resolve("current asset table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS fixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       userId INT,
@@ -361,23 +323,19 @@ const createFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating fixed asset table: ' + err);
-            } else {
-                resolve('Fixed asset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating fixed asset table: " + err);
+      } else {
+        resolve("Fixed asset table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createBuldingFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS buildingfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       fixedAssetId INT,
@@ -391,22 +349,19 @@ const createBuldingFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating building fixed asset table: ' + err);
-            } else {
-                resolve('building Fixed asset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating building fixed asset table: " + err);
+      } else {
+        resolve("building Fixed asset table created successfully.");
+      }
     });
+  });
 };
 
-
-
-//03
 const createLandFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS landfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       fixedAssetId INT,
@@ -422,22 +377,19 @@ const createLandFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating land fixed asset table: ' + err);
-            } else {
-                resolve('Land fixed asset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating land fixed asset table: " + err);
+      } else {
+        resolve("Land fixed asset table created successfully.");
+      }
     });
+  });
 };
 
-
-
-//04
 const createMachToolsFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS machtoolsfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       fixedAssetId INT,
@@ -454,21 +406,19 @@ const createMachToolsFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating machtools fixed asset table: ' + err);
-            } else {
-                resolve('machtools Fixed asset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating machtools fixed asset table: " + err);
+      } else {
+        resolve("machtools Fixed asset table created successfully.");
+      }
     });
+  });
 };
 
-
-//05
 const createMachToolsWarrantyFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS machtoolsfixedassetwarranty (
       id INT AUTO_INCREMENT PRIMARY KEY,
       machToolsId INT,
@@ -480,21 +430,19 @@ const createMachToolsWarrantyFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating fixed asset warranty table: ' + err);
-            } else {
-                resolve('Fixed asset warranty table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating fixed asset warranty table: " + err);
+      } else {
+        resolve("Fixed asset warranty table created successfully.");
+      }
     });
+  });
 };
 
-
-//06
 const createOwnershipOwnerFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS ownershipownerfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       buildingAssetId INT NULL,
@@ -509,21 +457,19 @@ const createOwnershipOwnerFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ownershipownerfixedasset table: ' + err);
-            } else {
-                resolve('ownershipownerfixedasset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ownershipownerfixedasset table: " + err);
+      } else {
+        resolve("ownershipownerfixedasset table created successfully.");
+      }
     });
+  });
 };
 
-//07
-
 const createOwnershipLeastFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS ownershipleastfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       buildingAssetId INT NULL,
@@ -540,21 +486,19 @@ const createOwnershipLeastFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ownershipleastfixedasset table: ' + err);
-            } else {
-                resolve('ownershipleastfixedasset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ownershipleastfixedasset table: " + err);
+      } else {
+        resolve("ownershipleastfixedasset table created successfully.");
+      }
     });
+  });
 };
 
-
-//08
 const createOwnershipPermitFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS ownershippermitfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       buildingAssetId INT NULL,
@@ -569,20 +513,19 @@ const createOwnershipPermitFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ownershippermitfixedasset table: ' + err);
-            } else {
-                resolve('ownershippermitfixedasset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ownershippermitfixedasset table: " + err);
+      } else {
+        resolve("ownershippermitfixedasset table created successfully.");
+      }
     });
+  });
 };
 
-//09
 const createOwnershipSharedFixedAsset = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS ownershipsharedfixedasset (
       id INT AUTO_INCREMENT PRIMARY KEY,
       buildingAssetId INT NULL,
@@ -596,20 +539,19 @@ const createOwnershipSharedFixedAsset = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating ownershipsharedfixedasset table: ' + err);
-            } else {
-                resolve('ownershipsharedfixedasset table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating ownershipsharedfixedasset table: " + err);
+      } else {
+        resolve("ownershipsharedfixedasset table created successfully.");
+      }
     });
+  });
 };
 
-
 const createCurrentAssetRecord = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS currentassetrecord (
     id INT AUTO_INCREMENT PRIMARY KEY,
     currentAssetId INT(5) NOT NULL,
@@ -622,23 +564,19 @@ const createCurrentAssetRecord = () => {
         ON UPDATE CASCADE
 );
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating cuurent asset record table: ' + err);
-            } else {
-                resolve('current asset record table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating cuurent asset record table: " + err);
+      } else {
+        resolve("current asset record table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
 const createSlaveCropCalenderDaysTable = () => {
-    const sql = `
+  const sql = `
       CREATE TABLE IF NOT EXISTS slavecropcalendardays (
       id INT AUTO_INCREMENT PRIMARY KEY,
       userId INT(11) NULL,
@@ -676,20 +614,19 @@ const createSlaveCropCalenderDaysTable = () => {
         ON UPDATE CASCADE
   );
     `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating slave crop Calender Days table: ' + err);
-            } else {
-                resolve('slave crop   table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating slave crop Calender Days table: " + err);
+      } else {
+        resolve("slave crop   table created successfully.");
+      }
     });
+  });
 };
 
-
 const createCropGeoTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS cropGeo (
     id INT AUTO_INCREMENT PRIMARY KEY,
     taskId INT(11) NOT NULL,
@@ -701,20 +638,19 @@ const createCropGeoTable = () => {
         ON UPDATE CASCADE
 );
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating cropGeo table: ' + err);
-            } else {
-                resolve('cropGeo table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating cropGeo table: " + err);
+      } else {
+        resolve("cropGeo table created successfully.");
+      }
     });
+  });
 };
 
-
 const createTaskImages = () => {
-    const sql = `
+  const sql = `
       CREATE TABLE IF NOT EXISTS taskimages (
             id INT AUTO_INCREMENT PRIMARY KEY,
             slaveId INT(11) NOT NULL,
@@ -725,22 +661,19 @@ const createTaskImages = () => {
                 ON UPDATE CASCADE
   );
     `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error taskimages table: ' + err);
-            } else {
-                resolve('taskimages table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error taskimages table: " + err);
+      } else {
+        resolve("taskimages table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createpublicforumposts = () => {
-    const sql = `
+  const sql = `
       CREATE TABLE IF NOT EXISTS publicforumposts (
             id int AUTO_INCREMENT PRIMARY KEY,
             userId int NOT NULL,
@@ -753,19 +686,19 @@ const createpublicforumposts = () => {
                 ON UPDATE CASCADE
   );
     `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error publicforumposts table: ' + err);
-            } else {
-                resolve('publicforumposts table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error publicforumposts table: " + err);
+      } else {
+        resolve("publicforumposts table created successfully.");
+      }
     });
+  });
 };
 
 const createpublicforumreplies = () => {
-    const sql = `
+  const sql = `
       CREATE TABLE IF NOT EXISTS publicforumreplies (
         id int AUTO_INCREMENT PRIMARY KEY,
         chatId int NOT NULL,
@@ -781,21 +714,19 @@ const createpublicforumreplies = () => {
 
   );
     `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error publicforumreplies table: ' + err);
-            } else {
-                resolve('publicforumreplies table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error publicforumreplies table: " + err);
+      } else {
+        resolve("publicforumreplies table created successfully.");
+      }
     });
+  });
 };
 
-
-
 const createUserBankDetails = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS userbankdetails (
       id INT AUTO_INCREMENT PRIMARY KEY,
       userId INT,
@@ -810,48 +741,43 @@ const createUserBankDetails = () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating userbankdetails table: ' + err);
-            } else {
-                resolve('userbankdetails table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating userbankdetails table: " + err);
+      } else {
+        resolve("userbankdetails table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
-
 module.exports = {
-    createUsersTable,
-    createAdminUserRolesTable,
-    createAdminUsersTable,
-    createContentTable,
-    createCropGroup,
-    createCropVariety,
-    createCropCalenderTable,
-    createCropCalenderDaysTable,
-    createOngoingCultivationsTable,
-    createOngoingCultivationsCropsTable,
-    createCurrentAssetTable,
-    createpublicforumposts,
-    createpublicforumreplies,
-    createFixedAsset,
-    createBuldingFixedAsset, 
-    createLandFixedAsset,
-    createMachToolsFixedAsset,
-    createMachToolsWarrantyFixedAsset,
-    createOwnershipOwnerFixedAsset,
-    createOwnershipLeastFixedAsset,
-    createOwnershipPermitFixedAsset,
-    createOwnershipSharedFixedAsset,
-    createCurrentAssetRecord,
-    createSlaveCropCalenderDaysTable,
-    createCropGeoTable,
-    createTaskImages,
-    createUserBankDetails
+  createUsersTable,
+  createAdminUserRolesTable,
+  createAdminUsersTable,
+  createContentTable,
+  createCropGroup,
+  createCropVariety,
+  createCropCalenderTable,
+  createCropCalenderDaysTable,
+  createOngoingCultivationsTable,
+  createOngoingCultivationsCropsTable,
+  createCurrentAssetTable,
+  createpublicforumposts,
+  createpublicforumreplies,
+  createFixedAsset,
+  createBuldingFixedAsset,
+  createLandFixedAsset,
+  createMachToolsFixedAsset,
+  createMachToolsWarrantyFixedAsset,
+  createOwnershipOwnerFixedAsset,
+  createOwnershipLeastFixedAsset,
+  createOwnershipPermitFixedAsset,
+  createOwnershipSharedFixedAsset,
+  createCurrentAssetRecord,
+  createSlaveCropCalenderDaysTable,
+  createCropGeoTable,
+  createTaskImages,
+  createUserBankDetails,
 };
