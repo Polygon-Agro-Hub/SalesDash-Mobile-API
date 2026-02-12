@@ -1,44 +1,44 @@
-const db = require('../startup/database');
-const bcrypt = require('bcrypt');
+const db = require("../startup/database");
+const bcrypt = require("bcrypt");
 
 exports.loginUser = (empId, password) => {
-
   return new Promise(async (resolve, reject) => {
     try {
-      const sql = 'SELECT empId, password, status, id, passwordUpdate FROM salesagent WHERE empId = ?';
+      const sql =
+        "SELECT empId, password, status, id, passwordUpdate FROM salesagent WHERE empId = ?";
       const [results] = await db.marketPlace.promise().query(sql, [empId]);
 
       if (results.length === 0) {
-        return reject(new Error('User not found'));
+        return reject(new Error("User not found"));
       }
 
       const user = results[0];
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        return reject(new Error('Invalid password'));
+        return reject(new Error("Invalid password"));
       }
 
-      if (user.status === 'Rejected') {
-        return reject(new Error('This Employee ID is rejected'));
+      if (user.status === "Rejected") {
+        return reject(new Error("This Employee ID is rejected"));
       }
 
-      if (user.status === 'Not Approved') {
-        return reject(new Error('This Employee ID is not approved'));
+      if (user.status === "Not Approved") {
+        return reject(new Error("This Employee ID is not approved"));
       }
 
-      if (user.status !== 'Approved') {
-        return reject(new Error('Account status is pending verification'));
+      if (user.status !== "Approved") {
+        return reject(new Error("Account status is pending verification"));
       }
 
       resolve({
         success: true,
         empId: user.empId,
         id: user.id,
-        passwordUpdate: user.passwordUpdate
+        passwordUpdate: user.passwordUpdate,
       });
     } catch (err) {
-      return reject(new Error('Database error: ' + err.message));
+      return reject(new Error("Database error: " + err.message));
     }
   });
 };
@@ -78,20 +78,17 @@ exports.getUserProfile = (id) => {
     db.marketPlace.query(sql, [id], (err, results) => {
       if (err) {
         console.error("Database error:", err);
-        return reject(new Error('Database error'));
+        return reject(new Error("Database error"));
       }
 
       if (results.length === 0) {
-        return reject(new Error('User not found'));
+        return reject(new Error("User not found"));
       }
-
-
 
       resolve(results[0]);
     });
   });
 };
-
 
 exports.updateUserProfile = (id, updatedData) => {
   return new Promise((resolve, reject) => {
@@ -103,48 +100,61 @@ exports.updateUserProfile = (id, updatedData) => {
       `;
 
     const values = [
-      updatedData.firstName, updatedData.lastName,
-      updatedData.houseNumber, updatedData.streetName, updatedData.city,
-      updatedData.district, updatedData.province, id
+      updatedData.firstName,
+      updatedData.lastName,
+      updatedData.houseNumber,
+      updatedData.streetName,
+      updatedData.city,
+      updatedData.district,
+      updatedData.province,
+      id,
     ];
 
     db.marketPlace.query(sql, values, (err, results) => {
-      if (err) return reject(new Error('Database update error'));
+      if (err) return reject(new Error("Database update error"));
       if (results.affectedRows === 0) {
-        return reject(new Error('User not found'));
+        return reject(new Error("User not found"));
       }
-      resolve({ success: true, message: 'Profile updated successfully' });
+      resolve({ success: true, message: "Profile updated successfully" });
     });
   });
 };
 
-
-
 exports.updatePassword = (id, oldPassword, newPassword) => {
   return new Promise((resolve, reject) => {
-    // Fetch the user's current password and passwordUpdate status
+    
     const fetchSql = `SELECT password, passwordUpdate FROM salesagent WHERE id = ?`;
     db.marketPlace.query(fetchSql, [id], async (err, results) => {
       if (err) {
-        return reject(new Error('Database error'));
+        return reject(new Error("Database error"));
       }
       if (results.length === 0) {
-        return reject(new Error('User not found'));
+        return reject(new Error("User not found"));
       }
 
       const user = results[0];
 
       try {
         // Verify old password
-        const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+        const isPasswordValid = await bcrypt.compare(
+          oldPassword,
+          user.password,
+        );
         if (!isPasswordValid) {
-          return reject(new Error('Current Password does not match. Please Re-enter'));
+          return reject(
+            new Error("Current Password does not match. Please Re-enter"),
+          );
         }
 
         // Check if the new password matches the old password
-        const isSameAsOldPassword = await bcrypt.compare(newPassword, user.password);
+        const isSameAsOldPassword = await bcrypt.compare(
+          newPassword,
+          user.password,
+        );
         if (isSameAsOldPassword) {
-          return reject(new Error('New password cannot be the same as the old password'));
+          return reject(
+            new Error("New password cannot be the same as the old password"),
+          );
         }
 
         // Hash the new password
@@ -156,25 +166,31 @@ exports.updatePassword = (id, oldPassword, newPassword) => {
           SET password = ?, passwordUpdate = ?
           WHERE id = ?
         `;
-        const passwordUpdateValue = user.passwordUpdate === 0 ? 1 : user.passwordUpdate;
+        const passwordUpdateValue =
+          user.passwordUpdate === 0 ? 1 : user.passwordUpdate;
 
-        db.marketPlace.query(updateSql, [newPasswordHash, passwordUpdateValue, id], (updateErr, updateResults) => {
-          if (updateErr) {
-            return reject(new Error('Database update error'));
-          }
-          if (updateResults.affectedRows === 0) {
-            return reject(new Error('Failed to update password'));
-          }
-          resolve({ success: true, message: 'Password updated successfully' });
-        });
+        db.marketPlace.query(
+          updateSql,
+          [newPasswordHash, passwordUpdateValue, id],
+          (updateErr, updateResults) => {
+            if (updateErr) {
+              return reject(new Error("Database update error"));
+            }
+            if (updateResults.affectedRows === 0) {
+              return reject(new Error("Failed to update password"));
+            }
+            resolve({
+              success: true,
+              message: "Password updated successfully",
+            });
+          },
+        );
       } catch (bcryptErr) {
-        return reject(new Error('Password hashing error'));
+        return reject(new Error("Password hashing error"));
       }
     });
   });
 };
-
-
 
 exports.getPassword = (id) => {
   return new Promise((resolve, reject) => {
@@ -192,13 +208,12 @@ exports.getPassword = (id) => {
     db.marketPlace.query(sql, [id], (err, results) => {
       if (err) {
         console.error("Database error:", err);
-        return reject(new Error('Database error'));
+        return reject(new Error("Database error"));
       }
 
       if (results.length === 0) {
-        return reject(new Error('User not found'));
+        return reject(new Error("User not found"));
       }
-
 
       resolve(results[0]);
     });

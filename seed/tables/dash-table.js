@@ -1,8 +1,7 @@
-const { db, plantcare, dash } = require('../../startup/database');
-
+const { dash } = require("../../startup/database");
 
 const createSalesAgentTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE salesagent (
     id INT AUTO_INCREMENT PRIMARY KEY,
     firstName VARCHAR(100) DEFAULT NULL,
@@ -32,21 +31,19 @@ const createSalesAgentTable = () => {
 )
 
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating salesagent table: ' + err);
-            } else {
-                resolve('salesagent table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating salesagent table: " + err);
+      } else {
+        resolve("salesagent table created request successfully.");
+      }
     });
+  });
 };
 
-
-
 const createSalesAgentStarTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE salesagentstars (
     id INT AUTO_INCREMENT PRIMARY KEY,
     salesagentId INT DEFAULT NULL,
@@ -60,24 +57,19 @@ const createSalesAgentStarTable = () => {
         ON UPDATE CASCADE
 )
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating salesagentstars table: ' + err);
-            } else {
-                resolve('ssalesagentstars table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating salesagentstars table: " + err);
+      } else {
+        resolve("ssalesagentstars table created request successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
-
 const createCustomerTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS customer (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cusId VARCHAR(15) UNIQUE DEFAULT NULL,
@@ -93,23 +85,19 @@ const createCustomerTable = () => {
         ON UPDATE CASCADE 
 )
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating customer table: ' + err);
-            } else {
-                resolve('customer table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating customer table: " + err);
+      } else {
+        resolve("customer table created request successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
-const createHouseTable  = () => {
-    const sql = `
+const createHouseTable = () => {
+  const sql = `
     CREATE TABLE IF NOT EXISTS house (
     id INT AUTO_INCREMENT PRIMARY KEY,
     customerId INT DEFAULT NULL,
@@ -121,25 +109,19 @@ const createHouseTable  = () => {
         ON UPDATE CASCADE
 )
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating house table: ' + err);
-            } else {
-                resolve('house table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating house table: " + err);
+      } else {
+        resolve("house table created request successfully.");
+      }
     });
+  });
 };
 
-
-
-
-
-
-
 const createApartmentTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS apartment (
     id INT AUTO_INCREMENT PRIMARY KEY,
     customerId INT DEFAULT NULL,
@@ -155,21 +137,19 @@ const createApartmentTable = () => {
         ON UPDATE CASCADE
 )
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating apartment table: ' + err);
-            } else {
-                resolve('apartment table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating apartment table: " + err);
+      } else {
+        resolve("apartment table created request successfully.");
+      }
     });
+  });
 };
 
-
-
 const createDashcomplainTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE dashcomplain (
         id INT(11) NOT NULL AUTO_INCREMENT,
         saId INT(11) NOT NULL,  
@@ -189,22 +169,19 @@ const createDashcomplainTable = () => {
             ON UPDATE CASCADE
 );
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating dashcomplain table: ' + err);
-            } else {
-                resolve('dashcomplain table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating dashcomplain table: " + err);
+      } else {
+        resolve("dashcomplain table created request successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createtargetTable = () => {
-    const sql = `
+  const sql = `
     CREATE TABLE IF NOT EXISTS target (
     id INT AUTO_INCREMENT PRIMARY KEY,
     createdBy INT DEFAULT NULL,
@@ -216,21 +193,19 @@ const createtargetTable = () => {
         ON UPDATE CASCADE
 )
   `;
-    return new Promise((resolve, reject) => {
-        dash.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating target table: ' + err);
-            } else {
-                resolve('target table created request successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    dash.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating target table: " + err);
+      } else {
+        resolve("target table created request successfully.");
+      }
     });
+  });
 };
 
-
-
-const createOrdersTable= () => {
-    const sql = `
+const createOrdersTable = () => {
+  const sql = `
     CREATE TABLE IF NOT EXISTS orders (
       id INT AUTO_INCREMENT PRIMARY KEY,
       customerId INT DEFAULT NULL,
@@ -251,22 +226,19 @@ const createOrdersTable= () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        marketPlace.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating orders table: ' + err);
-            } else {
-                resolve('orders table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    marketPlace.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating orders table: " + err);
+      } else {
+        resolve("orders table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
-const createOrderItemsTable= () => {
-    const sql = `
+const createOrderItemsTable = () => {
+  const sql = `
     CREATE TABLE IF NOT EXISTS orderitems (
       id INT AUTO_INCREMENT PRIMARY KEY,
       orderId INT DEFAULT NULL,
@@ -285,21 +257,19 @@ const createOrderItemsTable= () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        marketPlace.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating orderitems table: ' + err);
-            } else {
-                resolve('orderitems table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    marketPlace.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating orderitems table: " + err);
+      } else {
+        resolve("orderitems table created successfully.");
+      }
     });
+  });
 };
 
-
-
-const createModifiedPlustemsTable= () => {
-    const sql = `
+const createModifiedPlustemsTable = () => {
+  const sql = `
     CREATE TABLE IF NOT EXISTS modifiedplusitems (
       id INT AUTO_INCREMENT PRIMARY KEY,
       orderItemsId INT DEFAULT NULL,
@@ -317,21 +287,19 @@ const createModifiedPlustemsTable= () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        marketPlace.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating modifiedplusitems table: ' + err);
-            } else {
-                resolve('modifiedplusitems table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    marketPlace.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating modifiedplusitems table: " + err);
+      } else {
+        resolve("modifiedplusitems table created successfully.");
+      }
     });
+  });
 };
 
-
-
-const createModifiedMintemsTable= () => {
-    const sql = `
+const createModifiedMintemsTable = () => {
+  const sql = `
     CREATE TABLE IF NOT EXISTS modifiedminitems (
       id INT AUTO_INCREMENT PRIMARY KEY,
       orderItemsId INT DEFAULT NULL,
@@ -349,21 +317,19 @@ const createModifiedMintemsTable= () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        marketPlace.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating modifiedminitems table: ' + err);
-            } else {
-                resolve('modifiedminitems table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    marketPlace.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating modifiedminitems table: " + err);
+      } else {
+        resolve("modifiedminitems table created successfully.");
+      }
     });
+  });
 };
 
-
-
-const createAdditionaltemsTable= () => {
-    const sql = `
+const createAdditionaltemsTable = () => {
+  const sql = `
     CREATE TABLE IF NOT EXISTS additionalitem (
       id INT AUTO_INCREMENT PRIMARY KEY,
       orderItemsId INT DEFAULT NULL,
@@ -379,32 +345,27 @@ const createAdditionaltemsTable= () => {
         ON UPDATE CASCADE
     )
   `;
-    return new Promise((resolve, reject) => {
-        marketPlace.query(sql, (err, result) => {
-            if (err) {
-                reject('Error creating additionalitem table: ' + err);
-            } else {
-                resolve('additionalitem table created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    marketPlace.query(sql, (err, result) => {
+      if (err) {
+        reject("Error creating additionalitem table: " + err);
+      } else {
+        resolve("additionalitem table created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 module.exports = {
-    createSalesAgentTable,
-    createSalesAgentStarTable,
-    createCustomerTable,
-    createHouseTable,
-    createApartmentTable,
-
-    createtargetTable,
-
-    createOrdersTable,
-    createOrderItemsTable,
-    createModifiedPlustemsTable,
-    createModifiedMintemsTable,
-    createAdditionaltemsTable
+  createSalesAgentTable,
+  createSalesAgentStarTable,
+  createCustomerTable,
+  createHouseTable,
+  createApartmentTable,
+  createtargetTable,
+  createOrdersTable,
+  createOrderItemsTable,
+  createModifiedPlustemsTable,
+  createModifiedMintemsTable,
+  createAdditionaltemsTable,
 };
