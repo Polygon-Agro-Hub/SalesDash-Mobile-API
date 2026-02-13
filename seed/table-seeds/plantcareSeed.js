@@ -1,39 +1,42 @@
-const { createUsersTable } = require('../tables/plantCare-table');
-const { createAdminUserRolesTable } = require('../tables/plantCare-table');
-const { createAdminUsersTable } = require('../tables/plantCare-table');
-const { createContentTable } = require('../tables/plantCare-table');
-const { createCropGroup } = require('../tables/plantCare-table');
-const { createCropVariety } = require('../tables/plantCare-table');
-const { createCropCalenderTable } = require('../tables/plantCare-table');
-const { createCropCalenderDaysTable } = require('../tables/plantCare-table');
-const { createOngoingCultivationsTable } = require('../tables/plantCare-table');
-const { createOngoingCultivationsCropsTable } = require('../tables/plantCare-table');
-const { createpublicforumposts } = require('../tables/plantCare-table');
-const { createpublicforumreplies } = require('../tables/plantCare-table');
-const { createFixedAsset } = require('../tables/plantCare-table');
-const { createBuldingFixedAsset } = require('../tables/plantCare-table');
-const { createLandFixedAsset } = require('../tables/plantCare-table');
-const { createMachToolsFixedAsset } = require('../tables/plantCare-table');
-const { createMachToolsWarrantyFixedAsset } = require('../tables/plantCare-table');
-const { createOwnershipOwnerFixedAsset } = require('../tables/plantCare-table');
-const { createOwnershipLeastFixedAsset } = require('../tables/plantCare-table');
-const { createOwnershipPermitFixedAsset } = require('../tables/plantCare-table');
-const { createOwnershipSharedFixedAsset } = require('../tables/plantCare-table');
-const { createCurrentAssetRecord } = require('../tables/plantCare-table');
-const { createCurrentAssetTable } = require('../tables/plantCare-table');
-const { createSlaveCropCalenderDaysTable } = require('../tables/plantCare-table');
-const { createCropGeoTable } = require('../tables/plantCare-table');
-const { createTaskImages } = require('../tables/plantCare-table');
-const { createUserBankDetails } = require('../tables/plantCare-table');
-
-
-
-const {createSuperAdmin} = require('../data/admin')
-const {insertRoles} = require('../data/adminRoles')
-
-
-    
-
+const { createUsersTable } = require("../tables/plantCare-table");
+const { createAdminUserRolesTable } = require("../tables/plantCare-table");
+const { createAdminUsersTable } = require("../tables/plantCare-table");
+const { createContentTable } = require("../tables/plantCare-table");
+const { createCropGroup } = require("../tables/plantCare-table");
+const { createCropVariety } = require("../tables/plantCare-table");
+const { createCropCalenderTable } = require("../tables/plantCare-table");
+const { createCropCalenderDaysTable } = require("../tables/plantCare-table");
+const { createOngoingCultivationsTable } = require("../tables/plantCare-table");
+const {
+  createOngoingCultivationsCropsTable,
+} = require("../tables/plantCare-table");
+const { createpublicforumposts } = require("../tables/plantCare-table");
+const { createpublicforumreplies } = require("../tables/plantCare-table");
+const { createFixedAsset } = require("../tables/plantCare-table");
+const { createBuldingFixedAsset } = require("../tables/plantCare-table");
+const { createLandFixedAsset } = require("../tables/plantCare-table");
+const { createMachToolsFixedAsset } = require("../tables/plantCare-table");
+const {
+  createMachToolsWarrantyFixedAsset,
+} = require("../tables/plantCare-table");
+const { createOwnershipOwnerFixedAsset } = require("../tables/plantCare-table");
+const { createOwnershipLeastFixedAsset } = require("../tables/plantCare-table");
+const {
+  createOwnershipPermitFixedAsset,
+} = require("../tables/plantCare-table");
+const {
+  createOwnershipSharedFixedAsset,
+} = require("../tables/plantCare-table");
+const { createCurrentAssetRecord } = require("../tables/plantCare-table");
+const { createCurrentAssetTable } = require("../tables/plantCare-table");
+const {
+  createSlaveCropCalenderDaysTable,
+} = require("../tables/plantCare-table");
+const { createCropGeoTable } = require("../tables/plantCare-table");
+const { createTaskImages } = require("../tables/plantCare-table");
+const { createUserBankDetails } = require("../tables/plantCare-table");
+const { createSuperAdmin } = require("../data/admin");
+const { insertRoles } = require("../data/adminRoles");
 
 const seedPlantCare = async () => {
   try {
@@ -58,13 +61,16 @@ const seedPlantCare = async () => {
     const messagecreateCropCalenderTable = await createCropCalenderTable();
     console.log(messagecreateCropCalenderTable);
 
-    const messagecreateCropCalenderDaysTable = await createCropCalenderDaysTable();
+    const messagecreateCropCalenderDaysTable =
+      await createCropCalenderDaysTable();
     console.log(messagecreateCropCalenderDaysTable);
 
-    const messagecreateOngoingCultivationsTable = await createOngoingCultivationsTable();
+    const messagecreateOngoingCultivationsTable =
+      await createOngoingCultivationsTable();
     console.log(messagecreateOngoingCultivationsTable);
 
-    const createOngoingCultivationsCro = await createOngoingCultivationsCropsTable();
+    const createOngoingCultivationsCro =
+      await createOngoingCultivationsCropsTable();
     console.log(createOngoingCultivationsCro);
 
     const messageCurrentAsset = await createCurrentAssetTable();
@@ -88,50 +94,48 @@ const seedPlantCare = async () => {
     const messagecreateMachToolsFixedAsset = await createMachToolsFixedAsset();
     console.log(messagecreateMachToolsFixedAsset);
 
-    const messagecreateMachToolsWarrantyFixedAsset = await createMachToolsWarrantyFixedAsset();
+    const messagecreateMachToolsWarrantyFixedAsset =
+      await createMachToolsWarrantyFixedAsset();
     console.log(messagecreateMachToolsWarrantyFixedAsset);
 
-    const messagecreateOwnershipOwnerFixedAsset = await createOwnershipOwnerFixedAsset();
+    const messagecreateOwnershipOwnerFixedAsset =
+      await createOwnershipOwnerFixedAsset();
     console.log(messagecreateOwnershipOwnerFixedAsset);
 
-    const messagecreateOwnershipLeastFixedAsset = await createOwnershipLeastFixedAsset();
+    const messagecreateOwnershipLeastFixedAsset =
+      await createOwnershipLeastFixedAsset();
     console.log(messagecreateOwnershipLeastFixedAsset);
 
-    const messagecreateOwnershipPermitFixedAsset = await createOwnershipPermitFixedAsset();
+    const messagecreateOwnershipPermitFixedAsset =
+      await createOwnershipPermitFixedAsset();
     console.log(messagecreateOwnershipPermitFixedAsset);
 
-    const messagecreateOwnershipSharedFixedAsset = await createOwnershipSharedFixedAsset();
+    const messagecreateOwnershipSharedFixedAsset =
+      await createOwnershipSharedFixedAsset();
     console.log(messagecreateOwnershipSharedFixedAsset);
 
     const messagecreateCurrentAssetRecord = await createCurrentAssetRecord();
     console.log(messagecreateCurrentAssetRecord);
 
-    const messageSlaveCropCalenderDaysTable = await createSlaveCropCalenderDaysTable();
+    const messageSlaveCropCalenderDaysTable =
+      await createSlaveCropCalenderDaysTable();
     console.log(messageSlaveCropCalenderDaysTable);
 
     const messageCreateCropGeoTable = await createCropGeoTable();
     console.log(messageCreateCropGeoTable);
 
-    const messageCreateTaskImages= await createTaskImages();
+    const messageCreateTaskImages = await createTaskImages();
     console.log(messageCreateTaskImages);
 
     const messageCreateUserBankDetails = await createUserBankDetails();
     console.log(messageCreateUserBankDetails);
 
-
-
-
-
-
-
-
-    
     const messageInsertRoles = await insertRoles();
     console.log(messageInsertRoles);
     const messageAdminCreate = await createSuperAdmin();
     console.log(messageAdminCreate);
   } catch (err) {
-    console.error('Error seeding seedPlantCare:', err);
+    console.error("Error seeding seedPlantCare:", err);
   }
 };
 

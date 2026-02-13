@@ -1,68 +1,8 @@
 const db = require("../startup/database");
 
-
-
-
-
-// exports.getAllPackages = async () => {
-//     console.log("hitpack")
-//     return new Promise((resolve, reject) => {
-//         const query = `
-//         SELECT id, displayName, image, status, created_at AS createdAt, description, productPrice, packingFee, serviceFee
-//         FROM marketplacepackages
-//         WHERE status = 'Enabled'
-//         ORDER BY displayName ASC
-//         `;
-
-//         db.marketPlace.query(query, (error, results) => {
-//             if (error) {
-//                 console.error("Error fetching packages:", error);
-//                 reject(error);
-//             } else {
-//                 resolve(results);
-//             }
-//         });
-//     });
-// };
-
-// exports.getAllPackages = async () => {
-//     console.log("hitpack....")
-//     return new Promise((resolve, reject) => {
-//         const query = `
-//         SELECT DISTINCT 
-//             mp.id, 
-//             mp.displayName, 
-//             mp.image, 
-//             mp.status, 
-//             mp.created_at AS createdAt, 
-//             mp.description, 
-//             mp.productPrice, 
-//             mp.packingFee, 
-//             mp.serviceFee
-//         FROM marketplacepackages mp
-//         INNER JOIN definepackage dp ON mp.id = dp.packageId
-//         INNER JOIN definepackageitems dpi ON dp.id = dpi.definePackageId
-//         WHERE mp.status = 'Enabled'
-//         ORDER BY mp.displayName ASC
-//         `;
-
-//         db.marketPlace.query(query, (error, results) => {
-//             if (error) {
-//                 console.error("Error fetching packages:", error);
-//                 reject(error);
-//             } else {
-//                 resolve(results);
-//             }
-//         });
-//     });
-// };
-
 exports.getAllPackages = async (filters = {}) => {
-    console.log("getAllPackages DAO hit with filters:", filters);
-
-    return new Promise((resolve, reject) => {
-        // Base query with required filters
-        let query = `
+  return new Promise((resolve, reject) => {
+    let query = `
         SELECT DISTINCT 
             mp.id, 
             mp.displayName, 
@@ -81,63 +21,58 @@ exports.getAllPackages = async (filters = {}) => {
         WHERE mp.isValid = 1
         `;
 
-        const queryParams = [];
+    const queryParams = [];
 
-        // Add status filter
-        if (filters.status) {
-            query += ` AND mp.status = ?`;
-            queryParams.push(filters.status);
-        }
+    // Add status filter
+    if (filters.status) {
+      query += ` AND mp.status = ?`;
+      queryParams.push(filters.status);
+    }
 
-        // Add price range filters
-        if (filters.minPrice !== null) {
-            query += ` AND mp.productPrice >= ?`;
-            queryParams.push(filters.minPrice);
-        }
+    // Add price range filters
+    if (filters.minPrice !== null) {
+      query += ` AND mp.productPrice >= ?`;
+      queryParams.push(filters.minPrice);
+    }
 
-        if (filters.maxPrice !== null) {
-            query += ` AND mp.productPrice <= ?`;
-            queryParams.push(filters.maxPrice);
-        }
+    if (filters.maxPrice !== null) {
+      query += ` AND mp.productPrice <= ?`;
+      queryParams.push(filters.maxPrice);
+    }
 
-        // Add search filter (searches in displayName and description)
-        if (filters.search) {
-            query += ` AND (mp.displayName LIKE ? OR mp.description LIKE ?)`;
-            const searchTerm = `%${filters.search}%`;
-            queryParams.push(searchTerm, searchTerm);
-        }
+    // Add search filter (searches in displayName and description)
+    if (filters.search) {
+      query += ` AND (mp.displayName LIKE ? OR mp.description LIKE ?)`;
+      const searchTerm = `%${filters.search}%`;
+      queryParams.push(searchTerm, searchTerm);
+    }
 
-        // Group by to handle DISTINCT with COUNT
-        query += ` GROUP BY mp.id, mp.displayName, mp.image, mp.status, mp.created_at, mp.description, mp.productPrice, mp.packingFee, mp.serviceFee, mp.isValid`;
+    // Group by to handle DISTINCT with COUNT
+    query += ` GROUP BY mp.id, mp.displayName, mp.image, mp.status, mp.created_at, mp.description, mp.productPrice, mp.packingFee, mp.serviceFee, mp.isValid`;
 
-        // Add ordering
-        query += ` ORDER BY mp.displayName ASC`;
+    // Add ordering
+    query += ` ORDER BY mp.displayName ASC`;
 
-        // Add pagination
-        if (filters.limit) {
-            query += ` LIMIT ? OFFSET ?`;
-            queryParams.push(filters.limit, filters.offset || 0);
-        }
+    // Add pagination
+    if (filters.limit) {
+      query += ` LIMIT ? OFFSET ?`;
+      queryParams.push(filters.limit, filters.offset || 0);
+    }
 
-        console.log("Executing query:", query);
-        console.log("With parameters:", queryParams);
-
-        db.marketPlace.query(query, queryParams, (error, results) => {
-            if (error) {
-                console.error("Error fetching packages:", error);
-                reject(error);
-            } else {
-                console.log("Query results count:", results?.length || 0);
-                resolve(results);
-            }
-        });
+    db.marketPlace.query(query, queryParams, (error, results) => {
+      if (error) {
+        console.error("Error fetching packages:", error);
+        reject(error);
+      } else {
+        resolve(results);
+      }
     });
+  });
 };
 
-
 exports.getItemsByPackageId = async (packageId) => {
-    return new Promise((resolve, reject) => {
-        const query = `
+  return new Promise((resolve, reject) => {
+    const query = `
         SELECT 
             pt.typeName AS name, 
             pd.id,
@@ -148,31 +83,20 @@ exports.getItemsByPackageId = async (packageId) => {
         WHERE pd.packageId = ?
         `;
 
-        //  const query = `
-        // SELECT 
-        //     pd.productTypeId,
-        //     pd.id,
-        //     pd.qty
-        // FROM packagedetails pd
-        // WHERE pd.packageId = ?
-        // `;
-
-        db.marketPlace.query(query, [packageId], (error, results) => {
-            if (error) {
-                console.error("Error fetching items for package:", error);
-                reject(error);
-            } else {
-                resolve(results);
-            }
-        });
+    db.marketPlace.query(query, [packageId], (error, results) => {
+      if (error) {
+        console.error("Error fetching items for package:", error);
+        reject(error);
+      } else {
+        resolve(results);
+      }
     });
+  });
 };
 
-
-
 exports.getMarketplaceItemDetails = async (mpItemId) => {
-    return new Promise((resolve, reject) => {
-        const query = `
+  return new Promise((resolve, reject) => {
+    const query = `
         SELECT 
           id,
           displayName,
@@ -185,24 +109,20 @@ exports.getMarketplaceItemDetails = async (mpItemId) => {
         WHERE id = ?;
         `;
 
-        console.log("Executing query:", query);
-        console.log("With itemId:", mpItemId);
-
-        db.marketPlace.query(query, [mpItemId], (error, results) => {
-            if (error) {
-                console.error("Error fetching marketplace item details:", error);
-                reject(error);
-            } else {
-                resolve(results.length > 0 ? results[0] : null);
-            }
-        });
+    db.marketPlace.query(query, [mpItemId], (error, results) => {
+      if (error) {
+        console.error("Error fetching marketplace item details:", error);
+        reject(error);
+      } else {
+        resolve(results.length > 0 ? results[0] : null);
+      }
     });
+  });
 };
 
 exports.getMarketplacePackage = async (packageId) => {
-    return new Promise((resolve, reject) => {
-        // Query the packages table instead of marketplaceitems
-        const query = `
+  return new Promise((resolve, reject) => {
+    const query = `
         SELECT 
           id,
           displayName,
@@ -212,94 +132,21 @@ exports.getMarketplacePackage = async (packageId) => {
         WHERE id = ?;
         `;
 
-        console.log("Executing query:", query);
-        console.log("With packageId:", packageId);
-
-        db.marketPlace.query(query, [packageId], (error, results) => {
-            if (error) {
-                console.error("Error fetching package details:", error);
-                reject(error);
-            } else {
-                console.log("Query results:", results);
-                resolve(results.length > 0 ? results[0] : null);
-            }
-        });
+    db.marketPlace.query(query, [packageId], (error, results) => {
+      if (error) {
+        console.error("Error fetching package details:", error);
+        reject(error);
+      } else {
+        resolve(results.length > 0 ? results[0] : null);
+      }
     });
+  });
 };
 
-
-
-// exports.getAllCrops = async () => {
-//     try {
-//         const query = `
-//         SELECT 
-//             id, varietyId, displayName, category,
-//             normalPrice, discountedPrice, discount,
-//             promo, unitType, startValue, changeby, tags
-//         FROM marketplaceitems
-//         ORDER BY displayName ASC;
-//         `;
-
-//         console.log("Executing query:", query);
-//         const [results] = await db.marketPlace.promise().query(query);
-
-//         console.log("Results fetched from DB:", results);
-//         return results;
-//     } catch (error) {
-//         console.error("Error fetching crops:", error);
-//         throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
-//     }
-// };
-
-// exports.getAllCrops = async (cusId) => {
-//     let query;
-//     let queryParams = [];
-
-//     if (cusId && cusId.id) {
-//         // If cusId is provided, filter by customer and category
-//         const customerId = cusId.id;
-//         query = `
-//         SELECT 
-//             mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
-//             mpi.normalPrice, mpi.discountedPrice, mpi.discount,
-//             mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
-//         FROM marketplaceitems mpi
-//         LEFT JOIN excludelist el ON el.mpItemId = mpi.id AND el.userId = ?
-//         WHERE el.mpItemId IS NULL  
-//         AND mpi.category = 'Retail'
-//         ORDER BY mpi.displayName ASC;
-//         `;
-//         queryParams = [customerId]; // Using customerId for the query
-//     } else {
-//         // If cusId is not provided, fetch all marketplace items with 'Retail' category
-//         query = `
-//         SELECT 
-//             id, varietyId, displayName, category,
-//             normalPrice, discountedPrice, discount,
-//             promo, unitType, startValue, changeby, tags
-//         FROM marketplaceitems
-//         WHERE category = 'Retail'
-//         ORDER BY displayName ASC;
-//         `;
-//         queryParams = []; // No need for a customerId filter
-//     }
-
-//     try {
-//         console.log("Executing query:", query);
-//         const [results] = await db.marketPlace.promise().query(query, queryParams);
-
-//         console.log("Results fetched from DB:", results);
-//         return results;
-//     } catch (error) {
-//         console.error("Error fetching crops:", error);
-//         throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
-//     }
-// };
-
 exports.getAllCrops = async (cusId) => {
-    const customerId = cusId.id;
-    try {
-        const query = `
+  const customerId = cusId.id;
+  try {
+    const query = `
         SELECT 
             mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
             mpi.normalPrice, mpi.discountedPrice, mpi.discount,
@@ -311,43 +158,38 @@ exports.getAllCrops = async (cusId) => {
         ORDER BY mpi.displayName ASC;
         `;
 
-        console.log("Executing query:", query);
-        const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    const [results] = await db.marketPlace.promise().query(query, [customerId]);
 
-        console.log("Results fetched from DB:", results);
-        return results;
-    } catch (error) {
-        console.error("Error fetching crops:", error);
-        throw new Error("Database error: " + error.message);
-    }
+    return results;
+  } catch (error) {
+    console.error("Error fetching crops:", error);
+    throw new Error("Database error: " + error.message);
+  }
 };
 
-
 exports.getCropById = async (id) => {
-    try {
-        const query = `
+  try {
+    const query = `
             SELECT 
                 id, varietyId, displayName, category, 
                 normalPrice, discountedPrice, discount, 
                 promo, unitType, startValue, changeby, displayType 
             FROM marketplaceitems 
             WHERE id = ?;
-        `;  // SQL query to fetch the crop with the specific cropId
+        `;
 
-        console.log("Executing query:", query);  // Debugging SQL query
-        const [results] = await db.marketPlace.promise().query(query, [id]);  // Run the query with cropId as a parameter
+    const [results] = await db.marketPlace.promise().query(query, [id]);
 
-        console.log("Result fetched from DB:", results); // Check what the query returns
-        return results[0];  // Return the first result (single crop)
-    } catch (error) {
-        console.error("Error fetching crop by ID:", error);
-        throw new Error("Database error: " + error.message);  // Throw the error to be handled in the controller
-    }
+    return results[0];
+  } catch (error) {
+    console.error("Error fetching crop by ID:", error);
+    throw new Error("Database error: " + error.message);
+  }
 };
 
 exports.getPackageItemByProductId = async (packageId, productId) => {
-    return new Promise((resolve, reject) => {
-        const query = `
+  return new Promise((resolve, reject) => {
+    const query = `
         SELECT 
           pd.id,
           pd.packageId,
@@ -368,45 +210,40 @@ exports.getPackageItemByProductId = async (packageId, productId) => {
         WHERE pd.packageId = ? AND pd.mpItemId = ?;
         `;
 
-        console.log("Executing query:", query);
-        console.log("With packageId:", packageId, "and productId (mpItemId):", productId);
-
-        db.marketPlace.query(query, [packageId, productId], (error, results) => {
-            if (error) {
-                console.error("Error fetching package item details:", error);
-                reject(error);
-            } else {
-                console.log("Query results:", results);
-                if (results.length > 0) {
-                    const result = results[0];
-                    resolve({
-                        id: result.id,
-                        packageId: result.packageId,
-                        mpItemId: result.mpItemId,
-                        name: result.displayName,
-                        displayName: result.displayName,
-                        quantity: result.quantity,
-                        quantityType: result.quantityType,
-                        price: result.price,
-                        discount: result.discount,
-                        discountedPrice: result.discountedPrice,
-                        normalPrice: result.marketplacePrice,
-                        unitType: result.unitType,
-                        startValue: result.startValue,
-                        changeby: result.changeby
-                    });
-                } else {
-                    resolve(null);
-                }
-            }
-        });
+    db.marketPlace.query(query, [packageId, productId], (error, results) => {
+      if (error) {
+        console.error("Error fetching package item details:", error);
+        reject(error);
+      } else {
+        if (results.length > 0) {
+          const result = results[0];
+          resolve({
+            id: result.id,
+            packageId: result.packageId,
+            mpItemId: result.mpItemId,
+            name: result.displayName,
+            displayName: result.displayName,
+            quantity: result.quantity,
+            quantityType: result.quantityType,
+            price: result.price,
+            discount: result.discount,
+            discountedPrice: result.discountedPrice,
+            normalPrice: result.marketplacePrice,
+            unitType: result.unitType,
+            startValue: result.startValue,
+            changeby: result.changeby,
+          });
+        } else {
+          resolve(null);
+        }
+      }
     });
+  });
 };
-/////////// package
 
 exports.getChangeByValue = async (mpItemId) => {
-    return new Promise((resolve, reject) => {
-        const query = `
+  return new Promise((resolve, reject) => {
+    const query = `
         SELECT 
           id,
           
@@ -418,16 +255,13 @@ exports.getChangeByValue = async (mpItemId) => {
         WHERE id = ?;
         `;
 
-        console.log("Executing query:", query);
-        console.log("With itemId:", mpItemId);
-
-        db.marketPlace.query(query, [mpItemId], (error, results) => {
-            if (error) {
-                console.error("Error fetching marketplace item details:", error);
-                reject(error);
-            } else {
-                resolve(results.length > 0 ? results[0] : null);
-            }
-        });
+    db.marketPlace.query(query, [mpItemId], (error, results) => {
+      if (error) {
+        console.error("Error fetching marketplace item details:", error);
+        reject(error);
+      } else {
+        resolve(results.length > 0 ? results[0] : null);
+      }
     });
+  });
 };

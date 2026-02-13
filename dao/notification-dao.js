@@ -1,55 +1,7 @@
-const db = require('../startup/database');
-
-// exports.getNotificationsBySalesAgent = (salesAgentId) => {
-//   console.log(salesAgentId)
-//   return new Promise((resolve, reject) => {
-//     const query = `
-//     SELECT 
-//   dn.id,
-//   dn.orderId,
-//   dn.title,
-//   dn.readStatus,
-//   dn.createdAt,
-//   po.invNo,
-//   po.status,
-//   o.userId AS cusId,
-//   o.fullName AS customerName,
-//   CONCAT(o.phonecode1, o.phone1) AS phoneNumber
-// FROM dashnotification dn
-// JOIN processorders po ON dn.orderId = po.id
-// JOIN orders o ON  po.orderId = o.id
-// JOIN marketplaceusers mps ON o.userId = mps.id
-// WHERE mps.salesAgent = ?
-// ORDER BY dn.createdAt DESC
-
-//     `;
-
-//     const countQuery = `
-//       SELECT COUNT(*) AS unreadCount 
-//       FROM dashnotification dn
-//       JOIN orders o ON dn.orderId = o.id
-//       JOIN marketplaceusers mps ON o.userId = mps.id
-//       WHERE mps.salesAgent = ? AND dn.readStatus = 0
-//     `;
-
-//     db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
-//       if (err) return reject(err);
-
-//       db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
-//         if (err) return reject(err);
-
-//         resolve({
-//           notifications,
-//           unreadCount: countResult[0]?.unreadCount || 0
-//         });
-//       });
-//       console.log(notifications)
-//     });
-//   });
-// };
+const db = require("../startup/database");
+const smsService = require("../services/sms-service");
 
 exports.getNotificationsBySalesAgent = (salesAgentId) => {
-  console.log(salesAgentId)
   return new Promise((resolve, reject) => {
     const query = `
     SELECT 
@@ -73,7 +25,6 @@ WHERE mps.salesAgent = ?
 ORDER BY dn.createdAt DESC
     `;
 
-    // Fixed count query with same JOIN pattern as main query
     const countQuery = `
       SELECT COUNT(*) AS unreadCount 
       FROM dashnotification dn
@@ -91,16 +42,14 @@ ORDER BY dn.createdAt DESC
 
         resolve({
           notifications,
-          unreadCount: countResult[0]?.unreadCount || 0
+          unreadCount: countResult[0]?.unreadCount || 0,
         });
       });
-      console.log(notifications)
     });
   });
 };
 
 exports.markNotificationsAsReadByOrderId = (id) => {
-  console.log(id)
   return new Promise((resolve, reject) => {
     const query = `
       UPDATE dashnotification 
@@ -110,7 +59,7 @@ exports.markNotificationsAsReadByOrderId = (id) => {
 
     db.marketPlace.query(query, [id], (err, result) => {
       if (err) return reject(err);
-      resolve(result.affectedRows); // Returns number of marked notifications
+      resolve(result.affectedRows);
     });
   });
 };
@@ -124,12 +73,10 @@ exports.deleteNotificationsByOrderId = (id) => {
 
     db.marketPlace.query(query, [id], (err, result) => {
       if (err) return reject(err);
-      resolve(result.affectedRows); // Returns number of deleted notifications
+      resolve(result.affectedRows);
     });
   });
 };
-
-const smsService = require('../services/sms-service');
 
 exports.createPaymentReminders = async () => {
   return new Promise(async (resolve, reject) => {
@@ -154,8 +101,6 @@ exports.createPaymentReminders = async () => {
     try {
       const orders = await queryAsync(orderQuery, []);
 
-      console.log("orderdata", orders)
-
       if (!orders || orders.length === 0) {
         return resolve({ notificationCount: 0, smsCount: 0, orders: [] }); // No qualifying orders found
       }
@@ -164,10 +109,8 @@ exports.createPaymentReminders = async () => {
       const results = {
         notificationCount: 0,
         smsCount: 0,
-        orders: []
+        orders: [],
       };
-
-      console.log("check notifi ", results)
 
       for (const order of orders) {
         try {
@@ -182,14 +125,18 @@ exports.createPaymentReminders = async () => {
             const message = `Hello ${order.customerName}, this is a reminder that your payment for order ${order.invNo} is due in 3 days. Please ensure timely payment to avoid any service interruptions. Thank you!`;
 
             // Attempt to send the SMS
-            const smsResult = await smsService.sendSMS(order.phoneNumber, message);
+            const smsResult = await smsService.sendSMS(
+              order.phoneNumber,
+              message,
+            );
 
             // Log success or failure
             if (smsResult && smsResult.success) {
-              console.log(`Successfully sent SMS to ${order.phoneNumber} for order ${order.invNo}`);
               results.smsCount++;
             } else {
-              console.error(`Failed to send SMS to ${order.phoneNumber} for order ${order.invNo}`);
+              console.error(
+                `Failed to send SMS to ${order.phoneNumber} for order ${order.invNo}`,
+              );
             }
 
             results.orders.push({
@@ -199,10 +146,12 @@ exports.createPaymentReminders = async () => {
               phoneNumber: order.phoneNumber,
               notificationSent: true,
               smsSent: smsResult && smsResult.success,
-              smsProvider: smsResult ? smsResult.provider : 'unknown'
+              smsProvider: smsResult ? smsResult.provider : "unknown",
             });
           } else {
-            console.warn(`No phone number available for customer ${order.customerName}, order ${order.invNo}`);
+            console.warn(
+              `No phone number available for customer ${order.customerName}, order ${order.invNo}`,
+            );
             results.orders.push({
               orderId: order.orderId,
               invNo: order.invNo,
@@ -210,7 +159,7 @@ exports.createPaymentReminders = async () => {
               phoneNumber: null,
               notificationSent: true,
               smsSent: false,
-              reason: 'No phone number available'
+              reason: "No phone number available",
             });
           }
         } catch (err) {
@@ -221,7 +170,7 @@ exports.createPaymentReminders = async () => {
             invNo: order.invNo,
             error: err.message,
             notificationSent: false,
-            smsSent: false
+            smsSent: false,
           });
         }
       }

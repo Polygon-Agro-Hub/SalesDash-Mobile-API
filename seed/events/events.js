@@ -1,8 +1,7 @@
-const { db, plantcare, collectionofficer, dash } = require('../../startup/database');
-
+const { plantcare } = require("../../startup/database");
 
 const createExpiredContentCleanupEvent = () => {
-    const sql = `
+  const sql = `
     CREATE EVENT IF NOT EXISTS delete_expired_content
       ON SCHEDULE EVERY 1 DAY
       DO
@@ -10,22 +9,19 @@ const createExpiredContentCleanupEvent = () => {
         WHERE expireDate IS NOT NULL
         AND expireDate < NOW();
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error createExpiredContentCleanupEvent ' + err);
-            } else {
-                resolve('createExpiredContentCleanupEvent created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error createExpiredContentCleanupEvent " + err);
+      } else {
+        resolve("createExpiredContentCleanupEvent created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createContentPublishingEvent = () => {
-    const sql = `
+  const sql = `
     CREATE EVENT IF NOT EXISTS update_content_status
       ON SCHEDULE EVERY 1 DAY
       DO
@@ -34,22 +30,19 @@ const createContentPublishingEvent = () => {
         WHERE publishDate <= CURRENT_DATE()
         AND status != 'Published';
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error createContentPublishingEvent ' + err);
-            } else {
-                resolve('createContentPublishingEvent created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error createContentPublishingEvent " + err);
+      } else {
+        resolve("createContentPublishingEvent created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createTaskStatusEvent = () => {
-    const sql = `
+  const sql = `
     CREATE EVENT IF NOT EXISTS update_task_status
         ON SCHEDULE EVERY 1 HOUR
         DO
@@ -57,22 +50,19 @@ const createTaskStatusEvent = () => {
         SET status = 'Completed'
         WHERE status = 'Pending' AND startingDate < CURDATE();
   `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error createTaskStatusEvent ' + err);
-            } else {
-                resolve('createTaskStatusEvent created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error createTaskStatusEvent " + err);
+      } else {
+        resolve("createTaskStatusEvent created successfully.");
+      }
     });
+  });
 };
 
-
-
-
 const createUserActiveStatusEvent = () => {
-    const sql = `
+  const sql = `
     CREATE EVENT IF NOT EXISTS update_user_active_status
         ON SCHEDULE EVERY 1 HOUR
         DO
@@ -110,26 +100,20 @@ const createUserActiveStatusEvent = () => {
             );
         END;
     `;
-    return new Promise((resolve, reject) => {
-        plantcare.query(sql, (err, result) => {
-            if (err) {
-                reject('Error createUserActiveStatusEvent: ' + err);
-            } else {
-                resolve('createUserActiveStatusEvent created successfully.');
-            }
-        });
+  return new Promise((resolve, reject) => {
+    plantcare.query(sql, (err, result) => {
+      if (err) {
+        reject("Error createUserActiveStatusEvent: " + err);
+      } else {
+        resolve("createUserActiveStatusEvent created successfully.");
+      }
     });
+  });
 };
-
-
-
-
-
 
 module.exports = {
   createExpiredContentCleanupEvent,
   createContentPublishingEvent,
   createTaskStatusEvent,
-  createUserActiveStatusEvent
-
+  createUserActiveStatusEvent,
 };
