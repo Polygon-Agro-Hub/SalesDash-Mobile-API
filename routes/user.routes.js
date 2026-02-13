@@ -1,13 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth.middleware");
-const userAuthEp = require("../end-point/userAuth-ep");
+const userAuthEp = require("../end-point/user-ep");
 
 // User Login
 router.post("/login", userAuthEp.login);
-
-// Update User
-router.put("/user-updateUser", auth, userAuthEp.updateUserProfile);
 
 // Get User Details
 router.get("/user/profile", auth, userAuthEp.getUserProfile);

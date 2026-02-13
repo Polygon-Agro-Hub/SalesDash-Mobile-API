@@ -1,5 +1,5 @@
 const orderDao = require("../dao/orders-dao");
-const orderValidationSchema = require("../Validations/Order-validation");
+const orderValidationSchema = require("../Validations/orders-validation");
 
 exports.createOrder = async (req, res) => {
   try {

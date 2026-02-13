@@ -1,10 +1,11 @@
 const notificationDao = require("../dao/notification-dao");
 
+// Get All Notification
 exports.getNotifications = async (req, res) => {
   try {
     const salesAgentId = req.user.id;
     const { notifications, unreadCount } =
-      await notificationDao.getNotificationsBySalesAgent(salesAgentId);
+      await notificationDao.getNotificationsBySalesAgentDAO(salesAgentId);
 
     res.status(200).json({
       success: true,
@@ -22,6 +23,7 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
+// Mark As Read Notification
 exports.markAsReadByOrderId = async (req, res) => {
   try {
     const { id } = req.params;
@@ -34,7 +36,7 @@ exports.markAsReadByOrderId = async (req, res) => {
     }
 
     const affectedRows =
-      await notificationDao.markNotificationsAsReadByOrderId(id);
+      await notificationDao.markNotificationsAsReadByOrderIdDAO(id);
 
     res.status(200).json({
       success: true,
@@ -50,6 +52,7 @@ exports.markAsReadByOrderId = async (req, res) => {
   }
 };
 
+// Delete Notification
 exports.deleteByOrderId = async (req, res) => {
   try {
     const { id } = req.params;
@@ -61,7 +64,8 @@ exports.deleteByOrderId = async (req, res) => {
       });
     }
 
-    const affectedRows = await notificationDao.deleteNotificationsByOrderId(id);
+    const affectedRows =
+      await notificationDao.deleteNotificationsByOrderIdDAO(id);
 
     if (affectedRows === 0) {
       return res.status(404).json({
@@ -80,24 +84,6 @@ exports.deleteByOrderId = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to delete notifications",
-    });
-  }
-};
-
-exports.createPaymentReminders = async (req, res) => {
-  try {
-    const remindersCreated = await notificationDao.createPaymentReminders();
-
-    res.status(200).json({
-      success: true,
-      message: `Created ${remindersCreated.notificationCount} payment reminder notifications and sent ${remindersCreated.smsCount} SMS messages`,
-      data: remindersCreated,
-    });
-  } catch (error) {
-    console.error("Error creating payment reminders:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create payment reminders",
     });
   }
 };
