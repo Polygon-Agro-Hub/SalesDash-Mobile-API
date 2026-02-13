@@ -1,6 +1,7 @@
 const db = require("../startup/database");
 
-exports.createComplain = (
+// Add Complain DAO
+exports.createComplainDAO = (
   saId,
   language,
   complain,
@@ -45,6 +46,7 @@ exports.createComplain = (
   });
 };
 
+// Get All Complains DAO
 exports.getAllComplaintsByUserId = async (userId) => {
   return new Promise((resolve, reject) => {
     const query = `
@@ -64,7 +66,8 @@ exports.getAllComplaintsByUserId = async (userId) => {
   });
 };
 
-exports.getComplainCategories = async (appName) => {
+// Get All Complain Category By App Name DAO
+exports.getComplainCategoriesDAO = async (appName) => {
   return new Promise((resolve, reject) => {
     const query = `
                 SELECT cc.id, cc.roleId, cc.appId, cc.categoryEnglish, cc.categorySinhala, cc.categoryTamil, ssa.appName

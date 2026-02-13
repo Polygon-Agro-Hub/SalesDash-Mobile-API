@@ -1,12 +1,12 @@
-const userDao = require("../dao/userAuth-dao");
+const userDao = require("../dao/user-dao");
 const jwt = require("jsonwebtoken");
 const {
   loginSchema,
-  updateUserProfileSchema,
   updatePasswordSchema,
-} = require("../Validations/Auth-validations");
+} = require("../Validations/auth-validations");
 const asyncHandler = require("express-async-handler");
 
+// User Login
 exports.login = asyncHandler(async (req, res) => {
   const { error } = loginSchema.validate(req.body, { abortEarly: false });
   console.log(error);
@@ -21,7 +21,7 @@ exports.login = asyncHandler(async (req, res) => {
   const { empId, password } = req.body;
 
   try {
-    const result = await userDao.loginUser(empId, password);
+    const result = await userDao.loginUserDAO(empId, password);
 
     const token = jwt.sign(
       {
@@ -90,11 +90,12 @@ exports.login = asyncHandler(async (req, res) => {
   }
 });
 
+// Get User Details
 exports.getUserProfile = asyncHandler(async (req, res) => {
   const id = req.user.id;
 
   try {
-    const user = await userDao.getUserProfile(id);
+    const user = await userDao.getUserProfileDAO(id);
     return res.status(200).json({
       success: true,
       message: "Profile fetched successfully",
@@ -108,37 +109,25 @@ exports.getUserProfile = asyncHandler(async (req, res) => {
   }
 });
 
-exports.updateUserProfile = asyncHandler(async (req, res) => {
+// Get User Password
+exports.getPassword = asyncHandler(async (req, res) => {
   const id = req.user.id;
-
-  const updatedData = req.body;
-
-  const { error } = updateUserProfileSchema.validate(updatedData, {
-    abortEarly: false,
-  });
-
-  if (error) {
-    return res.status(400).json({
-      status: "error",
-      message: "Validation failed",
-      errors: error.details.map((err) => err.message),
-    });
-  }
-
   try {
-    const result = await userDao.updateUserProfile(id, updatedData); // Update the profile using DAO
+    const user = await userDao.getPasswordDAO(id);
     return res.status(200).json({
-      status: "success",
-      message: "User profile updated successfully",
+      success: true,
+      message: "Profile fetched successfully",
+      data: user,
     });
   } catch (err) {
     return res.status(500).json({
-      status: "error",
+      success: false,
       message: err.message,
     });
   }
 });
 
+// Update User Password
 exports.updatePassword = async (req, res) => {
   const { oldPassword, newPassword } = req.body;
 
@@ -157,7 +146,7 @@ exports.updatePassword = async (req, res) => {
 
   const userId = req.user.id;
   try {
-    const result = await userDao.updatePassword(
+    const result = await userDao.updatePasswordDAO(
       userId,
       oldPassword,
       newPassword,
@@ -168,20 +157,3 @@ exports.updatePassword = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-exports.getPassword = asyncHandler(async (req, res) => {
-  const id = req.user.id;
-  try {
-    const user = await userDao.getPassword(id);
-    return res.status(200).json({
-      success: true,
-      message: "Profile fetched successfully",
-      data: user,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-});

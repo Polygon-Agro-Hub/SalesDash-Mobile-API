@@ -2,6 +2,7 @@ const asyncHandler = require("express-async-handler");
 const complainDAO = require("../dao/complain-dao");
 const { createComplain } = require("..//Validations/complain-validation");
 
+// Add Complain
 exports.createComplain = asyncHandler(async (req, res) => {
   try {
     const saId = req.user.id; 
@@ -22,7 +23,7 @@ exports.createComplain = asyncHandler(async (req, res) => {
     const status = "Opened";
 
     // Create the complaint in the database
-    const newComplainId = await complainDAO.createComplain(
+    const newComplainId = await complainDAO.createComplainDAO(
       saId,
       language,
       complain,
@@ -45,10 +46,11 @@ exports.createComplain = asyncHandler(async (req, res) => {
   }
 });
 
+// Get All Complains
 exports.getComplains = asyncHandler(async (req, res) => {
   try {
     const userId = req.user.id;
-    const complains = await complainDAO.getAllComplaintsByUserId(userId);
+    const complains = await complainDAO.getAllComplaintsByUserIdDAO(userId);
 
     if (!complains || complains.length === 0) {
       return res.status(404).json({ message: "No complaints found" });
@@ -61,10 +63,11 @@ exports.getComplains = asyncHandler(async (req, res) => {
   }
 });
 
+// Get All Complain Category By App Name
 exports.getComplainCategory = asyncHandler(async (req, res) => {
   try {
     const appName = req.params.appName;
-    const categories = await complainDAO.getComplainCategories(appName);
+    const categories = await complainDAO.getComplainCategoriesDAO(appName);
 
     if (!categories || categories.length === 0) {
       return res.status(404).json({ message: "No categories found" });
