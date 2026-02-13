@@ -1,6 +1,6 @@
 const asyncHandler = require("express-async-handler");
 const customerDAO = require("../dao/customer-dao");
-const ValidationSchema = require("..//Validations/customer-validation");
+const ValidationSchema = require("../validation/customer-validation");
 
 exports.customerData = async (req, res) => {
   if (!req.user || !req.user.id) {
