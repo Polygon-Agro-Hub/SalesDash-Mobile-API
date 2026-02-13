@@ -14,22 +14,6 @@ const loginSchema = Joi.object({
   }),
 });
 
-// User Profile Update Schema
-const updateUserProfileSchema = Joi.object({
-  firstName: Joi.string().min(2).max(50).required().label("First Name"),
-  lastName: Joi.string().min(2).max(50).required().label("Last Name"),
-  email: Joi.string().email().optional().label("Email"),
-  houseNumber: Joi.string().optional().label("House Number"),
-  streetName: Joi.string().min(2).max(50).optional().label("Street Name"),
-  city: Joi.string().min(2).max(50).optional().label("City"),
-  empId: Joi.string().optional().label("Employee ID"),
-  nic: Joi.string()
-    .pattern(/^(\d{12}|\d{9}[Vv])$/)
-    .optional()
-    .label("NIC"),
-  username: Joi.string().optional().label("Username"),
-});
-
 // Password Update Schema
 const updatePasswordSchema = Joi.object({
   oldPassword: Joi.string().min(6).max(100).required().messages({
@@ -46,6 +30,5 @@ const updatePasswordSchema = Joi.object({
 
 module.exports = {
   loginSchema,
-  updateUserProfileSchema,
   updatePasswordSchema,
 };

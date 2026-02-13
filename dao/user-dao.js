@@ -1,7 +1,8 @@
 const db = require("../startup/database");
 const bcrypt = require("bcrypt");
 
-exports.loginUser = (empId, password) => {
+// User Login DAO
+exports.loginUserDAO = (empId, password) => {
   return new Promise(async (resolve, reject) => {
     try {
       const sql =
@@ -43,7 +44,8 @@ exports.loginUser = (empId, password) => {
   });
 };
 
-exports.getUserProfile = (id) => {
+// Get User Details DAO
+exports.getUserProfileDAO = (id) => {
   return new Promise((resolve, reject) => {
     const sql = `       
       SELECT 
@@ -90,39 +92,38 @@ exports.getUserProfile = (id) => {
   });
 };
 
-exports.updateUserProfile = (id, updatedData) => {
+// Get User Password DAO
+exports.getPasswordDAO = (id) => {
   return new Promise((resolve, reject) => {
-    const sql = `
-          UPDATE salesagent
-          SET firstName = ?, lastName = ?,
-              houseNumber = ?, streetName = ?, city = ?, district = ?, province = ?
-          WHERE id = ?;
-      `;
+    const sql = `       
+      SELECT 
+        id,         
+       
+        empId,          
+       passwordUpdate,
+        createdAt
+      FROM salesagent        
+      WHERE id = ?     
+    `;
 
-    const values = [
-      updatedData.firstName,
-      updatedData.lastName,
-      updatedData.houseNumber,
-      updatedData.streetName,
-      updatedData.city,
-      updatedData.district,
-      updatedData.province,
-      id,
-    ];
+    db.marketPlace.query(sql, [id], (err, results) => {
+      if (err) {
+        console.error("Database error:", err);
+        return reject(new Error("Database error"));
+      }
 
-    db.marketPlace.query(sql, values, (err, results) => {
-      if (err) return reject(new Error("Database update error"));
-      if (results.affectedRows === 0) {
+      if (results.length === 0) {
         return reject(new Error("User not found"));
       }
-      resolve({ success: true, message: "Profile updated successfully" });
+
+      resolve(results[0]);
     });
   });
 };
 
-exports.updatePassword = (id, oldPassword, newPassword) => {
+// Update User Password DAO
+exports.updatePasswordDAO = (id, oldPassword, newPassword) => {
   return new Promise((resolve, reject) => {
-    
     const fetchSql = `SELECT password, passwordUpdate FROM salesagent WHERE id = ?`;
     db.marketPlace.query(fetchSql, [id], async (err, results) => {
       if (err) {
@@ -188,34 +189,6 @@ exports.updatePassword = (id, oldPassword, newPassword) => {
       } catch (bcryptErr) {
         return reject(new Error("Password hashing error"));
       }
-    });
-  });
-};
-
-exports.getPassword = (id) => {
-  return new Promise((resolve, reject) => {
-    const sql = `       
-      SELECT 
-        id,         
-       
-        empId,          
-       passwordUpdate,
-        createdAt
-      FROM salesagent        
-      WHERE id = ?     
-    `;
-
-    db.marketPlace.query(sql, [id], (err, results) => {
-      if (err) {
-        console.error("Database error:", err);
-        return reject(new Error("Database error"));
-      }
-
-      if (results.length === 0) {
-        return reject(new Error("User not found"));
-      }
-
-      resolve(results[0]);
     });
   });
 };
