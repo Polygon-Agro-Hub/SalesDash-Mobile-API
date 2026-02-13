@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const {
   loginSchema,
   updatePasswordSchema,
-} = require("../Validations/auth-validations");
+} = require("../validation/auth-validation");
 const asyncHandler = require("express-async-handler");
 
 // User Login
