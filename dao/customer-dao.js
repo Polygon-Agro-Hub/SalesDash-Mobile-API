@@ -766,7 +766,6 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
 
 exports.getExcludeList = async (customerId) => {
   try {
-    // Correct query with parameterized customerId
     const query = `
       SELECT 
         el.id AS excludeId, 
@@ -777,7 +776,8 @@ exports.getExcludeList = async (customerId) => {
         mps.cusId,
         mps.firstName,
         mps.lastName,
-        mps.title
+        mps.title,
+        mps.phoneNumber
       FROM marketplaceusers mps
       LEFT JOIN excludelist el ON el.userId = mps.id
       LEFT JOIN marketplaceitems mpi ON mpi.id = el.mpItemId 
