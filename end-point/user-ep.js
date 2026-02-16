@@ -83,6 +83,15 @@ exports.login = asyncHandler(async (req, res) => {
       });
     }
 
+    if (err.message === "Password not set for this account") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Password not set for this account. Please contact administrator.",
+        statusType: "password_not_set",
+      });
+    }
+
     return res.status(401).json({
       success: false,
       message: err.message,
