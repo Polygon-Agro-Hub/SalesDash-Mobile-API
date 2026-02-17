@@ -34,6 +34,8 @@ exports.processOrder = async (orderData, salesAgentId) => {
       orderData,
     );
 
+    await assignCenterToOrder(connection, orderId, orderData, userDetails);
+
     // STEP 4: Insert address data based on building type
     await insertAddressData(connection, orderId, orderData, userDetails);
 
@@ -144,6 +146,86 @@ function getBuildingTypeInt(buildingType) {
   return buildingTypeMapping[buildingType] || 1;
 }
 
+async function assignCenterToOrder(
+  connection,
+  orderId,
+  orderData,
+  userDetails,
+) {
+  try {
+    const buildingTypeInt = getBuildingTypeInt(userDetails.buildingType);
+    let city = null;
+
+    // Step 1: Get city based on building type
+    if (buildingTypeInt === 1) {
+      const [houseResult] = await connection.query(
+        "SELECT city FROM house WHERE customerid = ? LIMIT 1",
+        [orderData.userId],
+      );
+      if (houseResult && houseResult.length > 0) {
+        city = houseResult[0].city;
+      }
+    } else if (buildingTypeInt === 2) {
+      const [apartmentResult] = await connection.query(
+        "SELECT city FROM apartment WHERE customerid = ? LIMIT 1",
+        [orderData.userId],
+      );
+      if (apartmentResult && apartmentResult.length > 0) {
+        city = apartmentResult[0].city;
+      }
+    }
+
+    if (!city) {
+      console.warn(
+        `No city found for userId ${orderData.userId}, skipping center assignment.`,
+      );
+      return;
+    }
+
+    // Step 2: Match city in collection_officer.deliverycharge → get id
+    const [deliveryChargeResult] = await connection.query(
+      "SELECT id FROM collection_officer.deliverycharge WHERE city = ? LIMIT 1",
+      [city],
+    );
+
+    if (!deliveryChargeResult || deliveryChargeResult.length === 0) {
+      console.warn(
+        `No delivery charge found for city "${city}", skipping center assignment.`,
+      );
+      return;
+    }
+
+    const deliveryChargeId = deliveryChargeResult[0].id;
+
+    // Step 3: Get companyCenterId from centerowncity (this is the FK to distributedcompanycenter)
+    const [centerOwnCityResult] = await connection.query(
+      "SELECT companyCenterId FROM collection_officer.centerowncity WHERE cityId = ? LIMIT 1",
+      [deliveryChargeId],
+    );
+
+    if (!centerOwnCityResult || centerOwnCityResult.length === 0) {
+      console.warn(
+        `No center found for deliveryChargeId ${deliveryChargeId}, skipping center assignment.`,
+      );
+      return;
+    }
+
+    // Step 4: Use companyCenterId — it references distributedcompanycenter(id) ✅
+    const companyCenterId = centerOwnCityResult[0].companyCenterId;
+
+    await connection.query(
+      "UPDATE orders SET assignCoMCenId = ? WHERE id = ?",
+      [companyCenterId, orderId],
+    );
+
+    console.log(
+      `Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
+    );
+  } catch (error) {
+    console.error("Error in assignCenterToOrder:", error);
+  }
+}
+
 async function insertMainOrder(
   connection,
   orderData,
@@ -215,12 +297,12 @@ async function insertMainOrder(
   // Insert order record with user data from marketplaceusers table INCLUDING longitude and latitude
   const [result] = await connection.query(
     `INSERT INTO orders (
-          userId, orderApp, delivaryMethod, centerId, buildingType,
+          userId,  orderApp, delivaryMethod, centerId, buildingType,
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, sheduleDate, sheduleTime, isPackage, 
           longitude, latitude, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -1400,20 +1482,20 @@ exports.getAllAgentStats = async (salesAgentId) => {
       const dailyStats =
         todayStats.length > 0
           ? {
-              target: todayStats[0].target,
-              completed: todayStats[0].completed,
-              numOfStars: todayStats[0].numOfStars,
-              progress:
-                todayStats[0].target > 0
-                  ? Math.min(todayStats[0].completed / todayStats[0].target, 1)
-                  : 0,
-            }
+            target: todayStats[0].target,
+            completed: todayStats[0].completed,
+            numOfStars: todayStats[0].numOfStars,
+            progress:
+              todayStats[0].target > 0
+                ? Math.min(todayStats[0].completed / todayStats[0].target, 1)
+                : 0,
+          }
           : {
-              target: 10,
-              completed: 0,
-              numOfStars: 0,
-              progress: 0,
-            };
+            target: 10,
+            completed: 0,
+            numOfStars: 0,
+            progress: 0,
+          };
 
       // Get total number of stars for the agent (all time)
       const [totalStarsResult] = await connection.query(
@@ -1487,7 +1569,7 @@ exports.getReturnReason = async (orderId) => {
 
     // Single query with joins to get return reason directly
     const returnReasonSql = `
-            SELECT rr.rsnEnglish as returnReason
+            SELECT rr.rsnEnglish as returnReason , dro.note as otherReason
             FROM market_place.processorders po
             INNER JOIN collection_officer.driverorders do ON do.orderId = po.id
             INNER JOIN collection_officer.driverreturnorders dro ON dro.drvOrderId = do.id
@@ -1504,6 +1586,7 @@ exports.getReturnReason = async (orderId) => {
 
     return {
       returnReason: result[0].returnReason,
+      otherReason: result[0].otherReason || null,
     };
   } catch (err) {
     console.error("Database error in getReturnReason:", err);
