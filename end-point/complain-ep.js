@@ -1,6 +1,6 @@
 const asyncHandler = require("express-async-handler");
 const complainDAO = require("../dao/complain-dao");
-const { createComplain } = require("..//Validations/complain-validation");
+const { createComplain } = require("../validation/complain-validation");
 
 // Add Complain
 exports.createComplain = asyncHandler(async (req, res) => {

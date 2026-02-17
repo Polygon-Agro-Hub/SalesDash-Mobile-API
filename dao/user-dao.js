@@ -15,6 +15,11 @@ exports.loginUserDAO = (empId, password) => {
 
       const user = results[0];
 
+      // Check if password column is empty or null in database
+      if (!user.password || user.password.trim() === "") {
+        return reject(new Error("Password not set for this account"));
+      }
+
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         return reject(new Error("Invalid password"));

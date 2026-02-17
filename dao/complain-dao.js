@@ -47,7 +47,7 @@ exports.createComplainDAO = (
 };
 
 // Get All Complains DAO
-exports.getAllComplaintsByUserId = async (userId) => {
+exports.getAllComplaintsByUserIdDAO = async (userId) => {
   return new Promise((resolve, reject) => {
     const query = `
         SELECT id, language, complain, status, createdAt, complainCategory , reply ,refNo,replyTime

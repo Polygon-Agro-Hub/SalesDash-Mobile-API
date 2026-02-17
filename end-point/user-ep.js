@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const {
   loginSchema,
   updatePasswordSchema,
-} = require("../Validations/auth-validations");
+} = require("../validation/auth-validation");
 const asyncHandler = require("express-async-handler");
 
 // User Login
@@ -80,6 +80,15 @@ exports.login = asyncHandler(async (req, res) => {
         success: false,
         message: "This Employee ID is not approved",
         statusType: "not_approved",
+      });
+    }
+
+    if (err.message === "Password not set for this account") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Password not set for this account. Please contact administrator.",
+        statusType: "password_not_set",
       });
     }
 
