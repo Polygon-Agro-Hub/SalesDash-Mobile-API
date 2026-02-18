@@ -15,16 +15,7 @@ exports.loginUserDAO = (empId, password) => {
 
       const user = results[0];
 
-      // Check if password column is empty or null in database
-      if (!user.password || user.password.trim() === "") {
-        return reject(new Error("Password not set for this account"));
-      }
-
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return reject(new Error("Invalid password"));
-      }
-
+      // FIRST — Check Status
       if (user.status === "Rejected") {
         return reject(new Error("This Employee ID is rejected"));
       }
@@ -35,6 +26,17 @@ exports.loginUserDAO = (empId, password) => {
 
       if (user.status !== "Approved") {
         return reject(new Error("Account status is pending verification"));
+      }
+
+      // SECOND — Check if password exists
+      if (!user.password || user.password.trim() === "") {
+        return reject(new Error("Password not set for this account"));
+      }
+
+      // THIRD — Check password only if Approved
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return reject(new Error("Invalid password"));
       }
 
       resolve({
