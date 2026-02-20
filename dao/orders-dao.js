@@ -908,19 +908,23 @@ exports.getOrderById = async (orderId) => {
     }
 
     // Get product details for additional items if they exist
+    // Get product details for additional items if they exist
     let enhancedAdditionalItems = [];
     if (additionalItems.length > 0) {
       const productIds = additionalItems.map((item) => item.productId);
       const placeholders = productIds.map(() => "?").join(",");
 
       const productDetailsSql = `
-                SELECT
-                    mi.id,
-                    mi.displayName,
-                    mi.varietyId
-                FROM marketplaceitems mi
-                WHERE mi.id IN (${placeholders})
-            `;
+    SELECT
+      mi.id,
+      mi.displayName,
+      mi.varietyId,
+      mi.normalPrice,
+      mi.discountedPrice,
+      mi.discount
+    FROM marketplaceitems mi
+    WHERE mi.id IN (${placeholders})
+  `;
 
       const [productResults] = await connection.execute(
         productDetailsSql,
@@ -938,6 +942,15 @@ exports.getOrderById = async (orderId) => {
             ? productDetail.displayName
             : "Unknown Product",
           varietyId: productDetail ? productDetail.varietyId : null,
+          marketplacetablenormalPrice: productDetail
+            ? parseFloat(productDetail.normalPrice) || 0
+            : 0,
+          marketplacetablediscountedPrice: productDetail
+            ? parseFloat(productDetail.discountedPrice) || 0
+            : 0,
+          marketplacetablediscount: productDetail
+            ? parseFloat(productDetail.discount) || 0
+            : 0,
         };
       });
     }
