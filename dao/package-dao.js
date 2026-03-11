@@ -143,8 +143,7 @@ exports.getMarketplacePackage = async (packageId) => {
   });
 };
 
-exports.getAllCrops = async (cusId) => {
-  const customerId = cusId.id;
+exports.getAllCrops = async () => {
   try {
     const query = `
         SELECT 
@@ -152,13 +151,11 @@ exports.getAllCrops = async (cusId) => {
             mpi.normalPrice, mpi.discountedPrice, mpi.discount,
             mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
         FROM marketplaceitems mpi
-        LEFT JOIN excludelist el ON el.mpItemId = mpi.id AND el.userId = ?
-        WHERE el.mpItemId IS NULL  
-        AND mpi.category = 'Retail'
+        WHERE mpi.category = 'Retail'
         ORDER BY mpi.displayName ASC;
         `;
 
-    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    const [results] = await db.marketPlace.promise().query(query);
 
     return results;
   } catch (error) {
