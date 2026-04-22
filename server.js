@@ -66,6 +66,7 @@ const routes = {
   notifications: require("./routes/notification.routes"),
 };
 
+// Routes
 app.use(`${BASE_PATH}/api/auth`, routes.auth);
 app.use(`${BASE_PATH}/api/customer`, routes.customer);
 app.use(`${BASE_PATH}/api/complain`, routes.complain);
