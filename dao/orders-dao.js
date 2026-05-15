@@ -1001,67 +1001,61 @@ exports.getOrderById = async (orderId) => {
   }
 };
 
-exports.getOrderByCustomerId = (customerId, page = 1, limit = 5) => {
+exports.getOrderByCustomerId = (customerId, page = 1, limit = 5, status = null) => {
   return new Promise((resolve, reject) => {
-    // Calculate offset for pagination
     const offset = (page - 1) * limit;
 
-    // First, get the total count of orders for this customer
-    const countSql = `
-            SELECT COUNT(*) as totalCount
-            FROM orders o
-            LEFT JOIN market_place.processorders p ON o.id = p.orderId
-            WHERE o.userId = ?
-        `;
+    // Build WHERE clause conditionally
+    const statusClause = status ? `AND p.status = ?` : "";
+    const countParams = status ? [customerId, status] : [customerId];
 
-    db.marketPlace.query(countSql, [customerId], (err, countResult) => {
-      if (err) {
-        return reject(err);
-      }
+    const countSql = `
+      SELECT COUNT(*) as totalCount
+      FROM orders o
+      LEFT JOIN market_place.processorders p ON o.id = p.orderId
+      WHERE o.userId = ?
+      ${statusClause}
+    `;
+
+    db.marketPlace.query(countSql, countParams, (err, countResult) => {
+      if (err) return reject(err);
 
       const totalCount = countResult[0].totalCount;
-
       if (totalCount === 0) {
         return resolve({ message: "No orders found for this customer" });
       }
 
-      // Now get the paginated orders
+      const orderParams = status
+        ? [customerId, status, limit, offset]
+        : [customerId, limit, offset];
+
       const ordersSql = `
-                SELECT 
-                    o.id AS orderId,
-                    o.userId,
-                    o.sheduleType,
-                    o.sheduleDate,
-                    o.sheduleTime,
-                    o.createdAt,
-                    o.total,
-                    o.discount,
-                    o.fullTotal,
-                    p.invNo AS InvNo,
-                    p.reportStatus AS reportStatus,
-                    p.paymentMethod AS paymentMethod,
-                    p.status As status
-                FROM orders o
-                LEFT JOIN market_place.processorders p ON o.id = p.orderId
-                WHERE o.userId = ?
-                ORDER BY o.createdAt DESC
-                LIMIT ? OFFSET ?
-            `;
+        SELECT 
+          o.id AS orderId,
+          o.userId,
+          o.sheduleType,
+          o.sheduleDate,
+          o.sheduleTime,
+          o.createdAt,
+          o.total,
+          o.discount,
+          o.fullTotal,
+          p.invNo AS InvNo,
+          p.reportStatus AS reportStatus,
+          p.paymentMethod AS paymentMethod,
+          p.status AS status
+        FROM orders o
+        LEFT JOIN market_place.processorders p ON o.id = p.orderId
+        WHERE o.userId = ?
+        ${statusClause}
+        ORDER BY o.createdAt DESC
+        LIMIT ? OFFSET ?
+      `;
 
-      db.marketPlace.query(
-        ordersSql,
-        [customerId, limit, offset],
-        (err, orderResults) => {
-          if (err) {
-            return reject(err);
-          }
-
-          resolve({
-            orders: orderResults,
-            totalCount: totalCount,
-          });
-        },
-      );
+      db.marketPlace.query(ordersSql, orderParams, (err, orderResults) => {
+        if (err) return reject(err);
+        resolve({ orders: orderResults, totalCount });
+      });
     });
   });
 };
