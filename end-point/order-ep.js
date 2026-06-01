@@ -165,13 +165,25 @@ exports.getOrderByCustomerId = async (req, res) => {
     const status = req.query.status || null; // ← NEW
 
     if (!customerId || isNaN(parseInt(customerId))) {
-      return res.status(400).json({ success: false, message: "Invalid customer ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid customer ID" });
     }
     if (page < 1 || limit < 1) {
-      return res.status(400).json({ success: false, message: "Page and limit must be positive integers" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Page and limit must be positive integers",
+        });
     }
 
-    const result = await orderDao.getOrderByCustomerId(customerId, page, limit, status); // ← pass status
+    const result = await orderDao.getOrderByCustomerId(
+      customerId,
+      page,
+      limit,
+      status,
+    ); // ← pass status
 
     if (result.message) {
       return res.status(404).json({ success: false, message: result.message });
@@ -187,7 +199,13 @@ exports.getOrderByCustomerId = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching orders by customer ID:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch order details", error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch order details",
+        error: error.message,
+      });
   }
 };
 
@@ -422,30 +440,21 @@ exports.getReturnReason = async (req, res) => {
 exports.getHold = async (req, res) => {
   try {
     const orderId = req.params.orderId;
-
     if (!orderId || isNaN(parseInt(orderId))) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid order ID",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order ID" });
     }
 
-    const holdStatusData = await orderDao.getHold(orderId);
+    const result = await orderDao.getHold(orderId);
 
-    if (!holdStatusData.success) {
-      return res.status(404).json({
-        success: false,
-        message: holdStatusData.message,
-      });
-    }
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data: holdStatusData,
+      data: result.data,
     });
   } catch (error) {
     console.error("Error fetching hold status:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch hold status",
       error: error.message,

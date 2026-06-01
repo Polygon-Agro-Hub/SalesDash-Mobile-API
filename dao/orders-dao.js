@@ -1613,47 +1613,45 @@ exports.getHold = async (orderId) => {
     connection = await db.marketPlace.promise().getConnection();
 
     const holdCheckSql = `
-            SELECT 
-                po.orderId as businessOrderId,
-                po.id as processOrderId,
-                do.id as driverOrderId,
-                do.drvStatus,
-                dho.id as holdRecordId,
-                dho.holdReasonId,
-                dho.createdAt as holdCreatedAt
-            FROM market_place.processorders po
-            LEFT JOIN collection_officer.driverorders do ON po.id = do.orderId
-            LEFT JOIN collection_officer.driverholdorders dho ON do.id = dho.drvOrderId
-            WHERE po.orderId = ?
-            LIMIT 1
-        `;
+      SELECT 
+        po.orderId        AS businessOrderId,
+        dho.id            AS holdRecordId,
+        dho.drvOrderId,
+        dho.restartedTime,
+        dho.createdAt     AS holdCreatedAt,
+        hr.rsnEnglish     AS holdReason
+      FROM market_place.processorders po
+      LEFT JOIN collection_officer.driverorders  do  ON po.id      = do.orderId
+      LEFT JOIN collection_officer.driverholdorders dho ON do.id   = dho.drvOrderId
+      LEFT JOIN collection_officer.holdreason     hr  ON dho.holdReasonId = hr.id
+      WHERE po.orderId = ?
+        AND dho.id IS NOT NULL
+      ORDER BY dho.createdAt ASC
+    `;
 
-    const [result] = await connection.query(holdCheckSql, [orderId]);
+    const [rows] = await connection.query(holdCheckSql, [orderId]);
 
-    if (!result || result.length === 0) {
-      return {
-        success: false,
-        message: "Order not found",
-      };
+
+    if (!rows || rows.length === 0) {
+      return { success: true, data: [] };
     }
 
-    // Check if holdRecordId exists to determine if order is on hold
-    const isHold = result[0].holdRecordId !== null;
+    const holdEvents = rows.map((row) => ({
+      holdRecordId: row.holdRecordId,
+      isHold: row.restartedTime === null,
+      holdReason: row.holdReason ?? null,
+      otherReason: null,
+      restartedTime: row.restartedTime ?? null,
+      holdCreatedAt: row.holdCreatedAt,
+    }));
 
-    return {
-      success: true,
-      orderId: result[0].businessOrderId, // Fixed: use businessOrderId
-      isHold: isHold, // Fixed: check if holdRecordId exists
-      holdReasonId: result[0].holdReasonId || null,
-      holdCreatedAt: result[0].holdCreatedAt || null,
-    };
+    return { success: true, data: holdEvents };
   } catch (err) {
-    console.error("Database error in getHoldReason:", err);
+    console.error("Database error in getHold:", err);
     throw err;
   } finally {
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
