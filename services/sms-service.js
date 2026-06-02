@@ -30,7 +30,7 @@ exports.sendSMS = async (phoneNumber, message) => {
     const response = await axios.post(
       "https://api.getshoutout.com/coreservice/messages",
       requestData,
-      { headers },
+      { headers, timeout: 5000 },
     );
 
     if (response.status >= 200 && response.status < 300) {
