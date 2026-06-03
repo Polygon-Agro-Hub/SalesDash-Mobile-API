@@ -8,9 +8,8 @@ const {
   marketPlace,
   admin,
 } = require("./startup/database");
-
+const setupSwagger = require("./startup/swagger");
 const app = express();
-
 const BASE_PATH = "/agro-api/salesdash";
 
 const corsOptions = {
@@ -65,6 +64,8 @@ const routes = {
   orders: require("./routes/order.routes"),
   notifications: require("./routes/notification.routes"),
 };
+
+setupSwagger(app, BASE_PATH);
 
 // Routes
 app.use(`${BASE_PATH}/api/auth`, routes.auth);
