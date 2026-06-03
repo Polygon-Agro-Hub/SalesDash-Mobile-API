@@ -65,7 +65,6 @@ const routes = {
   notifications: require("./routes/notification.routes"),
 };
 
-// Setup Swagger UI
 setupSwagger(app, BASE_PATH);
 
 // Routes
