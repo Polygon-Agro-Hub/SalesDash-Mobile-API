@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const db = require("../startup/database");
 
 const auth = (req, res, next) => {
   const token = req.headers["authorization"]?.split(" ")[1]; 
@@ -21,9 +22,55 @@ const auth = (req, res, next) => {
     }
 
     console.log("Decoded token:", decoded);
-    // Attach decoded token to request
-    req.user = decoded;
-    next(); // Continue to the next middleware or route handler
+
+    // Verify user status from DB
+    const sql = "SELECT status FROM salesagent WHERE id = ?";
+    db.marketPlace.query(sql, [decoded.id], (dbErr, results) => {
+      if (dbErr) {
+        console.error("Database error during status verification:", dbErr);
+        return res.status(500).json({
+          success: false,
+          message: "Internal server error during authorization verification",
+        });
+      }
+
+      if (results.length === 0) {
+        return res.status(401).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const userStatus = results[0].status;
+
+      if (userStatus === "Rejected") {
+        return res.status(403).json({
+          success: false,
+          message: "This Employee ID is rejected",
+          statusType: "rejected",
+        });
+      }
+
+      if (userStatus === "Not Approved") {
+        return res.status(403).json({
+          success: false,
+          message: "This Employee ID is not approved",
+          statusType: "not_approved",
+        });
+      }
+
+      if (userStatus !== "Approved") {
+        return res.status(403).json({
+          success: false,
+          message: "Account status is pending verification",
+          statusType: "pending",
+        });
+      }
+
+      // Attach decoded token to request
+      req.user = decoded;
+      next(); // Continue to the next middleware or route handler
+    });
   });
 };
 
