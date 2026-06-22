@@ -17,6 +17,7 @@ const orderValidationSchema = Joi.object({
     total: Joi.number().required(),
     fullTotal: Joi.number().required(),
     discount: Joi.number().required(),
+    deliveryCharge: Joi.number().required(),
     sheduleDate: Joi.string().required(),
     sheduleTime: Joi.string().required(),
     paymentMethod: Joi.string().required(),

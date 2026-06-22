@@ -246,6 +246,7 @@ async function insertMainOrder(
     sheduleDate,
     sheduleTime,
     isPackage,
+    deliveryCharge = 0,
   } = orderData;
 
   // Get title, fullName, and phone details from marketplaceusers table
@@ -301,8 +302,8 @@ async function insertMainOrder(
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, sheduleDate, sheduleTime, isPackage, 
-          longitude, latitude, createdAt
-        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          longitude, latitude, deliveryCharge, createdAt
+        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -326,8 +327,10 @@ async function insertMainOrder(
       isPackage,
       longitude,
       latitude,
+      deliveryCharge,
     ],
   );
+
 
   return result.insertId;
 }
@@ -756,6 +759,7 @@ exports.getOrderById = async (orderId) => {
                 o.createdAt,
                 o.total,
                 o.discount,
+                o.deliveryCharge,
                 o.fullTotal,
                 o.isPackage,
                 c.title,
@@ -965,6 +969,7 @@ exports.getOrderById = async (orderId) => {
       createdAt: order.createdAt,
       total: order.total,
       discount: order.discount,
+      deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
       customerInfo: {
@@ -1102,6 +1107,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 o.total,
                 o.discount,
                 o.fullTotal,
+                o.deliveryCharge,
                 m.salesAgent,
                 m.buildingType,
                 p.invNo AS InvNo,
