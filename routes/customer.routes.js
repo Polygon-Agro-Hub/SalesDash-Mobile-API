@@ -23,9 +23,15 @@ router.get('/croplist', auth, customerEp.getAllCrops);
 
 router.post('/add/excludelist', customerEp.addExcludeList)
 
+router.post('/add/preferlist', customerEp.addPreList)
+
 router.get('/excludelist', customerEp.getCustomerExludelist)
 
+router.get('/preferlist', customerEp.getCustomerPreferlist)
+
 router.delete('/excludelist/delete', customerEp.deleteExcludeItem)
+
+router.delete('/preferlist/delete', customerEp.deletePreferItem)
 
 router.get('/customerData/:customerId', auth, customerEp.getCustomerDataLocation);
 

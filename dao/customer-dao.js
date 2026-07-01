@@ -728,15 +728,10 @@ exports.getAllCrops = async (cusId) => {
         FROM marketplaceitems mpi
         JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId
         WHERE mpi.category = 'Retail'
-        AND mpi.id NOT IN (
-            SELECT mpItemId
-            FROM excludelist
-            WHERE userId = ?
-        )
         ORDER BY mpi.displayName ASC;
         `;
 
-    const [results] = await db.marketPlace.promise().query(query, [CustomerId]);
+    const [results] = await db.marketPlace.promise().query(query);
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
@@ -746,20 +741,68 @@ exports.getAllCrops = async (cusId) => {
 
 exports.addExcludeList = async (customerId, selectedCrops) => {
   try {
-    // Prepare the query to insert each selected crop into the ExcludeList table
-    const query = `
-      INSERT INTO excludelist (userId, mpItemId)
-      VALUES ?
-    `;
+    const [existingRows] = await db.marketPlace
+      .promise()
+      .query(`SELECT mpItemId FROM excludelist WHERE userId = ?`, [customerId]);
+    const existingIds = existingRows.map((row) => row.mpItemId);
 
-    const values = selectedCrops.map((cropId) => [customerId, cropId]);
+    // Newly selected items that aren't in the table yet
+    const toInsert = selectedCrops.filter((id) => !existingIds.includes(id));
+    // Previously saved items that were just deselected
+    const toRemove = existingIds.filter((id) => !selectedCrops.includes(id));
 
-    // Execute the query
-    await db.marketPlace.promise().query(query, [values]);
+    if (toInsert.length > 0) {
+      const values = toInsert.map((cropId) => [customerId, cropId]);
+      await db.marketPlace
+        .promise()
+        .query(`INSERT INTO excludelist (userId, mpItemId) VALUES ?`, [values]);
+    }
+
+    if (toRemove.length > 0) {
+      await db.marketPlace
+        .promise()
+        .query(`DELETE FROM excludelist WHERE userId = ? AND mpItemId IN (?)`, [
+          customerId,
+          toRemove,
+        ]);
+    }
 
     return { message: "Exclude list updated successfully" };
   } catch (error) {
     console.error("Error adding exclude list:", error);
+    throw new Error("Database error: " + error.message);
+  }
+};
+
+exports.addPreList = async (customerId, selectedCrops) => {
+  try {
+    const [existingRows] = await db.marketPlace
+      .promise()
+      .query(`SELECT mpItemId FROM preferlist WHERE userId = ?`, [customerId]);
+    const existingIds = existingRows.map((row) => row.mpItemId);
+
+    const toInsert = selectedCrops.filter((id) => !existingIds.includes(id));
+    const toRemove = existingIds.filter((id) => !selectedCrops.includes(id));
+
+    if (toInsert.length > 0) {
+      const values = toInsert.map((cropId) => [customerId, cropId]);
+      await db.marketPlace
+        .promise()
+        .query(`INSERT INTO preferlist (userId, mpItemId) VALUES ?`, [values]);
+    }
+
+    if (toRemove.length > 0) {
+      await db.marketPlace
+        .promise()
+        .query(`DELETE FROM preferlist WHERE userId = ? AND mpItemId IN (?)`, [
+          customerId,
+          toRemove,
+        ]);
+    }
+
+    return { message: "Prefer list updated successfully" };
+  } catch (error) {
+    console.error("Error adding prefer list:", error);
     throw new Error("Database error: " + error.message);
   }
 };
@@ -795,6 +838,36 @@ exports.getExcludeList = async (customerId) => {
   }
 };
 
+exports.getCustomerPreferlist = async (customerId) => {
+  try {
+    const query = `
+      SELECT 
+        pr.id AS preId, 
+        pr.userId, 
+        mpi.id AS marketplaceItemId, 
+        mpi.displayName, 
+        pc.image,
+        mps.cusId,
+        mps.firstName,
+        mps.lastName,
+        mps.title,
+        mps.phoneNumber
+      FROM marketplaceusers mps
+      LEFT JOIN preferlist pr ON pr.userId = mps.id
+      LEFT JOIN marketplaceitems mpi ON mpi.id = pr.mpItemId
+      LEFT JOIN plant_care.cropvariety pc ON pc.id = mpi.varietyId  
+      WHERE mps.id = ?
+      ORDER BY mpi.displayName ASC; 
+    `;
+    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    return results;
+  } catch (error) {
+    console.error("Error fetching prefer list:", error);
+    throw new Error("Database error: " + error.message);
+  }
+};
+
+
 exports.deleteExcludeItem = async (excludeId) => {
   try {
     const query = `
@@ -809,6 +882,22 @@ exports.deleteExcludeItem = async (excludeId) => {
     throw new Error("Database error: " + error.message);
   }
 };
+
+exports.deletePreferItem = async (preferId) => {
+  try {
+    const query = `
+      DELETE FROM preferlist 
+      WHERE Id = ?
+    `;
+    await db.marketPlace.promise().query(query, [preferId]);
+
+    return { message: "Exclude list updated successfully" };
+  } catch (error) {
+    console.error("Error adding exclude list:", error);
+    throw new Error("Database error: " + error.message);
+  }
+};
+
 
 exports.getCustomerDataLocation = async (customerId) => {
   return new Promise((resolve, reject) => {
