@@ -701,7 +701,7 @@ exports.getAllCity = async () => {
     const query = `
         SELECT DISTINCT d.id, d.city, d.charge, d.createdAt
         FROM deliverycharge d
-        INNER JOIN centerowncity c ON d.id = c.cityId
+        LEFT JOIN centerowncity c ON d.id = c.cityId
         ORDER BY d.city ASC
         `;
     db.collectionofficer.query(query, (error, results) => {
