@@ -94,19 +94,16 @@ exports.customerData = async (req, res) => {
   } catch (error) {
     console.error("Error while adding customer:", error);
 
-    // Handle specific database errors
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(400).json({
         error: "Customer already exists with this information",
       });
     }
 
-    // Handle validation errors
     if (error.message && error.message.includes("validation")) {
       return res.status(400).json({ error: error.message });
     }
 
-    // Generic error response
     res.status(500).json({
       error: "An error occurred while adding the customer",
       details: error.message,
@@ -174,32 +171,23 @@ exports.getCusDataExc = asyncHandler(async (req, res) => {
 exports.updateCustomerData = asyncHandler(async (req, res) => {
   const { cusId } = req.params;
 
-  let customerData;
-  let buildingData;
-
-  if (req.body.customerData) {
-    customerData = req.body.customerData;
-    buildingData = req.body.buildingData;
-  } else {
-    customerData = {
-      title: req.body.title,
-      firstName: req.body.firstName,
-      lastName: req.body.lastName,
-      phoneNumber: req.body.phoneNumber,
-      email: req.body.email,
-      buildingType: req.body.buildingType,
-      latitude: req.body.latitude,
-      longitude: req.body.longitude,
-    };
-
-    buildingData = req.body.buildingData;
-  }
+  const customerData = {
+    title: req.body.title,
+    firstName: req.body.firstName,
+    lastName: req.body.lastName,
+    phoneNumber: req.body.phoneNumber,
+    email: req.body.email,
+  };
 
   try {
-    // Validate the customer data exists
-    if (!customerData || !customerData.phoneNumber) {
+    // Validate required fields
+    if (
+      !customerData.firstName ||
+      !customerData.lastName ||
+      !customerData.phoneNumber
+    ) {
       return res.status(400).json({
-        message: "Customer data is incomplete - phone number is required",
+        message: "Customer data is incomplete - first name, last name and phone number are required",
         errors: { general: true },
       });
     }
@@ -229,11 +217,7 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
     }
 
     // Update customer data through DAO
-    const result = await customerDAO.updateCustomerData(
-      cusId,
-      customerData,
-      buildingData,
-    );
+    const result = await customerDAO.updateCustomerData(cusId, customerData);
 
     // Send success response
     res.status(200).json({
@@ -243,7 +227,6 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error("Error while updating customer data:", error);
 
-    // Handle specific validation errors from DAO
     if (error.message === "Email already exists.") {
       return res.status(400).json({
         message: "Email already exists.",
@@ -265,7 +248,6 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
         message: "Customer not found",
       });
     } else {
-      // Generic server error
       return res.status(500).json({
         message: "Internal server error during update",
         error:

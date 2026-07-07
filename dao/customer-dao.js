@@ -5,40 +5,32 @@ exports.addCustomer = (customerData, salesAgent) => {
     try {
       const newCustomerId = await generateCustomerId();
 
-      // Parse phone number to extract phone code and number
       let phoneCode = "";
       let phoneNumber = "";
 
       if (customerData.phoneNumber) {
         const fullPhone = customerData.phoneNumber.toString();
 
-        // Check if phone number starts with +94 (Sri Lanka)
         if (fullPhone.startsWith("+94")) {
           phoneCode = "+94";
-          phoneNumber = fullPhone.substring(3); // Remove +94
-        }
-        // Check if phone number starts with 94 (without +)
-        else if (fullPhone.startsWith("94") && fullPhone.length > 9) {
+          phoneNumber = fullPhone.substring(3);
+        } else if (fullPhone.startsWith("94") && fullPhone.length > 9) {
           phoneCode = "+94";
-          phoneNumber = fullPhone.substring(2); // Remove 94
-        }
-        // Check if phone number starts with 0 (local format)
-        else if (fullPhone.startsWith("0")) {
+          phoneNumber = fullPhone.substring(2);
+        } else if (fullPhone.startsWith("0")) {
           phoneCode = "+94";
-          phoneNumber = fullPhone.substring(1); // Remove leading 0
-        }
-        // Default case - assume it's already in correct format
-        else {
-          phoneCode = "+94"; // Default to Sri Lanka
+          phoneNumber = fullPhone.substring(1);
+        } else {
+          phoneCode = "+94";
           phoneNumber = fullPhone;
         }
 
-        // Clean up phone number (remove any spaces, dashes, etc.)
         phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
       }
 
-      const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, buildingType, salesAgent, isDashUser,longitude,latitude)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?);`;
+      // Column name in DB is `nearesCity`, but the frontend sends it as `city`.
+      const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nearesCity, salesAgent, isDashUser)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
 
       db.marketPlace.query(
         sqlCustomer,
@@ -50,11 +42,9 @@ exports.addCustomer = (customerData, salesAgent) => {
           phoneNumber,
           customerData.email,
           customerData.title,
-          customerData.buildingType,
+          customerData.city, // <-- fixed: was customerData.nearesCity / nearestCity
           salesAgent,
           1,
-          customerData.longitude,
-          customerData.latitude,
         ],
         (err, customerResult) => {
           if (err) {
@@ -63,7 +53,6 @@ exports.addCustomer = (customerData, salesAgent) => {
 
           const customerId = customerResult.insertId;
 
-          // Insert building data (assuming this function exists)
           insertBuildingData(customerId, customerData)
             .then(() => {
               resolve({ success: true, customerId });
@@ -80,7 +69,6 @@ exports.addCustomer = (customerData, salesAgent) => {
 };
 
 const generateCustomerId = async () => {
-  // Use CAST to convert the numeric part to integer for proper sorting
   const sqlGetLastCustomerId = `
         SELECT cusId 
         FROM marketplaceusers 
@@ -91,18 +79,13 @@ const generateCustomerId = async () => {
 
   const [result] = await db.marketPlace.promise().query(sqlGetLastCustomerId);
 
-  // Default starting ID if no customers exist
   let newCustomerId = "CUS-00001";
 
   if (result.length > 0 && result[0].cusId) {
-    // Extract the number part from the existing ID
     const lastIdParts = result[0].cusId.split("-");
     const lastNumber = parseInt(lastIdParts[1], 10);
-
-    // Format with leading zeros to ensure 5 digits
     const nextNumber = lastNumber + 1;
     const paddedNumber = String(nextNumber).padStart(5, "0");
-
     newCustomerId = `CUS-${paddedNumber}`;
   }
 
@@ -114,13 +97,8 @@ const insertBuildingData = async (customerId, customerData) => {
   let queryParams;
 
   if (customerData.buildingType === "House") {
-    insertQuery = `INSERT INTO house (customerId, houseNo, streetName, city) VALUES (?, ?, ?, ?)`;
-    queryParams = [
-      customerId,
-      customerData.houseNo,
-      customerData.streetName,
-      customerData.city,
-    ];
+    insertQuery = `INSERT INTO dashuserhouse (customerId, houseNo, streetName) VALUES (?, ?, ?)`;
+    queryParams = [customerId, customerData.houseNo, customerData.streetName];
   } else if (customerData.buildingType === "Apartment") {
     if (
       !customerData.buildingNo ||
@@ -128,12 +106,11 @@ const insertBuildingData = async (customerId, customerData) => {
       !customerData.unitNo ||
       !customerData.floorNo ||
       !customerData.houseNo ||
-      !customerData.streetName ||
-      !customerData.city
+      !customerData.streetName
     ) {
       throw new Error("Missing required fields for apartment");
     }
-    insertQuery = `INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    insertQuery = `INSERT INTO dashuserapartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName) VALUES (?, ?, ?, ?, ?, ?, ?)`;
     queryParams = [
       customerId,
       customerData.buildingNo,
@@ -142,7 +119,6 @@ const insertBuildingData = async (customerId, customerData) => {
       customerData.floorNo,
       customerData.houseNo,
       customerData.streetName,
-      customerData.city,
     ];
   } else {
     throw new Error("Invalid building type");
@@ -243,7 +219,6 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
 exports.getCustomerData = async (cusId) => {
   return new Promise((resolve, reject) => {
     const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
-
     db.marketPlace
       .promise()
       .query(sqlCustomerQuery, [cusId])
@@ -251,48 +226,65 @@ exports.getCustomerData = async (cusId) => {
         if (customerRows.length === 0) {
           return reject(new Error("Customer not found"));
         }
-
         const customerData = customerRows[0];
 
         // Combine phoneCode and phoneNumber into a single phoneNumber field
         if (customerData.phoneCode && customerData.phoneNumber) {
           customerData.phoneNumber = `${customerData.phoneCode}${customerData.phoneNumber}`;
         } else if (customerData.phoneNumber && !customerData.phoneCode) {
-          // If only phoneNumber exists, keep it as is
           customerData.phoneNumber = customerData.phoneNumber;
         } else if (customerData.phoneCode && !customerData.phoneNumber) {
-          // If only phoneCode exists, set phoneNumber to just the code
           customerData.phoneNumber = `${customerData.phoneCode}`;
         } else {
-          // If neither exists, set to empty string
           customerData.phoneNumber = "";
         }
-
-        // Remove the separate phoneCode field since we've combined it
         delete customerData.phoneCode;
 
-        let buildingDataQuery = "";
-        let buildingDataParams = [];
+        // --- Residential address: dashuserhouse first, fallback to dashuserapartment ---
+        const [houseRows] = await db.marketPlace
+          .promise()
+          .query(`SELECT * FROM dashuserhouse WHERE customerId = ?`, [
+            customerData.id,
+          ]);
 
-        if (customerData.buildingType === "House") {
-          buildingDataQuery = `SELECT * FROM house WHERE customerId = ?`;
-          buildingDataParams = [customerData.id];
-        } else if (customerData.buildingType === "Apartment") {
-          buildingDataQuery = `SELECT * FROM apartment WHERE customerId = ?`;
-          buildingDataParams = [customerData.id];
+        let buildingData = null;
+        if (houseRows.length > 0) {
+          buildingData = houseRows[0];
+          customerData.buildingType = "House";
         } else {
-          return reject(new Error("Invalid building type"));
+          const [apartmentRows] = await db.marketPlace
+            .promise()
+            .query(`SELECT * FROM dashuserapartment WHERE customerId = ?`, [
+              customerData.id,
+            ]);
+          if (apartmentRows.length > 0) {
+            buildingData = apartmentRows[0];
+            customerData.buildingType = "Apartment";
+          }
         }
 
-        // Fetch building data
-        const [buildingData] = await db.marketPlace
+        // --- Delivery Address Book: count saved addresses across house + apartment ---
+        const [houseCountRows] = await db.marketPlace
           .promise()
-          .query(buildingDataQuery, buildingDataParams);
+          .query(`SELECT COUNT(*) AS count FROM house WHERE customerId = ?`, [
+            customerData.id,
+          ]);
 
-        // Combine customer data with building data
+        const [apartmentCountRows] = await db.marketPlace
+          .promise()
+          .query(
+            `SELECT COUNT(*) AS count FROM apartment WHERE customerId = ?`,
+            [customerData.id],
+          );
+
+        const savedAddressCount =
+          Number(houseCountRows[0]?.count || 0) +
+          Number(apartmentCountRows[0]?.count || 0);
+
         resolve({
           customer: customerData,
-          building: buildingData.length > 0 ? buildingData[0] : null,
+          building: buildingData,
+          savedAddressCount,
         });
       })
       .catch((error) => reject(error));
@@ -338,14 +330,11 @@ exports.getCusDataExc = async (customerId) => {
   }
 };
 
-exports.updateCustomerData = async (cusId, customerData, buildingData) => {
+exports.updateCustomerData = async (cusId, customerData) => {
   let connection;
 
   try {
-    // Get a connection from the pool
     connection = await db.marketPlace.promise().getConnection();
-
-    // Start transaction
     await connection.beginTransaction();
 
     // Parse phone number to extract phone code and number
@@ -355,33 +344,25 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
     if (customerData.phoneNumber) {
       const fullPhone = customerData.phoneNumber.toString();
 
-      // Check if phone number starts with +94 (Sri Lanka)
       if (fullPhone.startsWith("+94")) {
         phoneCode = "+94";
-        phoneNumber = fullPhone.substring(3); // Remove +94
-      }
-      // Check if phone number starts with 94 (without +)
-      else if (fullPhone.startsWith("94") && fullPhone.length > 9) {
+        phoneNumber = fullPhone.substring(3);
+      } else if (fullPhone.startsWith("94") && fullPhone.length > 9) {
         phoneCode = "+94";
-        phoneNumber = fullPhone.substring(2); // Remove 94
-      }
-      // Check if phone number starts with 0 (local format)
-      else if (fullPhone.startsWith("0")) {
+        phoneNumber = fullPhone.substring(2);
+      } else if (fullPhone.startsWith("0")) {
         phoneCode = "+94";
-        phoneNumber = fullPhone.substring(1); // Remove leading 0
-      }
-      // Default case - assume it's already in correct format
-      else {
-        phoneCode = "+94"; // Default to Sri Lanka
+        phoneNumber = fullPhone.substring(1);
+      } else {
+        phoneCode = "+94";
         phoneNumber = fullPhone;
       }
 
-      // Clean up phone number (remove any spaces, dashes, etc.)
       phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
     }
 
     // Check if customer exists
-    const getCustomerIdQuery = `SELECT id, phoneCode, phoneNumber, email, buildingType FROM marketplaceusers WHERE id = ?`;
+    const getCustomerIdQuery = `SELECT id, phoneCode, phoneNumber, email FROM marketplaceusers WHERE id = ?`;
     const [customerResult] = await connection.query(getCustomerIdQuery, [
       cusId,
     ]);
@@ -394,9 +375,8 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
     const existingPhoneCode = customerResult[0].phoneCode;
     const existingPhoneNumber = customerResult[0].phoneNumber;
     const existingEmail = customerResult[0].email;
-    const existingBuildingType = customerResult[0].buildingType;
 
-    // Check for duplicate phone number (compare both phoneCode and phoneNumber)
+    // Check for duplicate phone number (only if changed)
     if (
       phoneCode !== existingPhoneCode ||
       phoneNumber !== existingPhoneNumber
@@ -418,11 +398,9 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
     // Handle email validation and duplicate check
     let finalEmail = null;
 
-    // Check if email is provided and not empty
     if (customerData.email && customerData.email.trim() !== "") {
       finalEmail = customerData.email.trim();
 
-      // Check for duplicate email ONLY if email is being changed and is not null/empty
       if (finalEmail !== existingEmail) {
         const checkEmailQuery = `SELECT id FROM marketplaceusers WHERE email = ? AND id != ?`;
         const [emailResult] = await connection.query(checkEmailQuery, [
@@ -437,15 +415,14 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
         console.log("Email not changed, skipping email duplicate check");
       }
     } else {
-      // Email is empty or not provided - set to null
       finalEmail = null;
     }
 
-    // Update customer with separated phone fields
+    // Update only the 4 relevant fields (+ phone, since it's parsed here)
     const updateCustomerQuery = `
-            UPDATE marketplaceusers 
-            SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, buildingType = ? , longitude = ? , latitude = ?
-            WHERE id = ?`;
+      UPDATE marketplaceusers 
+      SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?
+      WHERE id = ?`;
 
     const customerParams = [
       customerData.title,
@@ -454,153 +431,20 @@ exports.updateCustomerData = async (cusId, customerData, buildingData) => {
       phoneCode,
       phoneNumber,
       finalEmail,
-      customerData.buildingType,
-      customerData.longitude,
-      customerData.latitude,
       cusId,
     ];
 
     await connection.query(updateCustomerQuery, customerParams);
 
-    // Handle building type change
-    if (customerData.buildingType !== existingBuildingType) {
-      // Delete existing building data no matter which type
-      if (existingBuildingType === "House") {
-        await connection.query("DELETE FROM house WHERE customerId = ?", [
-          customerId,
-        ]);
-      } else if (existingBuildingType === "Apartment") {
-        await connection.query("DELETE FROM apartment WHERE customerId = ?", [
-          customerId,
-        ]);
-      }
-
-      // Insert new building data
-      if (customerData.buildingType === "House") {
-        const insertHouseQuery = `
-                    INSERT INTO house (customerId, houseNo, streetName, city) 
-                    VALUES (?, ?, ?, ?)`;
-
-        await connection.query(insertHouseQuery, [
-          customerId,
-          buildingData.houseNo || "",
-          buildingData.streetName || "",
-          buildingData.city || "",
-        ]);
-      } else if (customerData.buildingType === "Apartment") {
-        const insertApartmentQuery = `
-                    INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-
-        await connection.query(insertApartmentQuery, [
-          customerId,
-          buildingData.buildingNo || "",
-          buildingData.buildingName || "",
-          buildingData.unitNo || "",
-          buildingData.floorNo || "",
-          buildingData.houseNo || "",
-          buildingData.streetName || "",
-          buildingData.city || "",
-        ]);
-      }
-    } else {
-      // If building type didn't change, update the existing building data
-      if (customerData.buildingType === "House") {
-        const [houseExists] = await connection.query(
-          "SELECT * FROM house WHERE customerId = ?",
-          [customerId],
-        );
-
-        if (houseExists.length > 0) {
-          const updateHouseQuery = `
-                        UPDATE house 
-                        SET houseNo = ?, streetName = ?, city = ? 
-                        WHERE customerId = ?`;
-
-          const updateParams = [
-            buildingData.houseNo || "",
-            buildingData.streetName || "",
-            buildingData.city || "",
-            customerId,
-          ];
-
-          const [updateResult] = await connection.query(
-            updateHouseQuery,
-            updateParams,
-          );
-
-          if (updateResult.affectedRows === 0) {
-            console.warn(
-              "Warning: House update query did not update any rows!",
-            );
-          } else {
-          }
-        } else {
-          // Create house record if it doesn't exist
-          const insertHouseQuery = `
-                        INSERT INTO house (customerId, houseNo, streetName, city) 
-                        VALUES (?, ?, ?, ?)`;
-
-          await connection.query(insertHouseQuery, [
-            customerId,
-            buildingData.houseNo || "",
-            buildingData.streetName || "",
-            buildingData.city || "",
-          ]);
-        }
-      } else if (customerData.buildingType === "Apartment") {
-        const [apartmentExists] = await connection.query(
-          "SELECT 1 FROM apartment WHERE customerId = ?",
-          [customerId],
-        );
-
-        if (apartmentExists.length > 0) {
-          const updateApartmentQuery = `
-                        UPDATE apartment 
-                        SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?, city = ? 
-                        WHERE customerId = ?`;
-
-          await connection.query(updateApartmentQuery, [
-            buildingData.buildingNo || "",
-            buildingData.buildingName || "",
-            buildingData.unitNo || "",
-            buildingData.floorNo || "",
-            buildingData.houseNo || "",
-            buildingData.streetName || "",
-            buildingData.city || "",
-            customerId,
-          ]);
-        } else {
-          const insertApartmentQuery = `
-                        INSERT INTO apartment (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-
-          await connection.query(insertApartmentQuery, [
-            customerId,
-            buildingData.buildingNo || "",
-            buildingData.buildingName || "",
-            buildingData.unitNo || "",
-            buildingData.floorNo || "",
-            buildingData.houseNo || "",
-            buildingData.streetName || "",
-            buildingData.city || "",
-          ]);
-        }
-      }
-    }
-
-    // Commit the transaction
     await connection.commit();
-    return "Customer and building data updated successfully.";
+    return "Customer data updated successfully.";
   } catch (error) {
-    // If there's an error, roll back the transaction
     if (connection) {
       await connection.rollback();
     }
     console.error("Error during update: ", error);
     throw error;
   } finally {
-    // Release the connection back to the pool
     if (connection) {
       connection.release();
     }
@@ -699,9 +543,17 @@ exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
 exports.getAllCity = async () => {
   return new Promise((resolve, reject) => {
     const query = `
-        SELECT DISTINCT d.id, d.city, d.charge, d.createdAt
+        SELECT
+          d.city,
+          MAX(d.charge) AS charge,
+          MAX(d.createdAt) AS createdAt,
+          MAX(
+            CASE WHEN EXISTS (
+              SELECT 1 FROM centerowncity c WHERE c.cityId = d.id
+            ) THEN 1 ELSE 0 END
+          ) AS hasCenter
         FROM deliverycharge d
-        LEFT JOIN centerowncity c ON d.id = c.cityId
+        GROUP BY d.city
         ORDER BY d.city ASC
         `;
     db.collectionofficer.query(query, (error, results) => {
