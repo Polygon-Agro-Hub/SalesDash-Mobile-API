@@ -149,14 +149,13 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
                 c.phoneCode,
                 c.phoneNumber,
                 c.email,
-                c.buildingType,
-                c.longitude,
-                c.latitude,
+               
+              
                 COUNT(o.id) AS orderCount
             FROM marketplaceusers c
             LEFT JOIN orders o ON c.id = o.userId
             WHERE c.salesAgent = ?
-            GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buildingType
+            GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email
             ORDER BY c.id
             LIMIT ? OFFSET ?
         `;
@@ -217,78 +216,84 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
 };
 
 exports.getCustomerData = async (cusId) => {
-  return new Promise((resolve, reject) => {
-    const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
-    db.marketPlace
+  const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
+
+  const [customerRows] = await db.marketPlace
+    .promise()
+    .query(sqlCustomerQuery, [cusId]);
+
+  if (customerRows.length === 0) {
+    throw new Error("Customer not found");
+  }
+
+  const customerData = customerRows[0];
+
+  // Combine phoneCode and phoneNumber into a single phoneNumber field
+  if (customerData.phoneCode && customerData.phoneNumber) {
+    customerData.phoneNumber = `${customerData.phoneCode}${customerData.phoneNumber}`;
+  } else if (customerData.phoneNumber && !customerData.phoneCode) {
+    customerData.phoneNumber = customerData.phoneNumber;
+  } else if (customerData.phoneCode && !customerData.phoneNumber) {
+    customerData.phoneNumber = `${customerData.phoneCode}`;
+  } else {
+    customerData.phoneNumber = "";
+  }
+  delete customerData.phoneCode;
+
+  // --- Residential address: dashuserhouse first, fallback to dashuserapartment ---
+  // marketplaceusers has NO buildingType column, so we derive it here based
+  // on which table actually has a row for this customer, and stamp it onto
+  // customerData so the frontend can branch on customer.buildingType.
+  const [houseRows] = await db.marketPlace
+    .promise()
+    .query(`SELECT * FROM dashuserhouse WHERE customerId = ?`, [
+      customerData.id,
+    ]);
+
+  let buildingData = null;
+
+  if (houseRows.length > 0) {
+    buildingData = houseRows[0];
+    customerData.buildingType = "House";
+  } else {
+    const [apartmentRows] = await db.marketPlace
       .promise()
-      .query(sqlCustomerQuery, [cusId])
-      .then(async ([customerRows]) => {
-        if (customerRows.length === 0) {
-          return reject(new Error("Customer not found"));
-        }
-        const customerData = customerRows[0];
+      .query(`SELECT * FROM dashuserapartment WHERE customerId = ?`, [
+        customerData.id,
+      ]);
 
-        // Combine phoneCode and phoneNumber into a single phoneNumber field
-        if (customerData.phoneCode && customerData.phoneNumber) {
-          customerData.phoneNumber = `${customerData.phoneCode}${customerData.phoneNumber}`;
-        } else if (customerData.phoneNumber && !customerData.phoneCode) {
-          customerData.phoneNumber = customerData.phoneNumber;
-        } else if (customerData.phoneCode && !customerData.phoneNumber) {
-          customerData.phoneNumber = `${customerData.phoneCode}`;
-        } else {
-          customerData.phoneNumber = "";
-        }
-        delete customerData.phoneCode;
+    if (apartmentRows.length > 0) {
+      buildingData = apartmentRows[0];
+      customerData.buildingType = "Apartment";
+    } else {
+      // No address saved yet at all — default so the frontend form
+      // still renders sensibly (defaults to the House fields).
+      customerData.buildingType = "House";
+    }
+  }
 
-        // --- Residential address: dashuserhouse first, fallback to dashuserapartment ---
-        const [houseRows] = await db.marketPlace
-          .promise()
-          .query(`SELECT * FROM dashuserhouse WHERE customerId = ?`, [
-            customerData.id,
-          ]);
+  // --- Delivery Address Book: count saved addresses across house + apartment ---
+  const [houseCountRows] = await db.marketPlace
+    .promise()
+    .query(`SELECT COUNT(*) AS count FROM house WHERE customerId = ?`, [
+      customerData.id,
+    ]);
 
-        let buildingData = null;
-        if (houseRows.length > 0) {
-          buildingData = houseRows[0];
-          customerData.buildingType = "House";
-        } else {
-          const [apartmentRows] = await db.marketPlace
-            .promise()
-            .query(`SELECT * FROM dashuserapartment WHERE customerId = ?`, [
-              customerData.id,
-            ]);
-          if (apartmentRows.length > 0) {
-            buildingData = apartmentRows[0];
-            customerData.buildingType = "Apartment";
-          }
-        }
+  const [apartmentCountRows] = await db.marketPlace
+    .promise()
+    .query(`SELECT COUNT(*) AS count FROM apartment WHERE customerId = ?`, [
+      customerData.id,
+    ]);
 
-        // --- Delivery Address Book: count saved addresses across house + apartment ---
-        const [houseCountRows] = await db.marketPlace
-          .promise()
-          .query(`SELECT COUNT(*) AS count FROM house WHERE customerId = ?`, [
-            customerData.id,
-          ]);
+  const savedAddressCount =
+    Number(houseCountRows[0]?.count || 0) +
+    Number(apartmentCountRows[0]?.count || 0);
 
-        const [apartmentCountRows] = await db.marketPlace
-          .promise()
-          .query(
-            `SELECT COUNT(*) AS count FROM apartment WHERE customerId = ?`,
-            [customerData.id],
-          );
-
-        const savedAddressCount =
-          Number(houseCountRows[0]?.count || 0) +
-          Number(apartmentCountRows[0]?.count || 0);
-
-        resolve({
-          customer: customerData,
-          building: buildingData,
-          savedAddressCount,
-        });
-      })
-      .catch((error) => reject(error));
-  });
+  return {
+    customer: customerData,
+    building: buildingData,
+    savedAddressCount,
+  };
 };
 
 exports.getCusDataExc = async (customerId) => {
@@ -770,8 +775,7 @@ exports.getCustomerDataLocation = async (customerId) => {
                 email,
                 password,
                 image,
-                longitude,
-                latitude,
+                
                 created_at
             FROM marketplaceusers 
             WHERE cusId = ?
@@ -787,4 +791,414 @@ exports.getCustomerDataLocation = async (customerId) => {
       }
     });
   });
+};
+
+
+exports.checkDeliveredOrder = async (customerId) => {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      SELECT o.id
+      FROM orders o
+      INNER JOIN processorders po ON po.orderId = o.id
+      WHERE o.userId = ? AND po.status = 'Delivered'
+      LIMIT 1
+    `;
+    db.marketPlace
+      .promise()
+      .query(sql, [customerId])
+      .then(([rows]) => {
+        resolve({ isHaveDeliveryOrder: rows.length > 0 ? 1 : 0 });
+      })
+      .catch((error) => reject(error));
+  });
+};
+
+exports.updateResidentialAddress = async (cusId, data) => {
+  return new Promise((resolve, reject) => {
+    const {
+      buildingType,
+      nearestCity,
+      houseNo,
+      streetName,
+      buildingNo,
+      buildingName,
+      unitNo,
+      floorNo,
+    } = data;
+
+    // Nearest city is only sent by the frontend when the customer is
+    // actually allowed to change it (i.e. at least one delivered order).
+    const updateNearestCity = () => {
+      if (!nearestCity || !nearestCity.trim()) {
+        return Promise.resolve();
+      }
+      return db.marketPlace
+        .promise()
+        .query(`UPDATE marketplaceusers SET nearesCity = ? WHERE id = ?`, [
+          nearestCity.trim(),
+          cusId,
+        ]);
+    };
+
+    updateNearestCity()
+      .then(async () => {
+        if (buildingType === "House") {
+          // Switching Apartment -> House: drop the stale apartment row.
+          await db.marketPlace
+            .promise()
+            .query(`DELETE FROM dashuserapartment WHERE customerId = ?`, [
+              cusId,
+            ]);
+
+          const [existingHouseRows] = await db.marketPlace
+            .promise()
+            .query(`SELECT id FROM dashuserhouse WHERE customerId = ?`, [
+              cusId,
+            ]);
+
+          if (existingHouseRows.length > 0) {
+            await db.marketPlace
+              .promise()
+              .query(
+                `UPDATE dashuserhouse SET houseNo = ?, streetName = ? WHERE customerId = ?`,
+                [houseNo.trim(), streetName.trim(), cusId],
+              );
+          } else {
+            await db.marketPlace
+              .promise()
+              .query(
+                `INSERT INTO dashuserhouse (customerId, houseNo, streetName) VALUES (?, ?, ?)`,
+                [cusId, houseNo.trim(), streetName.trim()],
+              );
+          }
+        } else if (buildingType === "Apartment") {
+          // Switching House -> Apartment: drop the stale house row.
+          await db.marketPlace
+            .promise()
+            .query(`DELETE FROM dashuserhouse WHERE customerId = ?`, [cusId]);
+
+          const [existingAptRows] = await db.marketPlace
+            .promise()
+            .query(`SELECT id FROM dashuserapartment WHERE customerId = ?`, [
+              cusId,
+            ]);
+
+          if (existingAptRows.length > 0) {
+            await db.marketPlace
+              .promise()
+              .query(
+                `UPDATE dashuserapartment
+                   SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?
+                 WHERE customerId = ?`,
+                [
+                  buildingNo.trim(),
+                  buildingName.trim(),
+                  unitNo.trim(),
+                  floorNo.trim(),
+                  houseNo.trim(),
+                  streetName.trim(),
+                  cusId,
+                ],
+              );
+          } else {
+            await db.marketPlace
+              .promise()
+              .query(
+                `INSERT INTO dashuserapartment
+                   (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  cusId,
+                  buildingNo.trim(),
+                  buildingName.trim(),
+                  unitNo.trim(),
+                  floorNo.trim(),
+                  houseNo.trim(),
+                  streetName.trim(),
+                ],
+              );
+          }
+        } else {
+          throw new Error("Invalid buildingType");
+        }
+
+        resolve({ message: "Residential address updated successfully" });
+      })
+      .catch((error) => reject(error));
+  });
+};
+
+exports.getAddressBook = async (customerId) => {
+  // Saved standalone addresses (delivery address book), not the customer's
+  // primary residential address (that's dashuserhouse / dashuserapartment).
+  const [houseRows] = await db.marketPlace
+    .promise()
+    .query(`SELECT * FROM house WHERE customerId = ? ORDER BY id DESC`, [
+      customerId,
+    ]);
+
+  const [apartmentRows] = await db.marketPlace
+    .promise()
+    .query(`SELECT * FROM apartment WHERE customerId = ? ORDER BY id DESC`, [
+      customerId,
+    ]);
+
+  const formatPhone = (code, number) => {
+    if (code && number) return `${code}${number}`;
+    if (number) return number;
+    if (code) return code;
+    return "";
+  };
+
+  const houseAddresses = houseRows.map((row) => ({
+    id: row.id,
+    type: "House",
+    label: row.saveAs || "Address",
+    billingTitle: row.billingTitle,
+    billingName: row.billingName,
+    billingPhone1: formatPhone(row.billingPhoneCode1, row.billingPhone1),
+    billingPhone2: formatPhone(row.billingPhoneCode2, row.billingPhone2),
+    houseNo: row.houseNo,
+    streetName: row.streetName,
+    latitude: row.latitude,
+    longitude: row.longitude,
+  }));
+
+  const apartmentAddresses = apartmentRows.map((row) => ({
+    id: row.id,
+    type: "Apartment",
+    label: row.saveAs || "Address",
+    billingTitle: row.billingTitle,
+    billingName: row.billingName,
+    billingPhone1: formatPhone(row.billingPhoneCode1, row.billingPhone1),
+    billingPhone2: formatPhone(row.billingPhoneCode2, row.billingPhone2),
+    buildingNo: row.buildingNo,
+    buildingName: row.buildingName,
+    unitNo: row.unitNo,
+    floorNo: row.floorNo,
+    houseNo: row.houseNo,
+    streetName: row.streetName,
+    latitude: row.latitude,
+    longitude: row.longitude,
+  }));
+
+  // Combined list, newest first across both tables, for the address book UI.
+  return [...houseAddresses, ...apartmentAddresses].sort(
+    (a, b) => b.id - a.id,
+  );
+};
+
+
+exports.getSavedAddress = async (addressId, type) => {
+  const table = type === 'Apartment' ? 'apartment' : 'house';
+  const [rows] = await db.marketPlace
+    .promise()
+    .query(`SELECT * FROM ${table} WHERE id = ? LIMIT 1`, [addressId]);
+
+  if (!rows.length) return null;
+
+  const row = rows[0];
+  // marketplaceusers.nearesCity is the source of truth for "nearest city"
+  const [userRows] = await db.marketPlace
+    .promise()
+    .query(`SELECT nearesCity FROM marketplaceusers WHERE id = ? LIMIT 1`, [
+      row.customerId,
+    ]);
+
+  return {
+    ...row,
+    type,
+    nearestCity: userRows[0]?.nearesCity || '',
+  };
+};
+
+// ---- ADD ----
+exports.addSavedAddress = async ({
+  customerId,
+  saveAs,
+  billingTitle,
+  billingName,
+  billingPhone1,
+  billingPhone2,
+  buildingType,
+  houseNo,
+  streetName,
+  nearestCity,
+  latitude,
+  longitude,
+  buildingNo,
+  buildingName,
+  unitNo,
+  floorNo,
+}) => {
+  const conn = await db.marketPlace.promise().getConnection();
+  try {
+    await conn.beginTransaction();
+
+    let insertId;
+    if (buildingType === 'Apartment') {
+      const [result] = await conn.query(
+        `INSERT INTO apartment
+          (customerId, saveAs, billingTitle, billingName, billingPhone1, billingPhone2,
+           buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, latitude, longitude)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          customerId,
+          saveAs,
+          billingTitle,
+          billingName,
+          billingPhone1,
+          billingPhone2 || null,
+          buildingNo,
+          buildingName,
+          unitNo,
+          floorNo,
+          houseNo,
+          streetName,
+          latitude || null,
+          longitude || null,
+        ],
+      );
+      insertId = result.insertId;
+    } else {
+      const [result] = await conn.query(
+        `INSERT INTO house
+          (customerId, saveAs, billingTitle, billingName, billingPhone1, billingPhone2,
+           houseNo, streetName, latitude, longitude)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          customerId,
+          saveAs,
+          billingTitle,
+          billingName,
+          billingPhone1,
+          billingPhone2 || null,
+          houseNo,
+          streetName,
+          latitude || null,
+          longitude || null,
+        ],
+      );
+      insertId = result.insertId;
+    }
+
+    // Keep the customer's nearest-city profile field in sync
+    await conn.query(`UPDATE marketplaceusers SET nearesCity = ? WHERE id = ?`, [
+      nearestCity,
+      customerId,
+    ]);
+
+    await conn.commit();
+    return { id: insertId, type: buildingType, customerId, nearestCity };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+};
+
+// ---- UPDATE ----
+exports.updateSavedAddress = async (
+  addressId,
+  {
+    customerId,
+    saveAs,
+    billingTitle,
+    billingName,
+    billingPhone1,
+    billingPhone2,
+    type,
+    houseNo,
+    streetName,
+    nearestCity,
+    latitude,
+    longitude,
+    buildingNo,
+    buildingName,
+    unitNo,
+    floorNo,
+  },
+) => {
+  const table = type === 'Apartment' ? 'apartment' : 'house';
+  const conn = await db.marketPlace.promise().getConnection();
+  try {
+    await conn.beginTransaction();
+
+    let result;
+    if (type === 'Apartment') {
+      [result] = await conn.query(
+        `UPDATE apartment SET
+           saveAs = ?, billingTitle = ?, billingName = ?, billingPhone1 = ?, billingPhone2 = ?,
+           buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?,
+           houseNo = ?, streetName = ?, latitude = ?, longitude = ?
+         WHERE id = ?`,
+        [
+          saveAs,
+          billingTitle,
+          billingName,
+          billingPhone1,
+          billingPhone2 || null,
+          buildingNo,
+          buildingName,
+          unitNo,
+          floorNo,
+          houseNo,
+          streetName,
+          latitude || null,
+          longitude || null,
+          addressId,
+        ],
+      );
+    } else {
+      [result] = await conn.query(
+        `UPDATE house SET
+           saveAs = ?, billingTitle = ?, billingName = ?, billingPhone1 = ?, billingPhone2 = ?,
+           houseNo = ?, streetName = ?, latitude = ?, longitude = ?
+         WHERE id = ?`,
+        [
+          saveAs,
+          billingTitle,
+          billingName,
+          billingPhone1,
+          billingPhone2 || null,
+          houseNo,
+          streetName,
+          latitude || null,
+          longitude || null,
+          addressId,
+        ],
+      );
+    }
+
+    if (result.affectedRows === 0) {
+      await conn.rollback();
+      return null;
+    }
+
+    // Resolve customerId if the caller didn't pass it (fetch from the row we just touched)
+    let resolvedCustomerId = customerId;
+    if (!resolvedCustomerId) {
+      const [rows] = await conn.query(
+        `SELECT customerId FROM ${table} WHERE id = ?`,
+        [addressId],
+      );
+      resolvedCustomerId = rows[0]?.customerId;
+    }
+
+    if (resolvedCustomerId) {
+      await conn.query(`UPDATE marketplaceusers SET nearesCity = ? WHERE id = ?`, [
+        nearestCity,
+        resolvedCustomerId,
+      ]);
+    }
+
+    await conn.commit();
+    return { id: addressId, type, customerId: resolvedCustomerId, nearestCity };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 };

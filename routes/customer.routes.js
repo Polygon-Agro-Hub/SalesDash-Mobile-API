@@ -35,4 +35,14 @@ router.delete('/preferlist/delete', customerEp.deletePreferItem)
 
 router.get('/customerData/:customerId', auth, customerEp.getCustomerDataLocation);
 
+router.get('/check-delivered-order/:customerId', customerEp.checkDeliveredOrder);
+
+router.put('/update-residential-address/:cusId', customerEp.updateResidentialAddress);
+
+router.get('/get-address-book/:customerId', customerEp.getAddressBook);
+
+router.get('/get-saved-address/:addressId', customerEp.getSavedAddress);
+router.post('/add-saved-address', customerEp.addSavedAddress);
+router.put('/update-saved-address/:addressId', customerEp.updateSavedAddress);
+
 module.exports = router;

@@ -495,3 +495,229 @@ exports.getCustomerDataLocation = asyncHandler(async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+exports.checkDeliveredOrder = asyncHandler(async (req, res) => {
+  const { customerId } = req.params;
+  try {
+    const result = await customerDAO.checkDeliveredOrder(customerId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+exports.updateResidentialAddress = asyncHandler(async (req, res) => {
+  const { cusId } = req.params;
+  const {
+    buildingType,
+    nearestCity,
+    houseNo,
+    streetName,
+    buildingNo,
+    buildingName,
+    unitNo,
+    floorNo,
+  } = req.body;
+
+  if (!buildingType || !["House", "Apartment"].includes(buildingType)) {
+    return res
+      .status(400)
+      .json({ error: "A valid buildingType ('House' or 'Apartment') is required" });
+  }
+
+  if (buildingType === "House" && (!houseNo?.trim() || !streetName?.trim())) {
+    return res
+      .status(400)
+      .json({ error: "houseNo and streetName are required for a House address" });
+  }
+
+  if (
+    buildingType === "Apartment" &&
+    (!buildingNo?.trim() ||
+      !buildingName?.trim() ||
+      !unitNo?.trim() ||
+      !floorNo?.trim() ||
+      !houseNo?.trim() ||
+      !streetName?.trim())
+  ) {
+    return res
+      .status(400)
+      .json({ error: "All apartment fields are required for an Apartment address" });
+  }
+
+  try {
+    const result = await customerDAO.updateResidentialAddress(cusId, req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+exports.getAddressBook = asyncHandler(async (req, res) => {
+  const { customerId } = req.params;
+  try {
+    const result = await customerDAO.getAddressBook(customerId);
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+exports.getSavedAddress = asyncHandler(async (req, res) => {
+  const { addressId } = req.params;
+  const { type } = req.query;
+
+  if (!type || !['House', 'Apartment'].includes(type)) {
+    return res.status(400).json({ error: 'A valid type (House or Apartment) is required.' });
+  }
+
+  try {
+    const result = await customerDAO.getSavedAddress(addressId, type);
+    if (!result) {
+      return res.status(404).json({ error: 'Address not found.' });
+    }
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/customer/add-saved-address
+exports.addSavedAddress = asyncHandler(async (req, res) => {
+  const {
+    customerId,
+    saveAs,
+    billingTitle,
+    billingName,
+    billingPhone1,
+    billingPhone2,
+    buildingType, // "House" | "Apartment"
+    houseNo,
+    streetName,
+    nearestCity,
+    latitude,
+    longitude,
+    buildingNo,
+    buildingName,
+    unitNo,
+    floorNo,
+  } = req.body;
+
+  if (
+    !customerId ||
+    !saveAs ||
+    !billingName ||
+    !billingPhone1 ||
+    !streetName ||
+    !nearestCity ||
+    !houseNo ||
+    !buildingType
+  ) {
+    return res.status(400).json({ error: 'Missing required fields.' });
+  }
+
+  if (
+    buildingType === 'Apartment' &&
+    (!buildingNo || !buildingName || !unitNo || !floorNo)
+  ) {
+    return res.status(400).json({ error: 'Missing required apartment fields.' });
+  }
+
+  try {
+    const result = await customerDAO.addSavedAddress({
+      customerId,
+      saveAs,
+      billingTitle,
+      billingName,
+      billingPhone1,
+      billingPhone2,
+      buildingType,
+      houseNo,
+      streetName,
+      nearestCity,
+      latitude,
+      longitude,
+      buildingNo,
+      buildingName,
+      unitNo,
+      floorNo,
+    });
+    res.status(201).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/customer/update-saved-address/:addressId
+exports.updateSavedAddress = asyncHandler(async (req, res) => {
+  const { addressId } = req.params;
+  const {
+    customerId,
+    saveAs,
+    billingTitle,
+    billingName,
+    billingPhone1,
+    billingPhone2,
+    type, // "House" | "Apartment" - which table this address lives in
+    houseNo,
+    streetName,
+    nearestCity,
+    latitude,
+    longitude,
+    buildingNo,
+    buildingName,
+    unitNo,
+    floorNo,
+  } = req.body;
+
+  if (!type || !['House', 'Apartment'].includes(type)) {
+    return res.status(400).json({ error: 'A valid type (House or Apartment) is required.' });
+  }
+
+  if (
+    !saveAs ||
+    !billingName ||
+    !billingPhone1 ||
+    !streetName ||
+    !nearestCity ||
+    !houseNo
+  ) {
+    return res.status(400).json({ error: 'Missing required fields.' });
+  }
+
+  if (
+    type === 'Apartment' &&
+    (!buildingNo || !buildingName || !unitNo || !floorNo)
+  ) {
+    return res.status(400).json({ error: 'Missing required apartment fields.' });
+  }
+
+  try {
+    const result = await customerDAO.updateSavedAddress(addressId, {
+      customerId,
+      saveAs,
+      billingTitle,
+      billingName,
+      billingPhone1,
+      billingPhone2,
+      type,
+      houseNo,
+      streetName,
+      nearestCity,
+      latitude,
+      longitude,
+      buildingNo,
+      buildingName,
+      unitNo,
+      floorNo,
+    });
+    if (!result) {
+      return res.status(404).json({ error: 'Address not found.' });
+    }
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
