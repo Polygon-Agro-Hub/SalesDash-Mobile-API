@@ -40,6 +40,7 @@ const orderValidationSchema = Joi.object({
       then: Joi.array().items(itemSchema).min(1).required(),
       otherwise: Joi.array().items(itemSchema).optional(),
     }),
+    deliveryAddress: Joi.object().allow(null).optional(),
   }).required(),
 });
 
