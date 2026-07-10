@@ -763,6 +763,7 @@ exports.getCustomerDataLocation = async (customerId) => {
                 phoneNumber,
                 phoneNumber2,
                 buyerType,
+                creditBalance,
                 email,
                 password,
                 image,

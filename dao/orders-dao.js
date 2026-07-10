@@ -240,6 +240,7 @@ async function insertMainOrder(
     sheduleTime,
     isPackage,
     deliveryCharge = 0,
+    isFinalizeImdt = 0,
   } = orderData;
 
   // Normalize a phone number: strip country code / leading 0, return last 9 digits
@@ -323,8 +324,8 @@ async function insertMainOrder(
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, sheduleDate, sheduleTime, isPackage, 
-          longitude, latitude, deliveryCharge, createdAt
-        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          longitude, latitude, deliveryCharge, isFinalizeImdt, createdAt
+        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -349,6 +350,7 @@ async function insertMainOrder(
       longitude,
       latitude,
       deliveryCharge,
+      isFinalizeImdt ? 1 : 0,
     ],
   );
 
@@ -425,6 +427,13 @@ async function insertProcessOrder(connection, orderId, orderData) {
         ? "Card"
         : "Cash";
 
+    // Determine isPaid and amount based on payment method
+    // Card → isPaid = 1, amount = fullTotal (paid in full)
+    // Cash → isPaid = 0, amount = 0.0 (not yet paid)
+    const isCardPayment = paymentMethodValue === "Card";
+    const isPaidValue = isCardPayment ? 1 : 0;
+    const amountValue = isCardPayment ? (orderData.fullTotal || orderData.total || 0) : 0.0;
+
     // Insert process order record WITH QR CODE
     const [result] = await connection.query(
       `INSERT INTO processorders (
@@ -435,8 +444,8 @@ async function insertProcessOrder(connection, orderId, orderData) {
         invNo,
         orderData.transactionId || "",
         paymentMethodValue,
-        0, // ispaid
-        0, // amount
+        isPaidValue,  // 1 for Card, 0 for Cash
+        amountValue,  // fullTotal for Card, 0.0 for Cash
         "Ordered", // status
         qrCodeDataURL, // QR code as base64 data URL
       ],
