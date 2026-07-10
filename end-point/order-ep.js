@@ -479,3 +479,13 @@ exports.getDeliveredOrdersTotal = async (req, res) => {
     });
   }
 };
+
+exports.checkOrderPaymentStatus = async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await orderDao.checkOrderPaymentStatus(orderId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
