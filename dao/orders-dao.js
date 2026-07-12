@@ -427,12 +427,10 @@ async function insertProcessOrder(connection, orderId, orderData) {
         ? "Card"
         : "Cash";
 
-    // Determine isPaid and amount based on payment method
-    // Card → isPaid = 1, amount = fullTotal (paid in full)
-    // Cash → isPaid = 0, amount = 0.0 (not yet paid)
+
     const isCardPayment = paymentMethodValue === "Card";
-    const isPaidValue = isCardPayment ? 1 : 0;
-    const amountValue = isCardPayment ? (orderData.fullTotal || orderData.total || 0) : 0.0;
+    const isPaidValue = 0;
+    const amountValue = 0.0;
 
     // Insert process order record WITH QR CODE
     const [result] = await connection.query(
@@ -467,17 +465,18 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
 
     if (typeInt === 1) {
       await connection.query(
-        "INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)",
+        "INSERT INTO orderhouse (orderid, houseNo, streetName, city, saveAs) VALUES (?, ?, ?, ?, ?)",
         [
           orderId,
           address.houseNo || "",
           address.streetName || "",
           address.city || "",
+          address.label || address.billingName || "",
         ],
       );
     } else if (typeInt === 2 || typeInt === 3 || typeInt === 4) {
       await connection.query(
-        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city, saveAs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           orderId,
           address.buildingNo || "",
@@ -487,6 +486,7 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
           address.houseNo || "",
           address.streetName || "",
           address.city || "",
+          address.label || address.billingName || "",
         ],
       );
     }
@@ -1046,6 +1046,7 @@ exports.getOrderByCustomerId = (customerId, page = 1, limit = 5, status = null) 
           o.discount,
           o.fullTotal,
           p.invNo AS InvNo,
+          p.isPaid,
           p.reportStatus AS reportStatus,
           p.paymentMethod AS paymentMethod,
           p.status AS status
@@ -1654,6 +1655,54 @@ exports.getHold = async (orderId) => {
     return { success: true, data: holdEvents };
   } catch (err) {
     console.error("Database error in getHold:", err);
+    throw err;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+exports.checkOrderPaymentStatus = async (orderId) => {
+  let connection;
+  try {
+    connection = await db.marketPlace.promise().getConnection();
+
+    const paymentCheckSql = `
+      SELECT 
+        o.id,
+        o.userId,
+        po.orderId,
+        po.isPaid,
+        po.amount,
+        mu.cusId
+      FROM market_place.processorders po
+      LEFT JOIN market_place.orders o ON o.id = po.orderId
+      LEFT JOIN market_place.marketplaceusers mu ON mu.id = o.userId
+      WHERE po.orderId = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await connection.query(paymentCheckSql, [orderId]);
+
+    if (!rows || rows.length === 0) {
+      return { success: true, data: { isPaid: 0, amount: 0, cusId: null } };
+    }
+
+    const row = rows[0];
+    const amount = Number(row.amount) || 0;
+    const isPaid = Number(row.isPaid) === 1 && amount > 0 ? 1 : 0;
+
+    return {
+      success: true,
+      data: {
+        isPaid,
+        amount,
+        cusId: row.cusId ?? null,
+      },
+    };
+  } catch (err) {
+    console.error("Database error in checkOrderPaymentStatus:", err);
     throw err;
   } finally {
     if (connection) {

@@ -29,5 +29,7 @@ router.get('/get-hold-reason/:orderId', orderEp.getHold);
 
 router.get('/delivered-total/:userId', auth, orderEp.getDeliveredOrdersTotal);
 
+router.get('/check-payment-status/:orderId', orderEp.checkOrderPaymentStatus);
+
 module.exports = router;
 
