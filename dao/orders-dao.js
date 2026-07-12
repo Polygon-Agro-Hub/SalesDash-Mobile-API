@@ -1109,7 +1109,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 o.fullTotal,
                 o.deliveryCharge,
                 m.salesAgent,
-                m.buildingType,
+                o.buildingType,
                 p.invNo AS InvNo,
                 p.reportStatus AS reportStatus,
                 p.paymentMethod AS paymentMethod,
