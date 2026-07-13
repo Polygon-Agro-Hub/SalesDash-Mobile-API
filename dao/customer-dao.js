@@ -390,7 +390,7 @@ exports.updateCustomerData = async (cusId, customerData) => {
         throw new Error("Phone number already exists.");
       }
     } else {
-      console.log("Phone number not changed, skipping phone duplicate check");
+      console.log("ℹ️ Phone number not changed, skipping phone duplicate check");
     }
 
     // Handle email validation and duplicate check
@@ -410,7 +410,7 @@ exports.updateCustomerData = async (cusId, customerData) => {
           throw new Error("Email already exists.");
         }
       } else {
-        console.log("Email not changed, skipping email duplicate check");
+        console.log("ℹ️ Email not changed, skipping email duplicate check");
       }
     } else {
       finalEmail = null;

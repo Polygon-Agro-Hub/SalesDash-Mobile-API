@@ -18,7 +18,7 @@ exports.customerData = async (req, res) => {
       abortEarly: true,
     });
     if (error) {
-      console.log("Customer validation error:", error.details[0].message);
+      console.error("⚠️ Customer validation error:", error.details[0].message);
       return res.status(400).json({ error: error.details[0].message });
     }
 

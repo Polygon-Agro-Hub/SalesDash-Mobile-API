@@ -107,7 +107,6 @@ exports.processOrder = async (orderData, salesAgentId) => {
     if (connection) {
       try {
         connection.release();
-        console.log("DB connection released");
       } catch (releaseError) {
         console.error("Error releasing connection:", releaseError);
       }
@@ -212,7 +211,7 @@ async function assignCenterToOrder(
     );
 
     console.log(
-      `Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
+      `🎯 Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
     );
   } catch (error) {
     console.error("Error in assignCenterToOrder:", error);
@@ -493,8 +492,8 @@ async function insertAddressData(connection, orderId, orderData, userDetails) {
   }
 }
 
-// Helper function to update sales agent stars
-async function updateSalesAgentStars(connection, salesAgentId) {
+// Helper function to update sales agent stars (Legacy)
+async function updateSalesAgentStarsLegacy(connection, salesAgentId) {
   if (!salesAgentId) {
     return;
   }
@@ -708,15 +707,12 @@ exports.getDataCustomerId = async (customerId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
 
 // Get user's total of successfully delivered orders and compute credit balance
 exports.getDeliveredOrdersTotal = async (userId) => {
-
-  console.log(userId)
   let connection;
   try {
     connection = await db.marketPlace.promise().getConnection();
@@ -907,7 +903,7 @@ exports.getOrderById = async (orderId) => {
           packageDetails: packageDetails,
         };
       } else {
-        console.log("Package order but no packageId found");
+        console.warn("⚠️ Package order but no packageId found");
       }
     }
 
@@ -1001,7 +997,6 @@ exports.getOrderById = async (orderId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1072,7 +1067,6 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
   try {
     // Get connection from pool
     connection = await db.marketPlace.promise().getConnection();
-    console.log("Database connection acquired");
 
     // Ensure page and limit are integers
     const pageNum = parseInt(page);
@@ -1215,7 +1209,6 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1609,7 +1602,6 @@ exports.getReturnReason = async (orderId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
