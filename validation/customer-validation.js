@@ -3,7 +3,7 @@ const Joi = require("joi");
 // Phone Schema Validation
 exports.phoneNumberSchema = Joi.alternatives()
   .try(
-    Joi.string().pattern(/^\d+$/).min(10).max(15),
+    Joi.string().pattern(/^\+?\d+$/).min(10).max(15),
     Joi.number()
       .integer()
       .min(1000000000)
@@ -176,10 +176,11 @@ exports.savedAddressSchema = Joi.object({
   billingName: Joi.string().trim().required(),
   billingPhone1: exports.phoneNumberSchema,
   billingPhone2: Joi.alternatives().try(
-    Joi.string().pattern(/^\d+$/).min(10).max(15),
+    Joi.string().pattern(/^\+?\d+$/).min(10).max(15),
     Joi.number().integer().min(1000000000).max(999999999999999).custom((value) => String(value))
   ).optional().allow("", null),
   buildingType: Joi.string().valid("House", "Apartment").required(),
+  type: Joi.string().valid("House", "Apartment").optional().allow("", null),
   houseNo: Joi.string().trim().required(),
   streetName: Joi.string().trim().required(),
   nearestCity: Joi.string().trim().required(),
@@ -215,10 +216,11 @@ exports.updateSavedAddressSchema = Joi.object({
   billingName: Joi.string().trim().required(),
   billingPhone1: exports.phoneNumberSchema,
   billingPhone2: Joi.alternatives().try(
-    Joi.string().pattern(/^\d+$/).min(10).max(15),
+    Joi.string().pattern(/^\+?\d+$/).min(10).max(15),
     Joi.number().integer().min(1000000000).max(999999999999999).custom((value) => String(value))
   ).optional().allow("", null),
   type: Joi.string().valid("House", "Apartment").required(),
+  buildingType: Joi.string().valid("House", "Apartment").optional().allow("", null),
   houseNo: Joi.string().trim().required(),
   streetName: Joi.string().trim().required(),
   nearestCity: Joi.string().trim().required(),
@@ -249,7 +251,7 @@ exports.updateSavedAddressSchema = Joi.object({
 // Check Customer Schema
 exports.checkCustomerSchema = Joi.object({
   phoneNumber: Joi.alternatives().try(
-    Joi.string().pattern(/^\d+$/).min(10).max(15),
+    Joi.string().pattern(/^\+?\d+$/).min(10).max(15),
     Joi.number().integer().min(1000000000).max(999999999999999).custom((value) => String(value))
   ).required(),
   email: Joi.string().email().optional().allow("", null),

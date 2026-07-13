@@ -14,73 +14,12 @@ exports.customerData = async (req, res) => {
   try {
     const salesAgent = req.user.id;
 
-    const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(
-      customerData.phoneNumber,
-    );
-    if (phoneNumberValidation.error) {
-      console.log(
-        "Phone validation error:",
-        phoneNumberValidation.error.details[0].message,
-      );
-      return res
-        .status(400)
-        .json({ error: phoneNumberValidation.error.details[0].message });
-    }
-
-    if (!customerData.firstName || customerData.firstName.trim() === "") {
-      return res.status(400).json({ error: "First name is required" });
-    }
-    if (!customerData.lastName || customerData.lastName.trim() === "") {
-      return res.status(400).json({ error: "Last name is required" });
-    }
-
-    if (!customerData.buildingType) {
-      return res.status(400).json({ error: "Building type is required" });
-    }
-
-    if (!["House", "Apartment"].includes(customerData.buildingType)) {
-      return res.status(400).json({
-        error: "Invalid building type. Must be either 'House' or 'Apartment'",
-      });
-    }
-
-    if (customerData.buildingType === "House") {
-      const houseData = {
-        houseNo: customerData.houseNo,
-        streetName: customerData.streetName,
-        city: customerData.city,
-      };
-      const houseValidation = ValidationSchema.houseSchema.validate(houseData);
-      if (houseValidation.error) {
-        console.log(
-          "House validation error:",
-          houseValidation.error.details[0].message,
-        );
-        return res
-          .status(400)
-          .json({ error: houseValidation.error.details[0].message });
-      }
-    } else if (customerData.buildingType === "Apartment") {
-      const apartmentData = {
-        buildingNo: customerData.buildingNo,
-        buildingName: customerData.buildingName,
-        unitNo: customerData.unitNo,
-        floorNo: customerData.floorNo,
-        houseNo: customerData.houseNo,
-        streetName: customerData.streetName,
-        city: customerData.city,
-      };
-      const apartmentValidation =
-        ValidationSchema.apartmentSchema.validate(apartmentData);
-      if (apartmentValidation.error) {
-        console.log(
-          "Apartment validation error:",
-          apartmentValidation.error.details[0].message,
-        );
-        return res
-          .status(400)
-          .json({ error: apartmentValidation.error.details[0].message });
-      }
+    const { error, value } = ValidationSchema.createCustomerSchema.validate(customerData, {
+      abortEarly: true,
+    });
+    if (error) {
+      console.log("Customer validation error:", error.details[0].message);
+      return res.status(400).json({ error: error.details[0].message });
     }
 
     // Add customer
@@ -180,40 +119,21 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
   };
 
   try {
-    // Validate required fields
-    if (
-      !customerData.firstName ||
-      !customerData.lastName ||
-      !customerData.phoneNumber
-    ) {
+    // Validate using Joi schema
+    const { error, value } = ValidationSchema.updateCustomerSchema.validate(customerData, {
+      abortEarly: true,
+    });
+    if (error) {
+      const isPhoneError = error.details[0].path.includes("phoneNumber");
+      const isEmailError = error.details[0].path.includes("email");
       return res.status(400).json({
-        message: "Customer data is incomplete - first name, last name and phone number are required",
-        errors: { general: true },
+        message: error.details[0].message,
+        errors: {
+          phoneNumber: isPhoneError,
+          email: isEmailError,
+          general: !isPhoneError && !isEmailError,
+        },
       });
-    }
-
-    // Validate phone number
-    const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(
-      customerData.phoneNumber,
-    );
-    if (phoneNumberValidation.error) {
-      return res.status(400).json({
-        message: phoneNumberValidation.error.details[0].message,
-        errors: { phoneNumber: true },
-      });
-    }
-
-    // Validate email only if provided
-    if (customerData.email && customerData.email.trim() !== "") {
-      const emailValidation = ValidationSchema.emailSchema.validate(
-        customerData.email,
-      );
-      if (emailValidation.error) {
-        return res.status(400).json({
-          message: emailValidation.error.details[0].message,
-          errors: { email: true },
-        });
-      }
     }
 
     // Update customer data through DAO
@@ -258,7 +178,11 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
 });
 
 exports.checkCustomer = (req, res) => {
-  const { phoneNumber, email, excludeId } = req.body;
+  const { error, value } = ValidationSchema.checkCustomerSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    return res.status(400).json({ message: error.details[0].message });
+  }
+  const { phoneNumber, email, excludeId } = value;
 
   customerDAO
     .findCustomerByPhoneOrEmail(phoneNumber, email, excludeId)
@@ -509,41 +433,9 @@ exports.checkDeliveredOrder = asyncHandler(async (req, res) => {
 
 exports.updateResidentialAddress = asyncHandler(async (req, res) => {
   const { cusId } = req.params;
-  const {
-    buildingType,
-    nearestCity,
-    houseNo,
-    streetName,
-    buildingNo,
-    buildingName,
-    unitNo,
-    floorNo,
-  } = req.body;
-
-  if (!buildingType || !["House", "Apartment"].includes(buildingType)) {
-    return res
-      .status(400)
-      .json({ error: "A valid buildingType ('House' or 'Apartment') is required" });
-  }
-
-  if (buildingType === "House" && (!houseNo?.trim() || !streetName?.trim())) {
-    return res
-      .status(400)
-      .json({ error: "houseNo and streetName are required for a House address" });
-  }
-
-  if (
-    buildingType === "Apartment" &&
-    (!buildingNo?.trim() ||
-      !buildingName?.trim() ||
-      !unitNo?.trim() ||
-      !floorNo?.trim() ||
-      !houseNo?.trim() ||
-      !streetName?.trim())
-  ) {
-    return res
-      .status(400)
-      .json({ error: "All apartment fields are required for an Apartment address" });
+  const { error, value } = ValidationSchema.updateResidentialAddressSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    return res.status(400).json({ error: error.details[0].message });
   }
 
   try {
@@ -585,64 +477,14 @@ exports.getSavedAddress = asyncHandler(async (req, res) => {
 
 // POST /api/customer/add-saved-address
 exports.addSavedAddress = asyncHandler(async (req, res) => {
-  const {
-    customerId,
-    saveAs,
-    billingTitle,
-    billingName,
-    billingPhone1,
-    billingPhone2,
-    buildingType, // "House" | "Apartment"
-    houseNo,
-    streetName,
-    nearestCity,
-    latitude,
-    longitude,
-    buildingNo,
-    buildingName,
-    unitNo,
-    floorNo,
-  } = req.body;
-
-  if (
-    !customerId ||
-    !saveAs ||
-    !billingName ||
-    !billingPhone1 ||
-    !streetName ||
-    !nearestCity ||
-    !houseNo ||
-    !buildingType
-  ) {
-    return res.status(400).json({ error: 'Missing required fields.' });
-  }
-
-  if (
-    buildingType === 'Apartment' &&
-    (!buildingNo || !buildingName || !unitNo || !floorNo)
-  ) {
-    return res.status(400).json({ error: 'Missing required apartment fields.' });
+  const { error, value } = ValidationSchema.savedAddressSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    console.error("Validation error in addSavedAddress:", error.details[0].message);
+    return res.status(400).json({ error: error.details[0].message });
   }
 
   try {
-    const result = await customerDAO.addSavedAddress({
-      customerId,
-      saveAs,
-      billingTitle,
-      billingName,
-      billingPhone1,
-      billingPhone2,
-      buildingType,
-      houseNo,
-      streetName,
-      nearestCity,
-      latitude,
-      longitude,
-      buildingNo,
-      buildingName,
-      unitNo,
-      floorNo,
-    });
+    const result = await customerDAO.addSavedAddress(value);
     res.status(201).json({ data: result });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -652,66 +494,14 @@ exports.addSavedAddress = asyncHandler(async (req, res) => {
 // PUT /api/customer/update-saved-address/:addressId
 exports.updateSavedAddress = asyncHandler(async (req, res) => {
   const { addressId } = req.params;
-  const {
-    customerId,
-    saveAs,
-    billingTitle,
-    billingName,
-    billingPhone1,
-    billingPhone2,
-    type, // "House" | "Apartment" - which table this address lives in
-    houseNo,
-    streetName,
-    nearestCity,
-    latitude,
-    longitude,
-    buildingNo,
-    buildingName,
-    unitNo,
-    floorNo,
-  } = req.body;
-
-  if (!type || !['House', 'Apartment'].includes(type)) {
-    return res.status(400).json({ error: 'A valid type (House or Apartment) is required.' });
-  }
-
-  if (
-    !saveAs ||
-    !billingName ||
-    !billingPhone1 ||
-    !streetName ||
-    !nearestCity ||
-    !houseNo
-  ) {
-    return res.status(400).json({ error: 'Missing required fields.' });
-  }
-
-  if (
-    type === 'Apartment' &&
-    (!buildingNo || !buildingName || !unitNo || !floorNo)
-  ) {
-    return res.status(400).json({ error: 'Missing required apartment fields.' });
+  const { error, value } = ValidationSchema.updateSavedAddressSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    console.error("Validation error in updateSavedAddress:", error.details[0].message);
+    return res.status(400).json({ error: error.details[0].message });
   }
 
   try {
-    const result = await customerDAO.updateSavedAddress(addressId, {
-      customerId,
-      saveAs,
-      billingTitle,
-      billingName,
-      billingPhone1,
-      billingPhone2,
-      type,
-      houseNo,
-      streetName,
-      nearestCity,
-      latitude,
-      longitude,
-      buildingNo,
-      buildingName,
-      unitNo,
-      floorNo,
-    });
+    const result = await customerDAO.updateSavedAddress(addressId, value);
     if (!result) {
       return res.status(404).json({ error: 'Address not found.' });
     }
