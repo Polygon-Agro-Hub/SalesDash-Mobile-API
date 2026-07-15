@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const compression = require("compression");
 require("dotenv").config();
 const {
   plantcare,
@@ -10,6 +11,7 @@ const {
 } = require("./startup/database");
 const setupSwagger = require("./startup/swagger");
 const app = express();
+app.use(compression());
 const BASE_PATH = "/agro-api/salesdash";
 
 const corsOptions = {
@@ -42,7 +44,7 @@ const DatabaseConnection = (db, name) => {
         if (err) {
           console.error(`Error pinging ${name} database:`, err);
         } else {
-          console.log(`Ping to ${name} database successful.`);
+          console.log(`🗄️ Ping to ${name} database successful.`);
         }
         connection.release();
       });
@@ -97,7 +99,7 @@ const notificationDao = require("./dao/notification-dao");
 cron.schedule("00 18 * * *", async () => {
   try {
     await notificationDao.createPaymentReminders();
-    console.log("Payment reminders created successfully");
+    console.log("⏰ Payment reminders created successfully");
   } catch (error) {
     console.error("Error creating payment reminders:", error);
   }

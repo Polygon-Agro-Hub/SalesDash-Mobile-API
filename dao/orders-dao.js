@@ -107,7 +107,6 @@ exports.processOrder = async (orderData, salesAgentId) => {
     if (connection) {
       try {
         connection.release();
-        console.log("DB connection released");
       } catch (releaseError) {
         console.error("Error releasing connection:", releaseError);
       }
@@ -119,7 +118,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
 async function getUserDetails(connection, userId) {
   const [userResult] = await connection.query(
     `SELECT id, salesAgent, googleId, cusId, title, firstName, lastName, 
-         phoneCode, phoneNumber, buyerType, email, buildingType, billingTitle, billingName , longitude , latitude
+         phoneCode, phoneNumber, buyerType, email
          FROM marketplaceusers WHERE id = ?`,
     [userId],
   );
@@ -136,12 +135,20 @@ function getBuildingTypeInt(buildingType) {
   const buildingTypeMapping = {
     house: 1,
     House: 1,
+    "1": 1,
+    1: 1,
     apartment: 2,
     Apartment: 2,
+    "2": 2,
+    2: 2,
     condo: 3,
     Condo: 3,
+    "3": 3,
+    3: 3,
     office: 4,
     Office: 4,
+    "4": 4,
+    4: 4,
   };
   return buildingTypeMapping[buildingType] || 1;
 }
@@ -153,26 +160,11 @@ async function assignCenterToOrder(
   userDetails,
 ) {
   try {
-    const buildingTypeInt = getBuildingTypeInt(userDetails.buildingType);
     let city = null;
 
-    // Step 1: Get city based on building type
-    if (buildingTypeInt === 1) {
-      const [houseResult] = await connection.query(
-        "SELECT city FROM house WHERE customerid = ? LIMIT 1",
-        [orderData.userId],
-      );
-      if (houseResult && houseResult.length > 0) {
-        city = houseResult[0].city;
-      }
-    } else if (buildingTypeInt === 2) {
-      const [apartmentResult] = await connection.query(
-        "SELECT city FROM apartment WHERE customerid = ? LIMIT 1",
-        [orderData.userId],
-      );
-      if (apartmentResult && apartmentResult.length > 0) {
-        city = apartmentResult[0].city;
-      }
+    // Step 1: Get city based on deliveryAddress
+    if (orderData.deliveryAddress && orderData.deliveryAddress.city) {
+      city = orderData.deliveryAddress.city;
     }
 
     if (!city) {
@@ -219,7 +211,7 @@ async function assignCenterToOrder(
     );
 
     console.log(
-      `Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
+      `🎯 Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
     );
   } catch (error) {
     console.error("Error in assignCenterToOrder:", error);
@@ -246,25 +238,55 @@ async function insertMainOrder(
     sheduleDate,
     sheduleTime,
     isPackage,
+    deliveryCharge = 0,
+    isFinalizeImdt = 0,
   } = orderData;
 
-  // Get title, fullName, and phone details from marketplaceusers table
-  const orderTitle = userDetails.title;
-  const orderFullName =
-    `${userDetails.firstName} ${userDetails.lastName}`.trim();
-  const orderPhonecode1 = userDetails.phoneCode;
-  const orderPhone1 = userDetails.phoneNumber;
+  // Normalize a phone number: strip country code / leading 0, return last 9 digits
+  const normalizePhone = (raw) => {
+    if (!raw) return null;
+    // Remove spaces, dashes, parentheses
+    let digits = String(raw).replace(/[\s\-().+]/g, "");
+    // Strip leading country code 94 (Sri Lanka) if longer than 9 digits
+    if (digits.startsWith("94") && digits.length > 9) {
+      digits = digits.slice(2);
+    }
+    // Strip leading 0
+    if (digits.startsWith("0")) {
+      digits = digits.slice(1);
+    }
+    // Always return the last 9 digits
+    return digits.slice(-9);
+  };
 
-  // Optional second phone from order data (if provided)
-  const orderPhonecode2 = orderData.phonecode2 || null;
-  const orderPhone2 = orderData.phone2 || null;
+  const orderTitle = orderData.deliveryAddress?.billingTitle || userDetails.title;
+  const orderFullName = orderData.deliveryAddress?.billingName
+    ? orderData.deliveryAddress.billingName.trim()
+    : `${userDetails.firstName} ${userDetails.lastName}`.trim();
 
-  // Get longitude and latitude from userDetails
-  const longitude = userDetails.longitude || null;
-  const latitude = userDetails.latitude || null;
+  // phonecode1 is always "+94"
+  const orderPhonecode1 = "+94";
+  const orderPhone1 = normalizePhone(
+    orderData.deliveryAddress?.billingPhone1 || userDetails.phoneNumber,
+  );
 
-  // Use the original buildingType string for orders table
-  const buildingTypeForOrder = userDetails.buildingType;
+  // Optional second phone
+  const orderPhonecode2 =
+    (orderData.deliveryAddress?.billingPhone2 || orderData.phone2)
+      ? "+94"
+      : null;
+  const orderPhone2 = normalizePhone(
+    orderData.deliveryAddress?.billingPhone2 || orderData.phone2 || null,
+  );
+
+  // Get longitude and latitude from userDetails / deliveryAddress
+  const longitude = orderData.deliveryAddress?.longitude || userDetails.longitude || null;
+  const latitude = orderData.deliveryAddress?.latitude || userDetails.latitude || null;
+
+  // Use House or Apartment for buildingType in orders table
+  const rawBuildingType = orderData.deliveryAddress?.type || "House";
+  const buildingTypeIntForOrder = getBuildingTypeInt(rawBuildingType);
+  const buildingTypeForOrder = (buildingTypeIntForOrder === 2 || buildingTypeIntForOrder === 3 || buildingTypeIntForOrder === 4) ? "Apartment" : "House";
 
   // Format date if needed
   let formattedDate = sheduleDate;
@@ -301,8 +323,8 @@ async function insertMainOrder(
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, sheduleDate, sheduleTime, isPackage, 
-          longitude, latitude, createdAt
-        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          longitude, latitude, deliveryCharge, isFinalizeImdt, createdAt
+        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -326,8 +348,11 @@ async function insertMainOrder(
       isPackage,
       longitude,
       latitude,
+      deliveryCharge,
+      isFinalizeImdt ? 1 : 0,
     ],
   );
+
 
   return result.insertId;
 }
@@ -394,6 +419,18 @@ async function insertProcessOrder(connection, orderId, orderData) {
     // ✨ GENERATE QR CODE containing the invoice number
     const qrCodeDataURL = await generateQRCode(invNo);
 
+    // Normalize paymentMethod: "Card" or "Cash"
+    const paymentMethodValue =
+      orderData.paymentMethod &&
+        orderData.paymentMethod.toLowerCase().includes("card")
+        ? "Card"
+        : "Cash";
+
+
+    const isCardPayment = paymentMethodValue === "Card";
+    const isPaidValue = 0;
+    const amountValue = 0.0;
+
     // Insert process order record WITH QR CODE
     const [result] = await connection.query(
       `INSERT INTO processorders (
@@ -403,9 +440,9 @@ async function insertProcessOrder(connection, orderId, orderData) {
         orderId,
         invNo,
         orderData.transactionId || "",
-        orderData.paymentMethod || "cash",
-        0, // ispaid
-        0, // amount
+        paymentMethodValue,
+        isPaidValue,  // 1 for Card, 0 for Cash
+        amountValue,  // fullTotal for Card, 0.0 for Cash
         "Ordered", // status
         qrCodeDataURL, // QR code as base64 data URL
       ],
@@ -420,88 +457,43 @@ async function insertProcessOrder(connection, orderId, orderData) {
 
 // Helper function to insert address data (house/apartment)
 async function insertAddressData(connection, orderId, orderData, userDetails) {
-  const buildingTypeInt = getBuildingTypeInt(userDetails.buildingType);
+  // If custom deliveryAddress is specified in orderData, use it directly
+  if (orderData.deliveryAddress) {
+    const address = orderData.deliveryAddress;
+    const typeInt = getBuildingTypeInt(address.type);
 
-  // Check by integer value: 1 = house, 2 = apartment
-  if (buildingTypeInt === 1) {
-    // House
-    // Get house details using customerid from house table
-    const [houseResult] = await connection.query(
-      "SELECT * FROM house WHERE customerid = ? LIMIT 1",
-      [orderData.userId],
-    );
-
-    if (houseResult && houseResult.length > 0) {
+    if (typeInt === 1) {
       await connection.query(
-        "INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)",
+        "INSERT INTO orderhouse (orderid, houseNo, streetName, city, saveAs) VALUES (?, ?, ?, ?, ?)",
         [
           orderId,
-          houseResult[0].houseNo,
-          houseResult[0].streetName,
-          houseResult[0].city,
+          address.houseNo || "",
+          address.streetName || "",
+          address.city || "",
+          address.label || address.billingName || "",
         ],
       );
-    } else {
-      // Insert default house data if not found
+    } else if (typeInt === 2 || typeInt === 3 || typeInt === 4) {
       await connection.query(
-        "INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)",
+        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city, saveAs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           orderId,
-          orderData.houseNo || "",
-          orderData.streetName || "",
-          orderData.city || "",
+          address.buildingNo || "",
+          address.buildingName || "",
+          address.unitNo || "",
+          address.floorNo || "",
+          address.houseNo || "",
+          address.streetName || "",
+          address.city || "",
+          address.label || address.billingName || "",
         ],
       );
     }
-  } else if (buildingTypeInt === 2) {
-    // Apartment
-    // Get apartment details using customerid from apartment table
-    const [apartmentResult] = await connection.query(
-      "SELECT * FROM apartment WHERE customerid = ? LIMIT 1",
-      [orderData.userId],
-    );
-
-    if (apartmentResult && apartmentResult.length > 0) {
-      await connection.query(
-        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?,?, ?, ?, ?, ?, ?)",
-        [
-          orderId,
-          apartmentResult[0].buildingNo,
-          apartmentResult[0].buildingName,
-          apartmentResult[0].unitNo,
-          apartmentResult[0].floorNo,
-          apartmentResult[0].houseNo,
-          apartmentResult[0].streetName,
-          apartmentResult[0].city,
-        ],
-      );
-    } else {
-      // Insert default apartment data if not found
-      await connection.query(
-        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?, ?,?, ?, ?, ?, ?)",
-        [
-          orderId,
-          orderData.buildingNo || "",
-          orderData.buildingName || "",
-          orderData.unitNo || "",
-          orderData.floorNo || "",
-          orderData.houseNo || "",
-          orderData.streetName || "",
-          orderData.city || "",
-        ],
-      );
-    }
-  }
-  // Handle other building types (condo=3, office=4) if needed
-  else if (buildingTypeInt === 3 || buildingTypeInt === 4) {
-    console.log(
-      `Building type ${buildingTypeInt} (${userDetails.buildingType}) - no specific address table handling implemented`,
-    );
   }
 }
 
-// Helper function to update sales agent stars
-async function updateSalesAgentStars(connection, salesAgentId) {
+// Helper function to update sales agent stars (Legacy)
+async function updateSalesAgentStarsLegacy(connection, salesAgentId) {
   if (!salesAgentId) {
     return;
   }
@@ -675,8 +667,7 @@ exports.getDataCustomerId = async (customerId) => {
                 lastName,
                 phoneCode,
                 phoneNumber,
-                email,
-                buildingType
+                email
             FROM marketplaceusers
             WHERE id = ?
         `;
@@ -708,25 +699,7 @@ exports.getDataCustomerId = async (customerId) => {
     // Remove the separate phoneCode field since we've combined it
     delete customer.phoneCode;
 
-    const buildingType = customer.buildingType.toLowerCase();
-
-    // Second query to get building details based on building type
-    const buildingSql = `
-            SELECT * FROM ${buildingType}
-            WHERE customerId = ?
-        `;
-
-    const [buildingResults] = await connection.execute(buildingSql, [
-      customerId,
-    ]);
-
-    // Combine customer info with building info
-    const result = {
-      ...customer,
-      buildingDetails: buildingResults.length > 0 ? buildingResults[0] : null,
-    };
-
-    return result;
+    return customer;
   } catch (err) {
     console.error("Database error:", err);
     throw err;
@@ -734,10 +707,36 @@ exports.getDataCustomerId = async (customerId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
+
+// Get user's total of successfully delivered orders and compute credit balance
+exports.getDeliveredOrdersTotal = async (userId) => {
+  let connection;
+  try {
+    connection = await db.marketPlace.promise().getConnection();
+    const [rows] = await connection.query(
+      `SELECT COALESCE(SUM(o.fullTotal), 0) AS deliveredTotal
+       FROM orders o
+       WHERE o.userId = ?`,
+      [userId],
+    );
+    const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
+
+    // Base 2000, +250 for every full 25000 in total order value
+    const tiersEarned = Math.floor(deliveredTotal / 25000);
+    const creditBalance = 2000 + tiersEarned * 250;
+
+    return { deliveredTotal, creditBalance };
+  } catch (err) {
+    console.error("Error in getDeliveredOrdersTotal:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
 
 exports.getOrderById = async (orderId) => {
   let connection;
@@ -747,7 +746,7 @@ exports.getOrderById = async (orderId) => {
     connection = await db.marketPlace.promise().getConnection();
 
     const sql = `
-            SELECT
+             SELECT
                 o.id AS orderId,
                 o.userId,
                 o.sheduleType,
@@ -756,13 +755,14 @@ exports.getOrderById = async (orderId) => {
                 o.createdAt,
                 o.total,
                 o.discount,
+                o.deliveryCharge,
                 o.fullTotal,
                 o.isPackage,
                 c.title,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
-                c.buildingType,
+                o.buildingType,
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
@@ -903,7 +903,7 @@ exports.getOrderById = async (orderId) => {
           packageDetails: packageDetails,
         };
       } else {
-        console.log("Package order but no packageId found");
+        console.warn("⚠️ Package order but no packageId found");
       }
     }
 
@@ -965,6 +965,7 @@ exports.getOrderById = async (orderId) => {
       createdAt: order.createdAt,
       total: order.total,
       discount: order.discount,
+      deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
       customerInfo: {
@@ -996,7 +997,6 @@ exports.getOrderById = async (orderId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1041,6 +1041,7 @@ exports.getOrderByCustomerId = (customerId, page = 1, limit = 5, status = null) 
           o.discount,
           o.fullTotal,
           p.invNo AS InvNo,
+          p.isPaid,
           p.reportStatus AS reportStatus,
           p.paymentMethod AS paymentMethod,
           p.status AS status
@@ -1066,7 +1067,6 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
   try {
     // Get connection from pool
     connection = await db.marketPlace.promise().getConnection();
-    console.log("Database connection acquired");
 
     // Ensure page and limit are integers
     const pageNum = parseInt(page);
@@ -1102,8 +1102,9 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 o.total,
                 o.discount,
                 o.fullTotal,
+                o.deliveryCharge,
                 m.salesAgent,
-                m.buildingType,
+                o.buildingType,
                 p.invNo AS InvNo,
                 p.reportStatus AS reportStatus,
                 p.paymentMethod AS paymentMethod,
@@ -1208,7 +1209,6 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1602,7 +1602,6 @@ exports.getReturnReason = async (orderId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1648,6 +1647,54 @@ exports.getHold = async (orderId) => {
     return { success: true, data: holdEvents };
   } catch (err) {
     console.error("Database error in getHold:", err);
+    throw err;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+exports.checkOrderPaymentStatus = async (orderId) => {
+  let connection;
+  try {
+    connection = await db.marketPlace.promise().getConnection();
+
+    const paymentCheckSql = `
+      SELECT 
+        o.id,
+        o.userId,
+        po.orderId,
+        po.isPaid,
+        po.amount,
+        mu.cusId
+      FROM market_place.processorders po
+      LEFT JOIN market_place.orders o ON o.id = po.orderId
+      LEFT JOIN market_place.marketplaceusers mu ON mu.id = o.userId
+      WHERE po.orderId = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await connection.query(paymentCheckSql, [orderId]);
+
+    if (!rows || rows.length === 0) {
+      return { success: true, data: { isPaid: 0, amount: 0, cusId: null } };
+    }
+
+    const row = rows[0];
+    const amount = Number(row.amount) || 0;
+    const isPaid = Number(row.isPaid) === 1 && amount > 0 ? 1 : 0;
+
+    return {
+      success: true,
+      data: {
+        isPaid,
+        amount,
+        cusId: row.cusId ?? null,
+      },
+    };
+  } catch (err) {
+    console.error("Database error in checkOrderPaymentStatus:", err);
     throw err;
   } finally {
     if (connection) {

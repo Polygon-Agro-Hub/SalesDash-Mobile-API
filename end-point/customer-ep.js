@@ -14,73 +14,12 @@ exports.customerData = async (req, res) => {
   try {
     const salesAgent = req.user.id;
 
-    const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(
-      customerData.phoneNumber,
-    );
-    if (phoneNumberValidation.error) {
-      console.log(
-        "Phone validation error:",
-        phoneNumberValidation.error.details[0].message,
-      );
-      return res
-        .status(400)
-        .json({ error: phoneNumberValidation.error.details[0].message });
-    }
-
-    if (!customerData.firstName || customerData.firstName.trim() === "") {
-      return res.status(400).json({ error: "First name is required" });
-    }
-    if (!customerData.lastName || customerData.lastName.trim() === "") {
-      return res.status(400).json({ error: "Last name is required" });
-    }
-
-    if (!customerData.buildingType) {
-      return res.status(400).json({ error: "Building type is required" });
-    }
-
-    if (!["House", "Apartment"].includes(customerData.buildingType)) {
-      return res.status(400).json({
-        error: "Invalid building type. Must be either 'House' or 'Apartment'",
-      });
-    }
-
-    if (customerData.buildingType === "House") {
-      const houseData = {
-        houseNo: customerData.houseNo,
-        streetName: customerData.streetName,
-        city: customerData.city,
-      };
-      const houseValidation = ValidationSchema.houseSchema.validate(houseData);
-      if (houseValidation.error) {
-        console.log(
-          "House validation error:",
-          houseValidation.error.details[0].message,
-        );
-        return res
-          .status(400)
-          .json({ error: houseValidation.error.details[0].message });
-      }
-    } else if (customerData.buildingType === "Apartment") {
-      const apartmentData = {
-        buildingNo: customerData.buildingNo,
-        buildingName: customerData.buildingName,
-        unitNo: customerData.unitNo,
-        floorNo: customerData.floorNo,
-        houseNo: customerData.houseNo,
-        streetName: customerData.streetName,
-        city: customerData.city,
-      };
-      const apartmentValidation =
-        ValidationSchema.apartmentSchema.validate(apartmentData);
-      if (apartmentValidation.error) {
-        console.log(
-          "Apartment validation error:",
-          apartmentValidation.error.details[0].message,
-        );
-        return res
-          .status(400)
-          .json({ error: apartmentValidation.error.details[0].message });
-      }
+    const { error, value } = ValidationSchema.createCustomerSchema.validate(customerData, {
+      abortEarly: true,
+    });
+    if (error) {
+      console.error("⚠️ Customer validation error:", error.details[0].message);
+      return res.status(400).json({ error: error.details[0].message });
     }
 
     // Add customer
@@ -94,19 +33,16 @@ exports.customerData = async (req, res) => {
   } catch (error) {
     console.error("Error while adding customer:", error);
 
-    // Handle specific database errors
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(400).json({
         error: "Customer already exists with this information",
       });
     }
 
-    // Handle validation errors
     if (error.message && error.message.includes("validation")) {
       return res.status(400).json({ error: error.message });
     }
 
-    // Generic error response
     res.status(500).json({
       error: "An error occurred while adding the customer",
       details: error.message,
@@ -174,66 +110,34 @@ exports.getCusDataExc = asyncHandler(async (req, res) => {
 exports.updateCustomerData = asyncHandler(async (req, res) => {
   const { cusId } = req.params;
 
-  let customerData;
-  let buildingData;
-
-  if (req.body.customerData) {
-    customerData = req.body.customerData;
-    buildingData = req.body.buildingData;
-  } else {
-    customerData = {
-      title: req.body.title,
-      firstName: req.body.firstName,
-      lastName: req.body.lastName,
-      phoneNumber: req.body.phoneNumber,
-      email: req.body.email,
-      buildingType: req.body.buildingType,
-      latitude: req.body.latitude,
-      longitude: req.body.longitude,
-    };
-
-    buildingData = req.body.buildingData;
-  }
+  const customerData = {
+    title: req.body.title,
+    firstName: req.body.firstName,
+    lastName: req.body.lastName,
+    phoneNumber: req.body.phoneNumber,
+    email: req.body.email,
+  };
 
   try {
-    // Validate the customer data exists
-    if (!customerData || !customerData.phoneNumber) {
+    // Validate using Joi schema
+    const { error, value } = ValidationSchema.updateCustomerSchema.validate(customerData, {
+      abortEarly: true,
+    });
+    if (error) {
+      const isPhoneError = error.details[0].path.includes("phoneNumber");
+      const isEmailError = error.details[0].path.includes("email");
       return res.status(400).json({
-        message: "Customer data is incomplete - phone number is required",
-        errors: { general: true },
+        message: error.details[0].message,
+        errors: {
+          phoneNumber: isPhoneError,
+          email: isEmailError,
+          general: !isPhoneError && !isEmailError,
+        },
       });
-    }
-
-    // Validate phone number
-    const phoneNumberValidation = ValidationSchema.phoneNumberSchema.validate(
-      customerData.phoneNumber,
-    );
-    if (phoneNumberValidation.error) {
-      return res.status(400).json({
-        message: phoneNumberValidation.error.details[0].message,
-        errors: { phoneNumber: true },
-      });
-    }
-
-    // Validate email only if provided
-    if (customerData.email && customerData.email.trim() !== "") {
-      const emailValidation = ValidationSchema.emailSchema.validate(
-        customerData.email,
-      );
-      if (emailValidation.error) {
-        return res.status(400).json({
-          message: emailValidation.error.details[0].message,
-          errors: { email: true },
-        });
-      }
     }
 
     // Update customer data through DAO
-    const result = await customerDAO.updateCustomerData(
-      cusId,
-      customerData,
-      buildingData,
-    );
+    const result = await customerDAO.updateCustomerData(cusId, customerData);
 
     // Send success response
     res.status(200).json({
@@ -243,7 +147,6 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error("Error while updating customer data:", error);
 
-    // Handle specific validation errors from DAO
     if (error.message === "Email already exists.") {
       return res.status(400).json({
         message: "Email already exists.",
@@ -265,7 +168,6 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
         message: "Customer not found",
       });
     } else {
-      // Generic server error
       return res.status(500).json({
         message: "Internal server error during update",
         error:
@@ -276,7 +178,11 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
 });
 
 exports.checkCustomer = (req, res) => {
-  const { phoneNumber, email, excludeId } = req.body;
+  const { error, value } = ValidationSchema.checkCustomerSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    return res.status(400).json({ message: error.details[0].message });
+  }
+  const { phoneNumber, email, excludeId } = value;
 
   customerDAO
     .findCustomerByPhoneOrEmail(phoneNumber, email, excludeId)
@@ -387,6 +293,37 @@ exports.addExcludeList = asyncHandler(async (req, res) => {
   }
 });
 
+exports.addPreList = asyncHandler(async (req, res) => {
+  try {
+    const { customerId, selectedCrops } = req.body;
+
+    if (!customerId || !Array.isArray(selectedCrops)) {
+      return res.status(400).json({
+        message:
+          "Invalid request. 'customerId' and 'selectedCrops' are required.",
+      });
+    }
+
+    const result = await customerDAO.addPreList(customerId, selectedCrops);
+
+    if (result) {
+      return res
+        .status(200)
+        .json({ message: "Exclude list updated successfully" });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Customer not found or no crops to update" });
+    }
+  } catch (err) {
+    console.error("Error in addExcludeList controller:", err);
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
+  }
+});
+
+
 exports.getCustomerExludelist = asyncHandler(async (req, res) => {
   try {
     const { customerId } = req.query;
@@ -405,6 +342,26 @@ exports.getCustomerExludelist = asyncHandler(async (req, res) => {
       .json({ message: "Failed to fetch crops", error: error.message });
   }
 });
+
+exports.getCustomerPreferlist = asyncHandler(async (req, res) => {
+  try {
+    const { customerId } = req.query;
+    const crops = await customerDAO.getCustomerPreferlist(customerId);
+    if (!crops || crops.length === 0) {
+      return res.status(404).json({ message: "No crops found" });
+    }
+    res.status(200).json({
+      message: "Crops fetched successfully",
+      data: crops,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching crops:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to fetch crops", error: error.message });
+  }
+});
+
 
 exports.deleteExcludeItem = asyncHandler(async (req, res) => {
   try {
@@ -429,6 +386,29 @@ exports.deleteExcludeItem = asyncHandler(async (req, res) => {
   }
 });
 
+exports.deletePreferItem = asyncHandler(async (req, res) => {
+  try {
+    const { preferId } = req.query;
+
+    if (!preferId) {
+      return res.status(400).json({ message: "excludeId is required" });
+    }
+
+    // Call the DAO to delete the item
+    const result = await customerDAO.deletePreferItem(preferId);
+
+    res.status(200).json({
+      message: "Item deleted successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("❌ Error deleting item:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to delete item", error: error.message });
+  }
+});
+
 exports.getCustomerDataLocation = asyncHandler(async (req, res) => {
   const { customerId } = req.params;
 
@@ -439,3 +419,95 @@ exports.getCustomerDataLocation = asyncHandler(async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+exports.checkDeliveredOrder = asyncHandler(async (req, res) => {
+  const { customerId } = req.params;
+  try {
+    const result = await customerDAO.checkDeliveredOrder(customerId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+exports.updateResidentialAddress = asyncHandler(async (req, res) => {
+  const { cusId } = req.params;
+  const { error, value } = ValidationSchema.updateResidentialAddressSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
+  try {
+    const result = await customerDAO.updateResidentialAddress(cusId, req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+exports.getAddressBook = asyncHandler(async (req, res) => {
+  const { customerId } = req.params;
+  try {
+    const result = await customerDAO.getAddressBook(customerId);
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+exports.getSavedAddress = asyncHandler(async (req, res) => {
+  const { addressId } = req.params;
+  const { type } = req.query;
+
+  if (!type || !['House', 'Apartment'].includes(type)) {
+    return res.status(400).json({ error: 'A valid type (House or Apartment) is required.' });
+  }
+
+  try {
+    const result = await customerDAO.getSavedAddress(addressId, type);
+    if (!result) {
+      return res.status(404).json({ error: 'Address not found.' });
+    }
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/customer/add-saved-address
+exports.addSavedAddress = asyncHandler(async (req, res) => {
+  const { error, value } = ValidationSchema.savedAddressSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    console.error("Validation error in addSavedAddress:", error.details[0].message);
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
+  try {
+    const result = await customerDAO.addSavedAddress(value);
+    res.status(201).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/customer/update-saved-address/:addressId
+exports.updateSavedAddress = asyncHandler(async (req, res) => {
+  const { addressId } = req.params;
+  const { error, value } = ValidationSchema.updateSavedAddressSchema.validate(req.body, { abortEarly: true });
+  if (error) {
+    console.error("Validation error in updateSavedAddress:", error.details[0].message);
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
+  try {
+    const result = await customerDAO.updateSavedAddress(addressId, value);
+    if (!result) {
+      return res.status(404).json({ error: 'Address not found.' });
+    }
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+

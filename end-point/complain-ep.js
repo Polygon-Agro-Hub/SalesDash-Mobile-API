@@ -10,8 +10,6 @@ exports.createComplain = asyncHandler(async (req, res) => {
 
     // Validate input using Joi
     const { value, error } = createComplain.validate(input);
-    console.log("value", value);
-    console.log("error", error);
     if (error) {
       return res.status(400).json({
         status: "error",

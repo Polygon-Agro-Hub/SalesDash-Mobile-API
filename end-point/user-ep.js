@@ -9,8 +9,8 @@ const asyncHandler = require("express-async-handler");
 // User Login
 exports.login = asyncHandler(async (req, res) => {
   const { error } = loginSchema.validate(req.body, { abortEarly: false });
-  console.log(error);
   if (error) {
+    console.error("⚠️ Login validation error:", error.message);
     return res.status(400).json({
       success: false,
       message: "Validation error",
