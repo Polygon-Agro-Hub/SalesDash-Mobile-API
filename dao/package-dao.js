@@ -152,11 +152,10 @@ exports.getAllCrops = async () => {
             mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
         FROM marketplaceitems mpi
         WHERE mpi.category = 'Retail'
+          AND mpi.isEnable = 1
         ORDER BY mpi.displayName ASC;
         `;
-
     const [results] = await db.marketPlace.promise().query(query);
-
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
