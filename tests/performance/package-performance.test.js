@@ -77,6 +77,24 @@ describe('Performance Tests - Package Endpoints', () => {
     });
   });
 
+  describe('validatePackageItems Performance', () => {
+    it('should handle item validation quickly (< 50ms)', async () => {
+      packageDao.checkDisabledItems.mockResolvedValue({ packageDisabled: false, disabledItems: [] });
+      req = mockRequest({ packageId: 1, itemIds: [10, 20] });
+
+      const { executionTime } = await measureExecutionTime(async () => {
+        await packageEp.validatePackageItems(req, res);
+      });
+
+      expect(executionTime).toBeLessThan(50);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        hasDisabled: false
+      }));
+    });
+  });
+
   describe('Stress Test - getAllPackages Concurrent Load', () => {
     it('should handle 50 concurrent getAllPackages requests efficiently', async () => {
       packageDao.getAllPackages.mockResolvedValue([{ id: 1, name: "Gold Package" }]);

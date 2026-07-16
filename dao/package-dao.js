@@ -261,3 +261,47 @@ exports.getChangeByValue = async (mpItemId) => {
     });
   });
 };
+
+exports.checkDisabledItems = async (packageId, itemIds) => {
+  const result = {
+    packageDisabled: false,
+    disabledItems: []
+  };
+
+  if (packageId) {
+    // 1. Check if package itself is disabled
+    const packageQuery = `SELECT status FROM marketplacepackages WHERE id = ?`;
+    const [packages] = await db.marketPlace.promise().query(packageQuery, [packageId]);
+    if (packages.length > 0 && packages[0].status !== "Enabled") {
+      result.packageDisabled = true;
+    }
+
+    // 2. Check if package items are disabled
+    const packageItemsQuery = `
+      SELECT mi.id, mi.displayName
+      FROM packagedetails pd
+      INNER JOIN marketplaceitems mi ON pd.productTypeId = mi.productTypeId
+      WHERE pd.packageId = ? AND mi.isEnable = 0
+    `;
+    const [disabledPkgItems] = await db.marketPlace.promise().query(packageItemsQuery, [packageId]);
+    if (disabledPkgItems.length > 0) {
+      result.disabledItems.push(...disabledPkgItems.map(item => ({ id: item.id, displayName: item.displayName })));
+    }
+  }
+
+  if (itemIds && itemIds.length > 0) {
+    const placeholders = itemIds.map(() => "?").join(",");
+    const itemsQuery = `
+      SELECT id, displayName
+      FROM marketplaceitems
+      WHERE id IN (${placeholders}) AND isEnable = 0
+    `;
+    const [disabledItems] = await db.marketPlace.promise().query(itemsQuery, itemIds);
+    if (disabledItems.length > 0) {
+      result.disabledItems.push(...disabledItems.map(item => ({ id: item.id, displayName: item.displayName })));
+    }
+  }
+
+  return result;
+};
+
