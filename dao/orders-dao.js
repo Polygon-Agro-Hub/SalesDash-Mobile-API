@@ -763,6 +763,7 @@ exports.getOrderById = async (orderId) => {
                 o.deliveryCharge,
                 o.fullTotal,
                 o.isPackage,
+                o.delivaryMethod,
                 c.title,
                 c.firstName,
                 c.lastName,
@@ -771,6 +772,10 @@ exports.getOrderById = async (orderId) => {
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
+                p.paymentMethod,
+                p.creditPaid,
+                p.moneyPaid,
+                p.isPaid,
                 oai.qty,
                 oai.productId,
                 oai.unit,
@@ -913,7 +918,6 @@ exports.getOrderById = async (orderId) => {
     }
 
     // Get product details for additional items if they exist
-    // Get product details for additional items if they exist
     let enhancedAdditionalItems = [];
     if (additionalItems.length > 0) {
       const productIds = additionalItems.map((item) => item.productId);
@@ -973,6 +977,7 @@ exports.getOrderById = async (orderId) => {
       deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
+      delivaryMethod: order.delivaryMethod,
       customerInfo: {
         title: order.title,
         firstName: order.firstName,
@@ -985,11 +990,14 @@ exports.getOrderById = async (orderId) => {
         invoiceNumber: order.invoiceNumber,
         status: order.status,
         reportStatus: order.reportStatus,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        creditPaid: order.creditPaid,
+        moneyPaid: order.moneyPaid,
       },
       additionalItems: enhancedAdditionalItems,
     };
 
-    // Add package information if it's a package order
     if (packageInfo) {
       result.packageInfo = packageInfo;
     }
