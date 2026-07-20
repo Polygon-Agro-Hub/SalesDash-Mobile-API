@@ -768,7 +768,6 @@ exports.getOrderById = async (orderId) => {
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
-                o.buildingType,
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
@@ -803,10 +802,9 @@ exports.getOrderById = async (orderId) => {
     }
 
     const order = orderResults[0];
-    const customerId = order.userId;
-    const buildingType = order.buildingType;
 
     let formattedAddress = "";
+    let buildingType = "";
 
     // Filter out null/undefined items and create additional items array
     const additionalItems = orderResults
@@ -819,55 +817,36 @@ exports.getOrderById = async (orderId) => {
         discount: parseFloat(item.itemDiscount) || 0,
       }));
 
-    // Handle address based on building type
-    if (buildingType === "House") {
-      const addressSql = `
-                SELECT
-                    houseNo,
-                    streetName,
-                    city
-                FROM house
-                WHERE customerId = ?
-            `;
+    // Determine building type from orderhouse / orderapartment tables (by orderId)
+    const [houseRows] = await connection.execute(
+      `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
+      [orderId]
+    );
 
-      const [addressResults] = await connection.execute(addressSql, [
-        customerId,
-      ]);
+    if (houseRows.length > 0) {
+      buildingType = "House";
+      const addr = houseRows[0];
+      formattedAddress =
+        `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
+      formattedAddress = formattedAddress.replace(/,\s*,/g, ",").replace(/\s+/g, " ").replace(/,\s*$/, "").trim();
+    } else {
+      const [apartmentRows] = await connection.execute(
+        `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
+        [orderId]
+      );
 
-      if (addressResults[0]) {
-        const addr = addressResults[0];
-        formattedAddress =
-          `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-        formattedAddress = formattedAddress.replace(/\s+/g, " ").trim();
-      }
-    } else if (buildingType === "Apartment") {
-      const addressSql = `
-                SELECT
-                    buildingNo,
-                    buildingName,
-                    unitNo,
-                    floorNo,
-                    houseNo,
-                    streetName,
-                    city
-                FROM apartment
-                WHERE customerId = ?
-            `;
-
-      const [addressResults] = await connection.execute(addressSql, [
-        customerId,
-      ]);
-
-      if (addressResults[0]) {
-        const addr = addressResults[0];
+      if (apartmentRows.length > 0) {
+        buildingType = "Apartment";
+        const addr = apartmentRows[0];
         formattedAddress =
           `${addr.buildingName || ""}, ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
         formattedAddress = formattedAddress
           .replace(/\s+/g, " ")
-          .replace(/, Unit ,/, ",")
-          .replace(/, Floor ,/, ",")
+          .replace(/, Unit ,/g, ",")
+          .replace(/, Floor ,/g, ",")
+          .replace(/,\s*,/g, ",")
+          .replace(/,\s*$/, "")
           .trim();
-        formattedAddress = formattedAddress.replace(/,\s*$/, "");
       }
     }
 
@@ -983,7 +962,7 @@ exports.getOrderById = async (orderId) => {
         firstName: order.firstName,
         lastName: order.lastName,
         phoneNumber: order.phoneNumber,
-        buildingType: order.buildingType,
+        buildingType: buildingType,
       },
       fullAddress: formattedAddress,
       orderStatus: {
@@ -1124,6 +1103,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 m.salesAgent,
                 o.buildingType,
                 p.invNo AS InvNo,
+                p.isPaid,
                 p.reportStatus AS reportStatus,
                 p.paymentMethod AS paymentMethod,
                 p.status As status
