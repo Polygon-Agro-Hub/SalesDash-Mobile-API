@@ -233,3 +233,23 @@ exports.getChangeByValue = asyncHandler(async (req, res) => {
       });
   }
 });
+
+exports.validatePackageItems = asyncHandler(async (req, res) => {
+  const { packageId, itemIds } = req.body;
+  try {
+    const result = await packageDAO.checkDisabledItems(packageId, itemIds);
+    const hasDisabled = result.packageDisabled || result.disabledItems.length > 0;
+    res.status(200).json({
+      success: true,
+      hasDisabled,
+      data: result
+    });
+  } catch (error) {
+    console.error("Error validating package items:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error"
+    });
+  }
+});
+

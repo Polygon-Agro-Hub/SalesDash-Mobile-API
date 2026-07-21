@@ -28,7 +28,6 @@ exports.addCustomer = (customerData, salesAgent) => {
         phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
       }
 
-      // Column name in DB is `nearesCity`, but the frontend sends it as `city`.
       const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nearesCity, salesAgent, isDashUser)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
 
@@ -51,11 +50,17 @@ exports.addCustomer = (customerData, salesAgent) => {
             return reject(err);
           }
 
-          const customerId = customerResult.insertId;
+          const insertId = customerResult.insertId;
 
-          insertBuildingData(customerId, customerData)
+          insertBuildingData(insertId, customerData)
             .then(() => {
-              resolve({ success: true, customerId });
+              resolve({
+                success: true,
+
+                customerId: newCustomerId,
+
+                id: insertId,
+              });
             })
             .catch((buildingError) => {
               reject(buildingError);
@@ -128,10 +133,8 @@ const insertBuildingData = async (customerId, customerData) => {
 
 exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
   return new Promise((resolve, reject) => {
-    // Calculate offset for pagination
     const offset = (page - 1) * limit;
 
-    // First, get the total count
     const countQuery = `
             SELECT COUNT(DISTINCT c.id) as totalCount
             FROM marketplaceusers c
@@ -390,7 +393,9 @@ exports.updateCustomerData = async (cusId, customerData) => {
         throw new Error("Phone number already exists.");
       }
     } else {
-      console.log("ℹ️ Phone number not changed, skipping phone duplicate check");
+      console.log(
+        "ℹ️ Phone number not changed, skipping phone duplicate check",
+      );
     }
 
     // Handle email validation and duplicate check
@@ -1025,10 +1030,130 @@ exports.addSavedAddress = async ({
   try {
     await conn.beginTransaction();
 
+    // ── 1. Check for duplicate saveAs across both tables for this customer ──
+    const [[hDup]] = await conn.query(
+      `SELECT id FROM house WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) LIMIT 1`,
+      [customerId, saveAs],
+    );
+    const [[aDup]] = await conn.query(
+      `SELECT id FROM apartment WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) LIMIT 1`,
+      [customerId, saveAs],
+    );
+    if (hDup || aDup) {
+      await conn.rollback();
+      const err = new Error(
+        `An address named "${saveAs}" already exists for this customer.`,
+      );
+      err.code = "DUPLICATE_SAVE_AS";
+      throw err;
+    }
+
+    // ── 2. Check for duplicate physical address location ──
+    if (buildingType === "Apartment") {
+      const [[locDup]] = await conn.query(
+        `SELECT id FROM apartment
+         WHERE customerId = ?
+           AND LOWER(TRIM(buildingNo))   = LOWER(TRIM(?))
+           AND LOWER(TRIM(buildingName)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(unitNo))       = LOWER(TRIM(?))
+           AND LOWER(TRIM(floorNo))      = LOWER(TRIM(?))
+           AND LOWER(TRIM(houseNo))      = LOWER(TRIM(?))
+           AND LOWER(TRIM(streetName))   = LOWER(TRIM(?))
+           AND LOWER(TRIM(city))         = LOWER(TRIM(?))
+         LIMIT 1`,
+        [
+          customerId,
+          buildingNo,
+          buildingName,
+          unitNo,
+          floorNo,
+          houseNo,
+          streetName,
+          nearestCity || "",
+        ],
+      );
+      if (locDup) {
+        await conn.rollback();
+        const err = new Error(
+          "This apartment address already exists. Please use a different address.",
+        );
+        err.code = "DUPLICATE_ADDRESS";
+        throw err;
+      }
+    } else {
+      const [[locDup]] = await conn.query(
+        `SELECT id FROM house
+         WHERE customerId = ?
+           AND LOWER(TRIM(houseNo))    = LOWER(TRIM(?))
+           AND LOWER(TRIM(streetName)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(city))       = LOWER(TRIM(?))
+         LIMIT 1`,
+        [customerId, houseNo, streetName, nearestCity || ""],
+      );
+      if (locDup) {
+        await conn.rollback();
+        const err = new Error(
+          "This house address already exists. Please use a different address.",
+        );
+        err.code = "DUPLICATE_ADDRESS";
+        throw err;
+      }
+    }
+
     const phone1Parsed = parsePhone(billingPhone1);
     const phone2Parsed = billingPhone2
       ? parsePhone(billingPhone2)
       : { code: null, number: null };
+
+    // ── 3. Check for duplicate phone number across both tables for this customer ──
+    const targetPhone1 = phone1Parsed.number;
+    const targetPhone2 = phone2Parsed.number;
+
+    if (targetPhone1) {
+      const [[hPhoneDup]] = await conn.query(
+        `SELECT id FROM house 
+         WHERE customerId = ? 
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
+        [customerId, targetPhone1, targetPhone1],
+      );
+      const [[aPhoneDup]] = await conn.query(
+        `SELECT id FROM apartment 
+         WHERE customerId = ? 
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
+        [customerId, targetPhone1, targetPhone1],
+      );
+      if (hPhoneDup || aPhoneDup) {
+        await conn.rollback();
+        const err = new Error(
+          "Phone Number - 1 is already saved in another address.",
+        );
+        err.code = "DUPLICATE_PHONE";
+        throw err;
+      }
+    }
+
+    if (targetPhone2) {
+      const [[hPhone2Dup]] = await conn.query(
+        `SELECT id FROM house 
+         WHERE customerId = ? 
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
+        [customerId, targetPhone2, targetPhone2],
+      );
+      const [[aPhone2Dup]] = await conn.query(
+        `SELECT id FROM apartment 
+         WHERE customerId = ? 
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
+        [customerId, targetPhone2, targetPhone2],
+      );
+      if (hPhone2Dup || aPhone2Dup) {
+        await conn.rollback();
+        const err = new Error(
+          "Phone Number - 2 is already saved in another address.",
+        );
+        err.code = "DUPLICATE_PHONE";
+        throw err;
+      }
+    }
 
     let insertId;
     if (buildingType === "Apartment") {
@@ -1126,76 +1251,283 @@ exports.updateSavedAddress = async (
   try {
     await conn.beginTransaction();
 
+    // First, find the original table and record to check if type changed
+    let originalType = null;
+    let resolvedCustomerId = customerId;
+
+    const [[houseRow]] = await conn.query(
+      `SELECT customerId FROM house WHERE id = ?`,
+      [addressId],
+    );
+    if (houseRow) {
+      originalType = "House";
+      resolvedCustomerId = resolvedCustomerId || houseRow.customerId;
+    } else {
+      const [[aptRow]] = await conn.query(
+        `SELECT customerId FROM apartment WHERE id = ?`,
+        [addressId],
+      );
+      if (aptRow) {
+        originalType = "Apartment";
+        resolvedCustomerId = resolvedCustomerId || aptRow.customerId;
+      }
+    }
+
+    if (!originalType) {
+      await conn.rollback();
+      return null;
+    }
+
     const phone1Parsed = parsePhone(billingPhone1);
     const phone2Parsed = billingPhone2
       ? parsePhone(billingPhone2)
       : { code: null, number: null };
 
-    let result;
+    // ── 1. Check duplicate saveAs (excluding current record by id) ──
+    if (resolvedCustomerId && saveAs) {
+      const [[hSaveDup]] = await conn.query(
+        `SELECT id FROM house WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) AND id != ? LIMIT 1`,
+        [resolvedCustomerId, saveAs, addressId],
+      );
+      const [[aSaveDup]] = await conn.query(
+        `SELECT id FROM apartment WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) AND id != ? LIMIT 1`,
+        [resolvedCustomerId, saveAs, addressId],
+      );
+      if (hSaveDup || aSaveDup) {
+        await conn.rollback();
+        const err = new Error(
+          `An address named "${saveAs}" already exists for this customer.`,
+        );
+        err.code = "DUPLICATE_SAVE_AS";
+        throw err;
+      }
+    }
+
+    // ── 2. Check duplicate physical address location (excluding current record by id) ──
     if (type === "Apartment") {
-      [result] = await conn.query(
-        `UPDATE apartment SET
-           saveAs = ?, billingTitle = ?, billingName = ?, billingPhoneCode1 = ?, billingPhone1 = ?, billingPhoneCode2 = ?, billingPhone2 = ?,
-           buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?,
-           houseNo = ?, streetName = ?, city = ?, latitude = ?, longitude = ?
-         WHERE id = ?`,
+      const [[locDup]] = await conn.query(
+        `SELECT id FROM apartment
+         WHERE customerId = ?
+           AND LOWER(TRIM(buildingNo))   = LOWER(TRIM(?))
+           AND LOWER(TRIM(buildingName)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(unitNo))       = LOWER(TRIM(?))
+           AND LOWER(TRIM(floorNo))      = LOWER(TRIM(?))
+           AND LOWER(TRIM(houseNo))      = LOWER(TRIM(?))
+           AND LOWER(TRIM(streetName))   = LOWER(TRIM(?))
+           AND LOWER(TRIM(city))         = LOWER(TRIM(?))
+           AND id != ?
+         LIMIT 1`,
         [
-          saveAs,
-          billingTitle,
-          billingName,
-          phone1Parsed.code,
-          phone1Parsed.number,
-          phone2Parsed.code,
-          phone2Parsed.number,
+          resolvedCustomerId,
           buildingNo,
           buildingName,
           unitNo,
           floorNo,
           houseNo,
           streetName,
-          nearestCity || null,
-          latitude || null,
-          longitude || null,
+          nearestCity || "",
           addressId,
         ],
       );
+      if (locDup) {
+        await conn.rollback();
+        const err = new Error(
+          "This apartment address already exists. Please use a different address.",
+        );
+        err.code = "DUPLICATE_ADDRESS";
+        throw err;
+      }
     } else {
-      [result] = await conn.query(
-        `UPDATE house SET
-           saveAs = ?, billingTitle = ?, billingName = ?, billingPhoneCode1 = ?, billingPhone1 = ?, billingPhoneCode2 = ?, billingPhone2 = ?,
-           houseNo = ?, streetName = ?, city = ?, latitude = ?, longitude = ?
-         WHERE id = ?`,
-        [
-          saveAs,
-          billingTitle,
-          billingName,
-          phone1Parsed.code,
-          phone1Parsed.number,
-          phone2Parsed.code,
-          phone2Parsed.number,
-          houseNo,
-          streetName,
-          nearestCity || null,
-          latitude || null,
-          longitude || null,
-          addressId,
-        ],
+      const [[locDup]] = await conn.query(
+        `SELECT id FROM house
+         WHERE customerId = ?
+           AND LOWER(TRIM(houseNo))    = LOWER(TRIM(?))
+           AND LOWER(TRIM(streetName)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(city))       = LOWER(TRIM(?))
+           AND id != ?
+         LIMIT 1`,
+        [resolvedCustomerId, houseNo, streetName, nearestCity || "", addressId],
       );
+      if (locDup) {
+        await conn.rollback();
+        const err = new Error(
+          "This house address already exists. Please use a different address.",
+        );
+        err.code = "DUPLICATE_ADDRESS";
+        throw err;
+      }
     }
 
-    if (result.affectedRows === 0) {
-      await conn.rollback();
-      return null;
+    // ── 3. Check duplicate phone number (excluding current record by id — works for both same-type and type-change edits) ──
+    const targetPhone1 = phone1Parsed.number;
+    const targetPhone2 = phone2Parsed.number;
+
+    if (resolvedCustomerId && targetPhone1) {
+      const [[hPhoneDup]] = await conn.query(
+        `SELECT id FROM house
+         WHERE customerId = ?
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
+           AND id != ?
+         LIMIT 1`,
+        [resolvedCustomerId, targetPhone1, targetPhone1, addressId],
+      );
+      const [[aPhoneDup]] = await conn.query(
+        `SELECT id FROM apartment
+         WHERE customerId = ?
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
+           AND id != ?
+         LIMIT 1`,
+        [resolvedCustomerId, targetPhone1, targetPhone1, addressId],
+      );
+      if (hPhoneDup || aPhoneDup) {
+        await conn.rollback();
+        const err = new Error(
+          "Phone Number - 1 is already saved in another address.",
+        );
+        err.code = "DUPLICATE_PHONE";
+        throw err;
+      }
     }
 
-    // Resolve customerId if the caller didn't pass it (fetch from the row we just touched)
-    let resolvedCustomerId = customerId;
-    if (!resolvedCustomerId) {
-      const [rows] = await conn.query(
-        `SELECT customerId FROM ${table} WHERE id = ?`,
-        [addressId],
+    if (resolvedCustomerId && targetPhone2) {
+      const [[hPhone2Dup]] = await conn.query(
+        `SELECT id FROM house
+         WHERE customerId = ?
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
+           AND id != ?
+         LIMIT 1`,
+        [resolvedCustomerId, targetPhone2, targetPhone2, addressId],
       );
-      resolvedCustomerId = rows[0]?.customerId;
+      const [[aPhone2Dup]] = await conn.query(
+        `SELECT id FROM apartment
+         WHERE customerId = ?
+           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
+           AND id != ?
+         LIMIT 1`,
+        [resolvedCustomerId, targetPhone2, targetPhone2, addressId],
+      );
+      if (hPhone2Dup || aPhone2Dup) {
+        await conn.rollback();
+        const err = new Error(
+          "Phone Number - 2 is already saved in another address.",
+        );
+        err.code = "DUPLICATE_PHONE";
+        throw err;
+      }
+    }
+
+    let finalAddressId = addressId;
+
+    if (originalType !== type) {
+      // Delete old address and insert into the new table
+      const originalTable =
+        originalType === "Apartment" ? "apartment" : "house";
+      await conn.query(`DELETE FROM ${originalTable} WHERE id = ?`, [
+        addressId,
+      ]);
+
+      if (type === "Apartment") {
+        const [insertResult] = await conn.query(
+          `INSERT INTO apartment
+            (customerId, saveAs, billingTitle, billingName, billingPhoneCode1, billingPhone1, billingPhoneCode2, billingPhone2,
+             buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city, latitude, longitude)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            resolvedCustomerId,
+            saveAs,
+            billingTitle,
+            billingName,
+            phone1Parsed.code,
+            phone1Parsed.number,
+            phone2Parsed.code,
+            phone2Parsed.number,
+            buildingNo,
+            buildingName,
+            unitNo,
+            floorNo,
+            houseNo,
+            streetName,
+            nearestCity || null,
+            latitude !== undefined && latitude !== null ? latitude : null,
+            longitude !== undefined && longitude !== null ? longitude : null,
+          ],
+        );
+        finalAddressId = insertResult.insertId;
+      } else {
+        const [insertResult] = await conn.query(
+          `INSERT INTO house
+            (customerId, saveAs, billingTitle, billingName, billingPhoneCode1, billingPhone1, billingPhoneCode2, billingPhone2,
+             houseNo, streetName, city, latitude, longitude)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            resolvedCustomerId,
+            saveAs,
+            billingTitle,
+            billingName,
+            phone1Parsed.code,
+            phone1Parsed.number,
+            phone2Parsed.code,
+            phone2Parsed.number,
+            houseNo,
+            streetName,
+            nearestCity || null,
+            latitude !== undefined && latitude !== null ? latitude : null,
+            longitude !== undefined && longitude !== null ? longitude : null,
+          ],
+        );
+        finalAddressId = insertResult.insertId;
+      }
+    } else {
+      if (type === "Apartment") {
+        await conn.query(
+          `UPDATE apartment SET
+             saveAs = ?, billingTitle = ?, billingName = ?, billingPhoneCode1 = ?, billingPhone1 = ?, billingPhoneCode2 = ?, billingPhone2 = ?,
+             buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?,
+             houseNo = ?, streetName = ?, city = ?, latitude = ?, longitude = ?
+           WHERE id = ?`,
+          [
+            saveAs,
+            billingTitle,
+            billingName,
+            phone1Parsed.code,
+            phone1Parsed.number,
+            phone2Parsed.code,
+            phone2Parsed.number,
+            buildingNo,
+            buildingName,
+            unitNo,
+            floorNo,
+            houseNo,
+            streetName,
+            nearestCity || null,
+            latitude !== undefined && latitude !== null ? latitude : null,
+            longitude !== undefined && longitude !== null ? longitude : null,
+            addressId,
+          ],
+        );
+      } else {
+        await conn.query(
+          `UPDATE house SET
+             saveAs = ?, billingTitle = ?, billingName = ?, billingPhoneCode1 = ?, billingPhone1 = ?, billingPhoneCode2 = ?, billingPhone2 = ?,
+             houseNo = ?, streetName = ?, city = ?, latitude = ?, longitude = ?
+           WHERE id = ?`,
+          [
+            saveAs,
+            billingTitle,
+            billingName,
+            phone1Parsed.code,
+            phone1Parsed.number,
+            phone2Parsed.code,
+            phone2Parsed.number,
+            houseNo,
+            streetName,
+            nearestCity || null,
+            latitude !== undefined && latitude !== null ? latitude : null,
+            longitude !== undefined && longitude !== null ? longitude : null,
+            addressId,
+          ],
+        );
+      }
     }
 
     if (resolvedCustomerId) {
@@ -1206,7 +1538,12 @@ exports.updateSavedAddress = async (
     }
 
     await conn.commit();
-    return { id: addressId, type, customerId: resolvedCustomerId, nearestCity };
+    return {
+      id: finalAddressId,
+      type,
+      customerId: resolvedCustomerId,
+      nearestCity,
+    };
   } catch (error) {
     await conn.rollback();
     throw error;

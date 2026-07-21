@@ -135,19 +135,19 @@ function getBuildingTypeInt(buildingType) {
   const buildingTypeMapping = {
     house: 1,
     House: 1,
-    "1": 1,
+    1: 1,
     1: 1,
     apartment: 2,
     Apartment: 2,
-    "2": 2,
+    2: 2,
     2: 2,
     condo: 3,
     Condo: 3,
-    "3": 3,
+    3: 3,
     3: 3,
     office: 4,
     Office: 4,
-    "4": 4,
+    4: 4,
     4: 4,
   };
   return buildingTypeMapping[buildingType] || 1;
@@ -259,7 +259,8 @@ async function insertMainOrder(
     return digits.slice(-9);
   };
 
-  const orderTitle = orderData.deliveryAddress?.billingTitle || userDetails.title;
+  const orderTitle =
+    orderData.deliveryAddress?.billingTitle || userDetails.title;
   const orderFullName = orderData.deliveryAddress?.billingName
     ? orderData.deliveryAddress.billingName.trim()
     : `${userDetails.firstName} ${userDetails.lastName}`.trim();
@@ -272,21 +273,26 @@ async function insertMainOrder(
 
   // Optional second phone
   const orderPhonecode2 =
-    (orderData.deliveryAddress?.billingPhone2 || orderData.phone2)
-      ? "+94"
-      : null;
+    orderData.deliveryAddress?.billingPhone2 || orderData.phone2 ? "+94" : null;
   const orderPhone2 = normalizePhone(
     orderData.deliveryAddress?.billingPhone2 || orderData.phone2 || null,
   );
 
   // Get longitude and latitude from userDetails / deliveryAddress
-  const longitude = orderData.deliveryAddress?.longitude || userDetails.longitude || null;
-  const latitude = orderData.deliveryAddress?.latitude || userDetails.latitude || null;
+  const longitude =
+    orderData.deliveryAddress?.longitude || userDetails.longitude || null;
+  const latitude =
+    orderData.deliveryAddress?.latitude || userDetails.latitude || null;
 
   // Use House or Apartment for buildingType in orders table
   const rawBuildingType = orderData.deliveryAddress?.type || "House";
   const buildingTypeIntForOrder = getBuildingTypeInt(rawBuildingType);
-  const buildingTypeForOrder = (buildingTypeIntForOrder === 2 || buildingTypeIntForOrder === 3 || buildingTypeIntForOrder === 4) ? "Apartment" : "House";
+  const buildingTypeForOrder =
+    buildingTypeIntForOrder === 2 ||
+      buildingTypeIntForOrder === 3 ||
+      buildingTypeIntForOrder === 4
+      ? "Apartment"
+      : "House";
 
   // Format date if needed
   let formattedDate = sheduleDate;
@@ -352,7 +358,6 @@ async function insertMainOrder(
       isFinalizeImdt ? 1 : 0,
     ],
   );
-
 
   return result.insertId;
 }
@@ -426,7 +431,6 @@ async function insertProcessOrder(connection, orderId, orderData) {
         ? "Card"
         : "Cash";
 
-
     const isCardPayment = paymentMethodValue === "Card";
     const isPaidValue = 0;
     const amountValue = 0.0;
@@ -434,17 +438,19 @@ async function insertProcessOrder(connection, orderId, orderData) {
     // Insert process order record WITH QR CODE
     const [result] = await connection.query(
       `INSERT INTO processorders (
-              orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, qrCode, createdAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         orderId,
         invNo,
         orderData.transactionId || "",
         paymentMethodValue,
-        isPaidValue,  // 1 for Card, 0 for Cash
-        amountValue,  // fullTotal for Card, 0.0 for Cash
-        "Ordered", // status
-        qrCodeDataURL, // QR code as base64 data URL
+        isPaidValue,
+        amountValue,
+        0.0,
+        0.0,
+        "Ordered",
+        qrCodeDataURL,
       ],
     );
 
@@ -528,7 +534,7 @@ async function insertOrderPackage(connection, processOrderId, orderData) {
 // Helper function to process regular order items (isPackage = 0)
 async function processRegularOrderItems(connection, orderId, orderData) {
   if (!orderData.items || orderData.items.length === 0) {
-    throw new Error("Items are required for regular orders (isPackage = 0)");
+    return;
   }
 
   await insertAdditionalItems(connection, orderId, orderData.items);
@@ -737,7 +743,6 @@ exports.getDeliveredOrdersTotal = async (userId) => {
   }
 };
 
-
 exports.getOrderById = async (orderId) => {
   let connection;
 
@@ -758,14 +763,18 @@ exports.getOrderById = async (orderId) => {
                 o.deliveryCharge,
                 o.fullTotal,
                 o.isPackage,
+                o.delivaryMethod,
                 c.title,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
-                o.buildingType,
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
+                p.paymentMethod,
+                p.creditPaid,
+                p.moneyPaid,
+                p.isPaid,
                 oai.qty,
                 oai.productId,
                 oai.unit,
@@ -793,10 +802,9 @@ exports.getOrderById = async (orderId) => {
     }
 
     const order = orderResults[0];
-    const customerId = order.userId;
-    const buildingType = order.buildingType;
 
     let formattedAddress = "";
+    let buildingType = "";
 
     // Filter out null/undefined items and create additional items array
     const additionalItems = orderResults
@@ -809,55 +817,36 @@ exports.getOrderById = async (orderId) => {
         discount: parseFloat(item.itemDiscount) || 0,
       }));
 
-    // Handle address based on building type
-    if (buildingType === "House") {
-      const addressSql = `
-                SELECT
-                    houseNo,
-                    streetName,
-                    city
-                FROM house
-                WHERE customerId = ?
-            `;
+    // Determine building type from orderhouse / orderapartment tables (by orderId)
+    const [houseRows] = await connection.execute(
+      `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
+      [orderId]
+    );
 
-      const [addressResults] = await connection.execute(addressSql, [
-        customerId,
-      ]);
+    if (houseRows.length > 0) {
+      buildingType = "House";
+      const addr = houseRows[0];
+      formattedAddress =
+        `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
+      formattedAddress = formattedAddress.replace(/,\s*,/g, ",").replace(/\s+/g, " ").replace(/,\s*$/, "").trim();
+    } else {
+      const [apartmentRows] = await connection.execute(
+        `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
+        [orderId]
+      );
 
-      if (addressResults[0]) {
-        const addr = addressResults[0];
-        formattedAddress =
-          `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-        formattedAddress = formattedAddress.replace(/\s+/g, " ").trim();
-      }
-    } else if (buildingType === "Apartment") {
-      const addressSql = `
-                SELECT
-                    buildingNo,
-                    buildingName,
-                    unitNo,
-                    floorNo,
-                    houseNo,
-                    streetName,
-                    city
-                FROM apartment
-                WHERE customerId = ?
-            `;
-
-      const [addressResults] = await connection.execute(addressSql, [
-        customerId,
-      ]);
-
-      if (addressResults[0]) {
-        const addr = addressResults[0];
+      if (apartmentRows.length > 0) {
+        buildingType = "Apartment";
+        const addr = apartmentRows[0];
         formattedAddress =
           `${addr.buildingName || ""}, ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
         formattedAddress = formattedAddress
           .replace(/\s+/g, " ")
-          .replace(/, Unit ,/, ",")
-          .replace(/, Floor ,/, ",")
+          .replace(/, Unit ,/g, ",")
+          .replace(/, Floor ,/g, ",")
+          .replace(/,\s*,/g, ",")
+          .replace(/,\s*$/, "")
           .trim();
-        formattedAddress = formattedAddress.replace(/,\s*$/, "");
       }
     }
 
@@ -907,7 +896,6 @@ exports.getOrderById = async (orderId) => {
       }
     }
 
-    // Get product details for additional items if they exist
     // Get product details for additional items if they exist
     let enhancedAdditionalItems = [];
     if (additionalItems.length > 0) {
@@ -968,23 +956,27 @@ exports.getOrderById = async (orderId) => {
       deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
+      delivaryMethod: order.delivaryMethod,
       customerInfo: {
         title: order.title,
         firstName: order.firstName,
         lastName: order.lastName,
         phoneNumber: order.phoneNumber,
-        buildingType: order.buildingType,
+        buildingType: buildingType,
       },
       fullAddress: formattedAddress,
       orderStatus: {
         invoiceNumber: order.invoiceNumber,
         status: order.status,
         reportStatus: order.reportStatus,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        creditPaid: order.creditPaid,
+        moneyPaid: order.moneyPaid,
       },
       additionalItems: enhancedAdditionalItems,
     };
 
-    // Add package information if it's a package order
     if (packageInfo) {
       result.packageInfo = packageInfo;
     }
@@ -1001,7 +993,12 @@ exports.getOrderById = async (orderId) => {
   }
 };
 
-exports.getOrderByCustomerId = (customerId, page = 1, limit = 5, status = null) => {
+exports.getOrderByCustomerId = (
+  customerId,
+  page = 1,
+  limit = 5,
+  status = null,
+) => {
   return new Promise((resolve, reject) => {
     const offset = (page - 1) * limit;
 
@@ -1106,6 +1103,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 m.salesAgent,
                 o.buildingType,
                 p.invNo AS InvNo,
+                p.isPaid,
                 p.reportStatus AS reportStatus,
                 p.paymentMethod AS paymentMethod,
                 p.status As status
@@ -1629,7 +1627,6 @@ exports.getHold = async (orderId) => {
     `;
 
     const [rows] = await connection.query(holdCheckSql, [orderId]);
-
 
     if (!rows || rows.length === 0) {
       return { success: true, data: [] };

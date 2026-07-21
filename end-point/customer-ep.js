@@ -14,20 +14,23 @@ exports.customerData = async (req, res) => {
   try {
     const salesAgent = req.user.id;
 
-    const { error, value } = ValidationSchema.createCustomerSchema.validate(customerData, {
-      abortEarly: true,
-    });
+    const { error, value } = ValidationSchema.createCustomerSchema.validate(
+      customerData,
+      {
+        abortEarly: true,
+      },
+    );
     if (error) {
       console.error("⚠️ Customer validation error:", error.details[0].message);
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    // Add customer
     const result = await customerDAO.addCustomer(customerData, salesAgent);
 
     res.status(200).json({
       status: "success",
       message: "Customer added successfully",
+      id: result.id,
       customerId: result.customerId,
     });
   } catch (error) {
@@ -49,7 +52,6 @@ exports.customerData = async (req, res) => {
     });
   }
 };
-
 exports.getCustomers = asyncHandler(async (req, res) => {
   try {
     const salesAgentId = req.user.id;
@@ -120,9 +122,12 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
 
   try {
     // Validate using Joi schema
-    const { error, value } = ValidationSchema.updateCustomerSchema.validate(customerData, {
-      abortEarly: true,
-    });
+    const { error, value } = ValidationSchema.updateCustomerSchema.validate(
+      customerData,
+      {
+        abortEarly: true,
+      },
+    );
     if (error) {
       const isPhoneError = error.details[0].path.includes("phoneNumber");
       const isEmailError = error.details[0].path.includes("email");
@@ -178,7 +183,10 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
 });
 
 exports.checkCustomer = (req, res) => {
-  const { error, value } = ValidationSchema.checkCustomerSchema.validate(req.body, { abortEarly: true });
+  const { error, value } = ValidationSchema.checkCustomerSchema.validate(
+    req.body,
+    { abortEarly: true },
+  );
   if (error) {
     return res.status(400).json({ message: error.details[0].message });
   }
@@ -323,7 +331,6 @@ exports.addPreList = asyncHandler(async (req, res) => {
   }
 });
 
-
 exports.getCustomerExludelist = asyncHandler(async (req, res) => {
   try {
     const { customerId } = req.query;
@@ -361,7 +368,6 @@ exports.getCustomerPreferlist = asyncHandler(async (req, res) => {
       .json({ message: "Failed to fetch crops", error: error.message });
   }
 });
-
 
 exports.deleteExcludeItem = asyncHandler(async (req, res) => {
   try {
@@ -420,7 +426,6 @@ exports.getCustomerDataLocation = asyncHandler(async (req, res) => {
   }
 });
 
-
 exports.checkDeliveredOrder = asyncHandler(async (req, res) => {
   const { customerId } = req.params;
   try {
@@ -433,7 +438,10 @@ exports.checkDeliveredOrder = asyncHandler(async (req, res) => {
 
 exports.updateResidentialAddress = asyncHandler(async (req, res) => {
   const { cusId } = req.params;
-  const { error, value } = ValidationSchema.updateResidentialAddressSchema.validate(req.body, { abortEarly: true });
+  const { error, value } =
+    ValidationSchema.updateResidentialAddressSchema.validate(req.body, {
+      abortEarly: true,
+    });
   if (error) {
     return res.status(400).json({ error: error.details[0].message });
   }
@@ -460,14 +468,16 @@ exports.getSavedAddress = asyncHandler(async (req, res) => {
   const { addressId } = req.params;
   const { type } = req.query;
 
-  if (!type || !['House', 'Apartment'].includes(type)) {
-    return res.status(400).json({ error: 'A valid type (House or Apartment) is required.' });
+  if (!type || !["House", "Apartment"].includes(type)) {
+    return res
+      .status(400)
+      .json({ error: "A valid type (House or Apartment) is required." });
   }
 
   try {
     const result = await customerDAO.getSavedAddress(addressId, type);
     if (!result) {
-      return res.status(404).json({ error: 'Address not found.' });
+      return res.status(404).json({ error: "Address not found." });
     }
     res.status(200).json({ data: result });
   } catch (error) {
@@ -475,11 +485,16 @@ exports.getSavedAddress = asyncHandler(async (req, res) => {
   }
 });
 
-// POST /api/customer/add-saved-address
 exports.addSavedAddress = asyncHandler(async (req, res) => {
-  const { error, value } = ValidationSchema.savedAddressSchema.validate(req.body, { abortEarly: true });
+  const { error, value } = ValidationSchema.savedAddressSchema.validate(
+    req.body,
+    { abortEarly: true },
+  );
   if (error) {
-    console.error("Validation error in addSavedAddress:", error.details[0].message);
+    console.error(
+      "Validation error in addSavedAddress:",
+      error.details[0].message,
+    );
     return res.status(400).json({ error: error.details[0].message });
   }
 
@@ -487,27 +502,49 @@ exports.addSavedAddress = asyncHandler(async (req, res) => {
     const result = await customerDAO.addSavedAddress(value);
     res.status(201).json({ data: result });
   } catch (error) {
+    if (
+      error.code === "DUPLICATE_SAVE_AS" ||
+      error.code === "DUPLICATE_ADDRESS" ||
+      error.code === "DUPLICATE_PHONE"
+    ) {
+      return res
+        .status(409)
+        .json({ error: error.message, errorCode: error.code });
+    }
     res.status(500).json({ error: error.message });
   }
 });
 
-// PUT /api/customer/update-saved-address/:addressId
 exports.updateSavedAddress = asyncHandler(async (req, res) => {
   const { addressId } = req.params;
-  const { error, value } = ValidationSchema.updateSavedAddressSchema.validate(req.body, { abortEarly: true });
+  const { error, value } = ValidationSchema.updateSavedAddressSchema.validate(
+    req.body,
+    { abortEarly: true },
+  );
   if (error) {
-    console.error("Validation error in updateSavedAddress:", error.details[0].message);
+    console.error(
+      "Validation error in updateSavedAddress:",
+      error.details[0].message,
+    );
     return res.status(400).json({ error: error.details[0].message });
   }
 
   try {
     const result = await customerDAO.updateSavedAddress(addressId, value);
     if (!result) {
-      return res.status(404).json({ error: 'Address not found.' });
+      return res.status(404).json({ error: "Address not found." });
     }
     res.status(200).json({ data: result });
   } catch (error) {
+    if (
+      error.code === "DUPLICATE_SAVE_AS" ||
+      error.code === "DUPLICATE_ADDRESS" ||
+      error.code === "DUPLICATE_PHONE"
+    ) {
+      return res
+        .status(409)
+        .json({ error: error.message, errorCode: error.code });
+    }
     res.status(500).json({ error: error.message });
   }
 });
-
