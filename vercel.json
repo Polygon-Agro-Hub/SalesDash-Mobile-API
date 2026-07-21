@@ -1,2 +1,6 @@
 
-{ "version": 2, "rewrites": [{ "source": "/(.*)", "destination": "/api" }] }
+{
+  "version": 2,
+  "fluid": true,
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}
