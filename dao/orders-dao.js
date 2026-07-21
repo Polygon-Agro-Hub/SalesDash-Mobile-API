@@ -534,7 +534,7 @@ async function insertOrderPackage(connection, processOrderId, orderData) {
 // Helper function to process regular order items (isPackage = 0)
 async function processRegularOrderItems(connection, orderId, orderData) {
   if (!orderData.items || orderData.items.length === 0) {
-    throw new Error("Items are required for regular orders (isPackage = 0)");
+    return;
   }
 
   await insertAdditionalItems(connection, orderId, orderData.items);
