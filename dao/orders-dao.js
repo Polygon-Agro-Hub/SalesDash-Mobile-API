@@ -838,15 +838,19 @@ exports.getOrderById = async (orderId) => {
       if (apartmentRows.length > 0) {
         buildingType = "Apartment";
         const addr = apartmentRows[0];
-        formattedAddress =
-          `${addr.buildingName || ""}, ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-        formattedAddress = formattedAddress
-          .replace(/\s+/g, " ")
-          .replace(/, Unit ,/g, ",")
-          .replace(/, Floor ,/g, ",")
-          .replace(/,\s*,/g, ",")
-          .replace(/,\s*$/, "")
-          .trim();
+
+        formattedAddress = [
+          addr.houseNo,
+          addr.floorNo,
+          addr.buildingNo,
+          addr.buildingName,
+          addr.unitNo,
+          addr.streetName,
+          addr.city,
+        ]
+          .map((v) => (v ?? "").toString().trim())
+          .filter((v) => v.length > 0)
+          .join(", ");
       }
     }
 
