@@ -121,7 +121,6 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
   };
 
   try {
-    // Validate using Joi schema
     const { error, value } = ValidationSchema.updateCustomerSchema.validate(
       customerData,
       {
@@ -141,10 +140,8 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
       });
     }
 
-    // Update customer data through DAO
     const result = await customerDAO.updateCustomerData(cusId, customerData);
 
-    // Send success response
     res.status(200).json({
       message: "Customer data updated successfully",
       result,
