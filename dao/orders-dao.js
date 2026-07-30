@@ -635,7 +635,7 @@ async function sendOrderConfirmationSMS(
       smsMessage += `\n`;
     }
 
-    smsMessage += `\nThank you for choosing Polygon Agro! Our team will contact you shortly.\nSupport: +94 770111999`;
+    smsMessage += `\nThank you for choosing Polygon Holdings! Our team will contact you shortly.\nSupport: +94 770111999`;
 
     // Actually call the SMS service
     const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
