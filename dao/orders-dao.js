@@ -240,6 +240,7 @@ async function insertMainOrder(
     isPackage,
     deliveryCharge = 0,
     isFinalizeImdt = 0,
+    isPaySMS = 0,
   } = orderData;
 
   // Normalize a phone number: strip country code / leading 0, return last 9 digits
@@ -329,8 +330,8 @@ async function insertMainOrder(
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, sheduleDate, sheduleTime, isPackage, 
-          longitude, latitude, deliveryCharge, isFinalizeImdt, createdAt
-        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          longitude, latitude, deliveryCharge, isFinalizeImdt, isPaySMS, createdAt
+        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -356,6 +357,7 @@ async function insertMainOrder(
       latitude,
       deliveryCharge,
       isFinalizeImdt ? 1 : 0,
+      isPaySMS ? 1 : 0,
     ],
   );
 
@@ -635,7 +637,7 @@ async function sendOrderConfirmationSMS(
       smsMessage += `\n`;
     }
 
-    smsMessage += `\nThank you for choosing Polygon Agro! Our team will contact you shortly.\nSupport: +94 770111999`;
+    smsMessage += `\nThank you for choosing Polygon Holdings! Our team will contact you shortly.\nSupport: +94 770111999`;
 
     // Actually call the SMS service
     const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
