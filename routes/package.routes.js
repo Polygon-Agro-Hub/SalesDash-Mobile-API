@@ -15,6 +15,8 @@ router.get("/marketplace-package/:packageid", auth, packagesEp.getMarketplacePac
 
 router.get('/crops/all', auth, packagesEp.getAllCrops);
 
+router.post('/validate-items', auth, packagesEp.validatePackageItems);
+
 router.get("/crops/:cropId", auth, packagesEp.getCropById);
 
 router.get("/package-item-by-product/:packageId/:productId", auth, packagesEp.getPackageItemByProductId);

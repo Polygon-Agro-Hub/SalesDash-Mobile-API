@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const compression = require("compression");
 require("dotenv").config();
 const {
   plantcare,
@@ -10,6 +11,7 @@ const {
 } = require("./startup/database");
 const setupSwagger = require("./startup/swagger");
 const app = express();
+app.use(compression());
 const BASE_PATH = "/agro-api/salesdash";
 
 const corsOptions = {
@@ -42,7 +44,7 @@ const DatabaseConnection = (db, name) => {
         if (err) {
           console.error(`Error pinging ${name} database:`, err);
         } else {
-          console.log(`Ping to ${name} database successful.`);
+          console.log(`🗄️ Ping to ${name} database successful.`);
         }
         connection.release();
       });
@@ -81,26 +83,143 @@ app.use((err, req, res, next) => {
   res.status(500).send("Something broke!");
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`📍 Base Path: ${BASE_PATH}`);
-  console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
-});
-
 const cron = require("node-cron");
 const notificationDao = require("./dao/notification-dao");
+const orderDao = require("./dao/orders-dao");
 
 // Run every day at midnight
 cron.schedule("00 18 * * *", async () => {
   try {
     await notificationDao.createPaymentReminders();
-    console.log("Payment reminders created successfully");
+    console.log("⏰ Payment reminders created successfully");
   } catch (error) {
     console.error("Error creating payment reminders:", error);
   }
 });
 
-module.exports = app;
+// Start server using HTTP server for Socket.io support
+const PORT = process.env.PORT || 3000;
+const http = require("http");
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const io = new Server(server, {
+  path: `${BASE_PATH}/socket.io`,
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+// Active orders to monitor: orderId -> Set of socket IDs
+const activeOrderChecks = new Map();
+// Active sales agents to monitor: salesAgentId -> { count: number, sockets: Set }
+const activeAgentChecks = new Map();
+
+io.on("connection", (socket) => {
+  console.log("🔌 Socket connected:", socket.id);
+
+  socket.on("joinOrder", (orderId) => {
+    const numericOrderId = Number(orderId);
+    if (!numericOrderId) return;
+    
+    socket.join(`order_${numericOrderId}`);
+    console.log(`🔌 Socket ${socket.id} joined order_${numericOrderId}`);
+
+    if (!activeOrderChecks.has(numericOrderId)) {
+      activeOrderChecks.set(numericOrderId, new Set());
+    }
+    activeOrderChecks.get(numericOrderId).add(socket.id);
+  });
+
+  socket.on("registerSalesAgent", (salesAgentId) => {
+    const numericAgentId = Number(salesAgentId);
+    if (!numericAgentId) return;
+
+    socket.join(`salesAgent_${numericAgentId}`);
+    console.log(`🔌 Socket ${socket.id} registered for salesAgent_${numericAgentId}`);
+
+    if (!activeAgentChecks.has(numericAgentId)) {
+      activeAgentChecks.set(numericAgentId, { lastCount: null, sockets: new Set() });
+    }
+    activeAgentChecks.get(numericAgentId).sockets.add(socket.id);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("🔌 Socket disconnected:", socket.id);
+    
+    // Clean up order checks
+    for (const [orderId, socketSet] of activeOrderChecks.entries()) {
+      if (socketSet.has(socket.id)) {
+        socketSet.delete(socket.id);
+        if (socketSet.size === 0) {
+          activeOrderChecks.delete(orderId);
+        }
+      }
+    }
+
+    // Clean up agent checks
+    for (const [agentId, info] of activeAgentChecks.entries()) {
+      if (info.sockets.has(socket.id)) {
+        info.sockets.delete(socket.id);
+        if (info.sockets.size === 0) {
+          activeAgentChecks.delete(agentId);
+        }
+      }
+    }
+  });
+});
+
+// Periodic payment status checker (every 2 seconds)
+setInterval(async () => {
+  if (activeOrderChecks.size === 0) return;
+
+  for (const orderId of Array.from(activeOrderChecks.keys())) {
+    try {
+      const result = await orderDao.checkOrderPaymentStatus(orderId);
+      const isPaid = result?.data?.isPaid;
+
+      if (Number(isPaid) === 1) {
+        console.log(`💲 Order ${orderId} has been PAID. Emitting event.`);
+        io.to(`order_${orderId}`).emit("paymentStatusChanged", { orderId, isPaid: 1 });
+        activeOrderChecks.delete(orderId);
+      }
+    } catch (err) {
+      console.error(`Error in socket payment status check for order ${orderId}:`, err);
+    }
+  }
+}, 2000);
+
+// Periodic notification checker (every 5 seconds)
+setInterval(async () => {
+  if (activeAgentChecks.size === 0) return;
+
+  for (const agentId of Array.from(activeAgentChecks.keys())) {
+    const info = activeAgentChecks.get(agentId);
+    if (!info || info.sockets.size === 0) continue;
+
+    try {
+      const { unreadCount, notifications } = await notificationDao.getNotificationsBySalesAgentDAO(agentId);
+      const currentCount = Number(unreadCount) || 0;
+
+      if (info.lastCount !== null && currentCount > info.lastCount) {
+        console.log(`🔔 New notification for agent ${agentId}. Emitting event.`);
+        io.to(`salesAgent_${agentId}`).emit("newNotification", { unreadCount: currentCount, notifications });
+      }
+      info.lastCount = currentCount;
+    } catch (err) {
+      console.error(`Error in socket notification check for agent ${agentId}:`, err);
+    }
+  }
+}, 5000);
+
+// Only listen locally, Vercel will export the handler and call listen internally
+if (!process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`📍 Base Path: ${BASE_PATH}`);
+    console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
+  });
+}
+
+module.exports = server;

@@ -461,3 +461,31 @@ exports.getHold = async (req, res) => {
     });
   }
 };
+
+exports.getDeliveredOrdersTotal = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    if (!userId || isNaN(parseInt(userId))) {
+      return res.status(400).json({ success: false, message: "Invalid user ID" });
+    }
+    const result = await orderDao.getDeliveredOrdersTotal(userId);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("Error in getDeliveredOrdersTotal:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch delivered orders total",
+      error: error.message,
+    });
+  }
+};
+
+exports.checkOrderPaymentStatus = async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await orderDao.checkOrderPaymentStatus(orderId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
