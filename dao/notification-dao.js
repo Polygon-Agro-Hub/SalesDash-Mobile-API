@@ -12,6 +12,7 @@ exports.getNotificationsBySalesAgentDAO = (salesAgentId) => {
   dn.createdAt,
   po.invNo,
   po.status,
+  po.reportStatus,
   o.id as orderid,
   o.userId AS cusId,
   mps.cusId As customerId,

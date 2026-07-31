@@ -4,7 +4,11 @@
   "description": "This README would normally document whatever steps are necessary to get your application up and running.",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "test:auth": "jest tests/endpoint/user-ep.test.js --forceExit",
+    "test:performance": "jest --testPathPatterns=performance --verbose --runInBand",
+    "test:performance:detailed": "jest --testPathPatterns=performance --verbose --runInBand --detectOpenHandles",
+    "test:performance:watch": "jest --testPathPatterns=performance --watch",
     "start": "node api/index.js",
     "dev": "nodemon server.js",
     "seed": "node seed/mainseed.js"
@@ -17,6 +21,7 @@
     "base64-arraybuffer": "^1.0.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "expo-screen-capture": "^6.0.1",
@@ -29,7 +34,15 @@
     "node-cron": "^4.0.6",
     "nodemon": "^3.1.4",
     "qrcode": "^1.5.4",
+    "socket.io": "^4.8.3",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "twilio": "^5.6.1",
     "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }

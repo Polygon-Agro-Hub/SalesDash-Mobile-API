@@ -107,7 +107,6 @@ exports.processOrder = async (orderData, salesAgentId) => {
     if (connection) {
       try {
         connection.release();
-        console.log("DB connection released");
       } catch (releaseError) {
         console.error("Error releasing connection:", releaseError);
       }
@@ -119,7 +118,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
 async function getUserDetails(connection, userId) {
   const [userResult] = await connection.query(
     `SELECT id, salesAgent, googleId, cusId, title, firstName, lastName, 
-         phoneCode, phoneNumber, buyerType, email, buildingType, billingTitle, billingName , longitude , latitude
+         phoneCode, phoneNumber, buyerType, email
          FROM marketplaceusers WHERE id = ?`,
     [userId],
   );
@@ -136,12 +135,20 @@ function getBuildingTypeInt(buildingType) {
   const buildingTypeMapping = {
     house: 1,
     House: 1,
+    1: 1,
+    1: 1,
     apartment: 2,
     Apartment: 2,
+    2: 2,
+    2: 2,
     condo: 3,
     Condo: 3,
+    3: 3,
+    3: 3,
     office: 4,
     Office: 4,
+    4: 4,
+    4: 4,
   };
   return buildingTypeMapping[buildingType] || 1;
 }
@@ -153,26 +160,11 @@ async function assignCenterToOrder(
   userDetails,
 ) {
   try {
-    const buildingTypeInt = getBuildingTypeInt(userDetails.buildingType);
     let city = null;
 
-    // Step 1: Get city based on building type
-    if (buildingTypeInt === 1) {
-      const [houseResult] = await connection.query(
-        "SELECT city FROM house WHERE customerid = ? LIMIT 1",
-        [orderData.userId],
-      );
-      if (houseResult && houseResult.length > 0) {
-        city = houseResult[0].city;
-      }
-    } else if (buildingTypeInt === 2) {
-      const [apartmentResult] = await connection.query(
-        "SELECT city FROM apartment WHERE customerid = ? LIMIT 1",
-        [orderData.userId],
-      );
-      if (apartmentResult && apartmentResult.length > 0) {
-        city = apartmentResult[0].city;
-      }
+    // Step 1: Get city based on deliveryAddress
+    if (orderData.deliveryAddress && orderData.deliveryAddress.city) {
+      city = orderData.deliveryAddress.city;
     }
 
     if (!city) {
@@ -219,7 +211,7 @@ async function assignCenterToOrder(
     );
 
     console.log(
-      `Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
+      `🎯 Assigned companyCenterId ${companyCenterId} to orderId ${orderId}`,
     );
   } catch (error) {
     console.error("Error in assignCenterToOrder:", error);
@@ -246,25 +238,62 @@ async function insertMainOrder(
     sheduleDate,
     sheduleTime,
     isPackage,
+    deliveryCharge = 0,
+    isFinalizeImdt = 0,
+    isPaySMS = 0,
   } = orderData;
 
-  // Get title, fullName, and phone details from marketplaceusers table
-  const orderTitle = userDetails.title;
-  const orderFullName =
-    `${userDetails.firstName} ${userDetails.lastName}`.trim();
-  const orderPhonecode1 = userDetails.phoneCode;
-  const orderPhone1 = userDetails.phoneNumber;
+  // Normalize a phone number: strip country code / leading 0, return last 9 digits
+  const normalizePhone = (raw) => {
+    if (!raw) return null;
+    // Remove spaces, dashes, parentheses
+    let digits = String(raw).replace(/[\s\-().+]/g, "");
+    // Strip leading country code 94 (Sri Lanka) if longer than 9 digits
+    if (digits.startsWith("94") && digits.length > 9) {
+      digits = digits.slice(2);
+    }
+    // Strip leading 0
+    if (digits.startsWith("0")) {
+      digits = digits.slice(1);
+    }
+    // Always return the last 9 digits
+    return digits.slice(-9);
+  };
 
-  // Optional second phone from order data (if provided)
-  const orderPhonecode2 = orderData.phonecode2 || null;
-  const orderPhone2 = orderData.phone2 || null;
+  const orderTitle =
+    orderData.deliveryAddress?.billingTitle || userDetails.title;
+  const orderFullName = orderData.deliveryAddress?.billingName
+    ? orderData.deliveryAddress.billingName.trim()
+    : `${userDetails.firstName} ${userDetails.lastName}`.trim();
 
-  // Get longitude and latitude from userDetails
-  const longitude = userDetails.longitude || null;
-  const latitude = userDetails.latitude || null;
+  // phonecode1 is always "+94"
+  const orderPhonecode1 = "+94";
+  const orderPhone1 = normalizePhone(
+    orderData.deliveryAddress?.billingPhone1 || userDetails.phoneNumber,
+  );
 
-  // Use the original buildingType string for orders table
-  const buildingTypeForOrder = userDetails.buildingType;
+  // Optional second phone
+  const orderPhonecode2 =
+    orderData.deliveryAddress?.billingPhone2 || orderData.phone2 ? "+94" : null;
+  const orderPhone2 = normalizePhone(
+    orderData.deliveryAddress?.billingPhone2 || orderData.phone2 || null,
+  );
+
+  // Get longitude and latitude from userDetails / deliveryAddress
+  const longitude =
+    orderData.deliveryAddress?.longitude || userDetails.longitude || null;
+  const latitude =
+    orderData.deliveryAddress?.latitude || userDetails.latitude || null;
+
+  // Use House or Apartment for buildingType in orders table
+  const rawBuildingType = orderData.deliveryAddress?.type || "House";
+  const buildingTypeIntForOrder = getBuildingTypeInt(rawBuildingType);
+  const buildingTypeForOrder =
+    buildingTypeIntForOrder === 2 ||
+      buildingTypeIntForOrder === 3 ||
+      buildingTypeIntForOrder === 4
+      ? "Apartment"
+      : "House";
 
   // Format date if needed
   let formattedDate = sheduleDate;
@@ -301,8 +330,8 @@ async function insertMainOrder(
           title, fullName, phonecode1, phone1, phonecode2, phone2,
           isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, sheduleDate, sheduleTime, isPackage, 
-          longitude, latitude, createdAt
-        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          longitude, latitude, deliveryCharge, isFinalizeImdt, isPaySMS, createdAt
+        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -326,6 +355,9 @@ async function insertMainOrder(
       isPackage,
       longitude,
       latitude,
+      deliveryCharge,
+      isFinalizeImdt ? 1 : 0,
+      isPaySMS ? 1 : 0,
     ],
   );
 
@@ -394,20 +426,33 @@ async function insertProcessOrder(connection, orderId, orderData) {
     // ✨ GENERATE QR CODE containing the invoice number
     const qrCodeDataURL = await generateQRCode(invNo);
 
+    // Normalize paymentMethod: "Card" or "Cash"
+    const paymentMethodValue =
+      orderData.paymentMethod &&
+        orderData.paymentMethod.toLowerCase().includes("card")
+        ? "Card"
+        : "Cash";
+
+    const isCardPayment = paymentMethodValue === "Card";
+    const isPaidValue = 0;
+    const amountValue = 0.0;
+
     // Insert process order record WITH QR CODE
     const [result] = await connection.query(
       `INSERT INTO processorders (
-              orderid, invNo, transactionId, paymentMethod, ispaid, amount, status, qrCode, createdAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         orderId,
         invNo,
         orderData.transactionId || "",
-        orderData.paymentMethod || "cash",
-        0, // ispaid
-        0, // amount
-        "Ordered", // status
-        qrCodeDataURL, // QR code as base64 data URL
+        paymentMethodValue,
+        isPaidValue,
+        amountValue,
+        0.0,
+        0.0,
+        "Ordered",
+        qrCodeDataURL,
       ],
     );
 
@@ -420,88 +465,43 @@ async function insertProcessOrder(connection, orderId, orderData) {
 
 // Helper function to insert address data (house/apartment)
 async function insertAddressData(connection, orderId, orderData, userDetails) {
-  const buildingTypeInt = getBuildingTypeInt(userDetails.buildingType);
+  // If custom deliveryAddress is specified in orderData, use it directly
+  if (orderData.deliveryAddress) {
+    const address = orderData.deliveryAddress;
+    const typeInt = getBuildingTypeInt(address.type);
 
-  // Check by integer value: 1 = house, 2 = apartment
-  if (buildingTypeInt === 1) {
-    // House
-    // Get house details using customerid from house table
-    const [houseResult] = await connection.query(
-      "SELECT * FROM house WHERE customerid = ? LIMIT 1",
-      [orderData.userId],
-    );
-
-    if (houseResult && houseResult.length > 0) {
+    if (typeInt === 1) {
       await connection.query(
-        "INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)",
+        "INSERT INTO orderhouse (orderid, houseNo, streetName, city, saveAs) VALUES (?, ?, ?, ?, ?)",
         [
           orderId,
-          houseResult[0].houseNo,
-          houseResult[0].streetName,
-          houseResult[0].city,
+          address.houseNo || "",
+          address.streetName || "",
+          address.city || "",
+          address.label || address.billingName || "",
         ],
       );
-    } else {
-      // Insert default house data if not found
+    } else if (typeInt === 2 || typeInt === 3 || typeInt === 4) {
       await connection.query(
-        "INSERT INTO orderhouse (orderid, houseNo, streetName, city) VALUES (?, ?, ?, ?)",
+        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city, saveAs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           orderId,
-          orderData.houseNo || "",
-          orderData.streetName || "",
-          orderData.city || "",
+          address.buildingNo || "",
+          address.buildingName || "",
+          address.unitNo || "",
+          address.floorNo || "",
+          address.houseNo || "",
+          address.streetName || "",
+          address.city || "",
+          address.label || address.billingName || "",
         ],
       );
     }
-  } else if (buildingTypeInt === 2) {
-    // Apartment
-    // Get apartment details using customerid from apartment table
-    const [apartmentResult] = await connection.query(
-      "SELECT * FROM apartment WHERE customerid = ? LIMIT 1",
-      [orderData.userId],
-    );
-
-    if (apartmentResult && apartmentResult.length > 0) {
-      await connection.query(
-        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?,?, ?, ?, ?, ?, ?)",
-        [
-          orderId,
-          apartmentResult[0].buildingNo,
-          apartmentResult[0].buildingName,
-          apartmentResult[0].unitNo,
-          apartmentResult[0].floorNo,
-          apartmentResult[0].houseNo,
-          apartmentResult[0].streetName,
-          apartmentResult[0].city,
-        ],
-      );
-    } else {
-      // Insert default apartment data if not found
-      await connection.query(
-        "INSERT INTO orderapartment (orderid, buildingNo, buildingName, unitNo, floorNo,houseNo, streetName, city) VALUES (?, ?, ?,?, ?, ?, ?, ?)",
-        [
-          orderId,
-          orderData.buildingNo || "",
-          orderData.buildingName || "",
-          orderData.unitNo || "",
-          orderData.floorNo || "",
-          orderData.houseNo || "",
-          orderData.streetName || "",
-          orderData.city || "",
-        ],
-      );
-    }
-  }
-  // Handle other building types (condo=3, office=4) if needed
-  else if (buildingTypeInt === 3 || buildingTypeInt === 4) {
-    console.log(
-      `Building type ${buildingTypeInt} (${userDetails.buildingType}) - no specific address table handling implemented`,
-    );
   }
 }
 
-// Helper function to update sales agent stars
-async function updateSalesAgentStars(connection, salesAgentId) {
+// Helper function to update sales agent stars (Legacy)
+async function updateSalesAgentStarsLegacy(connection, salesAgentId) {
   if (!salesAgentId) {
     return;
   }
@@ -536,7 +536,7 @@ async function insertOrderPackage(connection, processOrderId, orderData) {
 // Helper function to process regular order items (isPackage = 0)
 async function processRegularOrderItems(connection, orderId, orderData) {
   if (!orderData.items || orderData.items.length === 0) {
-    throw new Error("Items are required for regular orders (isPackage = 0)");
+    return;
   }
 
   await insertAdditionalItems(connection, orderId, orderData.items);
@@ -637,7 +637,7 @@ async function sendOrderConfirmationSMS(
       smsMessage += `\n`;
     }
 
-    smsMessage += `\nThank you for choosing Polygon Agro! Our team will contact you shortly.\nSupport: +94 770111999`;
+    smsMessage += `\nThank you for choosing Polygon Holdings! Our team will contact you shortly.\nSupport: +94 770111999`;
 
     // Actually call the SMS service
     const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
@@ -675,8 +675,7 @@ exports.getDataCustomerId = async (customerId) => {
                 lastName,
                 phoneCode,
                 phoneNumber,
-                email,
-                buildingType
+                email
             FROM marketplaceusers
             WHERE id = ?
         `;
@@ -708,25 +707,7 @@ exports.getDataCustomerId = async (customerId) => {
     // Remove the separate phoneCode field since we've combined it
     delete customer.phoneCode;
 
-    const buildingType = customer.buildingType.toLowerCase();
-
-    // Second query to get building details based on building type
-    const buildingSql = `
-            SELECT * FROM ${buildingType}
-            WHERE customerId = ?
-        `;
-
-    const [buildingResults] = await connection.execute(buildingSql, [
-      customerId,
-    ]);
-
-    // Combine customer info with building info
-    const result = {
-      ...customer,
-      buildingDetails: buildingResults.length > 0 ? buildingResults[0] : null,
-    };
-
-    return result;
+    return customer;
   } catch (err) {
     console.error("Database error:", err);
     throw err;
@@ -734,8 +715,33 @@ exports.getDataCustomerId = async (customerId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
+  }
+};
+
+// Get user's total of successfully delivered orders and compute credit balance
+exports.getDeliveredOrdersTotal = async (userId) => {
+  let connection;
+  try {
+    connection = await db.marketPlace.promise().getConnection();
+    const [rows] = await connection.query(
+      `SELECT COALESCE(SUM(o.fullTotal), 0) AS deliveredTotal
+       FROM orders o
+       WHERE o.userId = ?`,
+      [userId],
+    );
+    const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
+
+    // Base 2000, +250 for every full 25000 in total order value
+    const tiersEarned = Math.floor(deliveredTotal / 25000);
+    const creditBalance = 2000 + tiersEarned * 250;
+
+    return { deliveredTotal, creditBalance };
+  } catch (err) {
+    console.error("Error in getDeliveredOrdersTotal:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -747,7 +753,7 @@ exports.getOrderById = async (orderId) => {
     connection = await db.marketPlace.promise().getConnection();
 
     const sql = `
-            SELECT
+             SELECT
                 o.id AS orderId,
                 o.userId,
                 o.sheduleType,
@@ -756,16 +762,21 @@ exports.getOrderById = async (orderId) => {
                 o.createdAt,
                 o.total,
                 o.discount,
+                o.deliveryCharge,
                 o.fullTotal,
                 o.isPackage,
+                o.delivaryMethod,
                 c.title,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
-                c.buildingType,
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
+                p.paymentMethod,
+                p.creditPaid,
+                p.moneyPaid,
+                p.isPaid,
                 oai.qty,
                 oai.productId,
                 oai.unit,
@@ -793,10 +804,10 @@ exports.getOrderById = async (orderId) => {
     }
 
     const order = orderResults[0];
-    const customerId = order.userId;
-    const buildingType = order.buildingType;
 
     let formattedAddress = "";
+    let buildingType = "";
+    let buildingDetails = {};
 
     // Filter out null/undefined items and create additional items array
     const additionalItems = orderResults
@@ -809,55 +820,61 @@ exports.getOrderById = async (orderId) => {
         discount: parseFloat(item.itemDiscount) || 0,
       }));
 
-    // Handle address based on building type
-    if (buildingType === "House") {
-      const addressSql = `
-                SELECT
-                    houseNo,
-                    streetName,
-                    city
-                FROM house
-                WHERE customerId = ?
-            `;
+    // Determine building type + address from orderhouse / orderapartment tables (by orderId)
+    const [houseRows] = await connection.execute(
+      `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
+      [orderId]
+    );
 
-      const [addressResults] = await connection.execute(addressSql, [
-        customerId,
-      ]);
+    if (houseRows.length > 0) {
+      buildingType = "House";
+      const addr = houseRows[0];
 
-      if (addressResults[0]) {
-        const addr = addressResults[0];
-        formattedAddress =
-          `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-        formattedAddress = formattedAddress.replace(/\s+/g, " ").trim();
-      }
-    } else if (buildingType === "Apartment") {
-      const addressSql = `
-                SELECT
-                    buildingNo,
-                    buildingName,
-                    unitNo,
-                    floorNo,
-                    houseNo,
-                    streetName,
-                    city
-                FROM apartment
-                WHERE customerId = ?
-            `;
+      buildingDetails = {
+        houseNo: addr.houseNo || "",
+        streetName: addr.streetName || "",
+        city: addr.city || "",
+      };
 
-      const [addressResults] = await connection.execute(addressSql, [
-        customerId,
-      ]);
+      formattedAddress =
+        `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
+      formattedAddress = formattedAddress
+        .replace(/,\s*,/g, ",")
+        .replace(/\s+/g, " ")
+        .replace(/,\s*$/, "")
+        .trim();
+    } else {
+      const [apartmentRows] = await connection.execute(
+        `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
+        [orderId]
+      );
 
-      if (addressResults[0]) {
-        const addr = addressResults[0];
-        formattedAddress =
-          `${addr.buildingName || ""}, ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-        formattedAddress = formattedAddress
-          .replace(/\s+/g, " ")
-          .replace(/, Unit ,/, ",")
-          .replace(/, Floor ,/, ",")
-          .trim();
-        formattedAddress = formattedAddress.replace(/,\s*$/, "");
+      if (apartmentRows.length > 0) {
+        buildingType = "Apartment";
+        const addr = apartmentRows[0];
+
+        buildingDetails = {
+          buildingNo: addr.buildingNo || "",
+          buildingName: addr.buildingName || "",
+          unitNo: addr.unitNo || "",
+          floorNo: addr.floorNo || "",
+          houseNo: addr.houseNo || "",
+          streetName: addr.streetName || "",
+          city: addr.city || "",
+        };
+
+        formattedAddress = [
+          addr.houseNo,
+          addr.floorNo,
+          addr.buildingNo,
+          addr.buildingName,
+          addr.unitNo,
+          addr.streetName,
+          addr.city,
+        ]
+          .map((v) => (v ?? "").toString().trim())
+          .filter((v) => v.length > 0)
+          .join(", ");
       }
     }
 
@@ -903,7 +920,7 @@ exports.getOrderById = async (orderId) => {
           packageDetails: packageDetails,
         };
       } else {
-        console.log("Package order but no packageId found");
+        console.warn("⚠️ Package order but no packageId found");
       }
     }
 
@@ -914,13 +931,16 @@ exports.getOrderById = async (orderId) => {
       const placeholders = productIds.map(() => "?").join(",");
 
       const productDetailsSql = `
-                SELECT
-                    mi.id,
-                    mi.displayName,
-                    mi.varietyId
-                FROM marketplaceitems mi
-                WHERE mi.id IN (${placeholders})
-            `;
+    SELECT
+      mi.id,
+      mi.displayName,
+      mi.varietyId,
+      mi.normalPrice,
+      mi.discountedPrice,
+      mi.discount
+    FROM marketplaceitems mi
+    WHERE mi.id IN (${placeholders})
+  `;
 
       const [productResults] = await connection.execute(
         productDetailsSql,
@@ -938,6 +958,15 @@ exports.getOrderById = async (orderId) => {
             ? productDetail.displayName
             : "Unknown Product",
           varietyId: productDetail ? productDetail.varietyId : null,
+          marketplacetablenormalPrice: productDetail
+            ? parseFloat(productDetail.normalPrice) || 0
+            : 0,
+          marketplacetablediscountedPrice: productDetail
+            ? parseFloat(productDetail.discountedPrice) || 0
+            : 0,
+          marketplacetablediscount: productDetail
+            ? parseFloat(productDetail.discount) || 0
+            : 0,
         };
       });
     }
@@ -952,25 +981,31 @@ exports.getOrderById = async (orderId) => {
       createdAt: order.createdAt,
       total: order.total,
       discount: order.discount,
+      deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
+      delivaryMethod: order.delivaryMethod,
       customerInfo: {
         title: order.title,
         firstName: order.firstName,
         lastName: order.lastName,
         phoneNumber: order.phoneNumber,
-        buildingType: order.buildingType,
+        buildingType: buildingType,
       },
-      fullAddress: formattedAddress,
+      fullAddress: formattedAddress,     // single-string address (e.g. for confirm screen)
+      buildingDetails: buildingDetails,  // raw fields (e.g. for invoice screen)
       orderStatus: {
         invoiceNumber: order.invoiceNumber,
         status: order.status,
         reportStatus: order.reportStatus,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        creditPaid: order.creditPaid,
+        moneyPaid: order.moneyPaid,
       },
       additionalItems: enhancedAdditionalItems,
     };
 
-    // Add package information if it's a package order
     if (packageInfo) {
       result.packageInfo = packageInfo;
     }
@@ -983,72 +1018,72 @@ exports.getOrderById = async (orderId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
 
-exports.getOrderByCustomerId = (customerId, page = 1, limit = 5) => {
+
+exports.getOrderByCustomerId = (
+  customerId,
+  page = 1,
+  limit = 5,
+  status = null,
+) => {
   return new Promise((resolve, reject) => {
-    // Calculate offset for pagination
     const offset = (page - 1) * limit;
 
-    // First, get the total count of orders for this customer
-    const countSql = `
-            SELECT COUNT(*) as totalCount
-            FROM orders o
-            LEFT JOIN market_place.processorders p ON o.id = p.orderId
-            WHERE o.userId = ?
-        `;
+    // Build WHERE clause conditionally
+    const statusClause = status ? `AND p.status = ?` : "";
+    const countParams = status ? [customerId, status] : [customerId];
 
-    db.marketPlace.query(countSql, [customerId], (err, countResult) => {
-      if (err) {
-        return reject(err);
-      }
+    const countSql = `
+      SELECT COUNT(*) as totalCount
+      FROM orders o
+      LEFT JOIN market_place.processorders p ON o.id = p.orderId
+      WHERE o.userId = ?
+      ${statusClause}
+    `;
+
+    db.marketPlace.query(countSql, countParams, (err, countResult) => {
+      if (err) return reject(err);
 
       const totalCount = countResult[0].totalCount;
-
       if (totalCount === 0) {
         return resolve({ message: "No orders found for this customer" });
       }
 
-      // Now get the paginated orders
+      const orderParams = status
+        ? [customerId, status, limit, offset]
+        : [customerId, limit, offset];
+
       const ordersSql = `
-                SELECT 
-                    o.id AS orderId,
-                    o.userId,
-                    o.sheduleType,
-                    o.sheduleDate,
-                    o.sheduleTime,
-                    o.createdAt,
-                    o.total,
-                    o.discount,
-                    o.fullTotal,
-                    p.invNo AS InvNo,
-                    p.reportStatus AS reportStatus,
-                    p.paymentMethod AS paymentMethod,
-                    p.status As status
-                FROM orders o
-                LEFT JOIN market_place.processorders p ON o.id = p.orderId
-                WHERE o.userId = ?
-                ORDER BY o.createdAt DESC
-                LIMIT ? OFFSET ?
-            `;
+        SELECT 
+          o.id AS orderId,
+          o.userId,
+          o.sheduleType,
+          o.sheduleDate,
+          o.sheduleTime,
+          o.createdAt,
+          o.total,
+          o.discount,
+          o.fullTotal,
+          p.invNo AS InvNo,
+          p.isPaid,
+          p.reportStatus AS reportStatus,
+          p.paymentMethod AS paymentMethod,
+          p.status AS status
+        FROM orders o
+        LEFT JOIN market_place.processorders p ON o.id = p.orderId
+        WHERE o.userId = ?
+        ${statusClause}
+        ORDER BY o.createdAt DESC
+        LIMIT ? OFFSET ?
+      `;
 
-      db.marketPlace.query(
-        ordersSql,
-        [customerId, limit, offset],
-        (err, orderResults) => {
-          if (err) {
-            return reject(err);
-          }
-
-          resolve({
-            orders: orderResults,
-            totalCount: totalCount,
-          });
-        },
-      );
+      db.marketPlace.query(ordersSql, orderParams, (err, orderResults) => {
+        if (err) return reject(err);
+        resolve({ orders: orderResults, totalCount });
+      });
     });
   });
 };
@@ -1059,7 +1094,6 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
   try {
     // Get connection from pool
     connection = await db.marketPlace.promise().getConnection();
-    console.log("Database connection acquired");
 
     // Ensure page and limit are integers
     const pageNum = parseInt(page);
@@ -1095,9 +1129,11 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 o.total,
                 o.discount,
                 o.fullTotal,
+                o.deliveryCharge,
                 m.salesAgent,
-                m.buildingType,
+                o.buildingType,
                 p.invNo AS InvNo,
+                p.isPaid,
                 p.reportStatus AS reportStatus,
                 p.paymentMethod AS paymentMethod,
                 p.status As status
@@ -1201,7 +1237,6 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1239,77 +1274,142 @@ exports.reportOrder = (orderId, reportStatus) => {
 
 exports.cancelOrder = (orderId) => {
   return new Promise((resolve, reject) => {
-    // First, get the actual ID from processorders table
-    const selectSql = `
-            SELECT id FROM market_place.processorders 
-            WHERE orderId = ?
+    db.marketPlace.getConnection((connErr, connection) => {
+      if (connErr) return reject(connErr);
+
+      connection.beginTransaction((txErr) => {
+        if (txErr) {
+          connection.release();
+          return reject(txErr);
+        }
+
+        const selectSql = `
+          SELECT id, status, paymentMethod, isPaid, amount
+          FROM market_place.processorders
+          WHERE orderId = ?
+          FOR UPDATE
         `;
 
-    db.marketPlace.query(selectSql, [orderId], (selectErr, selectResult) => {
-      if (selectErr) {
-        console.error("Error selecting order:", selectErr);
-        return reject(selectErr);
-      }
+        connection.query(selectSql, [orderId], (selectErr, selectResult) => {
+          if (selectErr) {
+            return connection.rollback(() => {
+              connection.release();
+              reject(selectErr);
+            });
+          }
 
-      if (selectResult.length === 0) {
-        return resolve({
-          message: "Order not found",
-        });
-      }
+          if (selectResult.length === 0) {
+            return connection.rollback(() => {
+              connection.release();
+              resolve({ success: false, message: "Order not found" });
+            });
+          }
 
-      const actualId = selectResult[0].id;
+          const orderRow = selectResult[0];
+          const actualId = orderRow.id;
 
-      // Update order status to Cancelled
-      const updateSql = `
-                UPDATE market_place.processorders 
-                SET status = 'Cancelled' 
-                WHERE orderId = ?
-            `;
+          if (orderRow.status === "Cancelled") {
+            return connection.rollback(() => {
+              connection.release();
+              resolve({ success: false, message: "Order already cancelled" });
+            });
+          }
 
-      db.marketPlace.query(updateSql, [orderId], (err, result) => {
-        if (err) {
-          console.error("Error updating order:", err);
-          return reject(err);
-        }
+          const shouldRefund =
+            orderRow.paymentMethod === "Card" &&
+            (orderRow.isPaid === 1 || orderRow.isPaid === true);
 
-        // Check if any row was affected
-        if (result.affectedRows === 0) {
-          return resolve({
-            message: "Order not found or already cancelled",
-          });
-        }
+          const refundAmount = parseFloat(orderRow.amount) || 0;
 
-        // Insert notification using the actual ID (not orderId)
-        const notificationSql = `
-                    INSERT INTO dashnotification (
-                        orderId, title, readStatus, createdAt
-                    ) VALUES (?, ?, ?, NOW())
-                `;
+          const updateOrderSql = shouldRefund
+            ? `UPDATE market_place.processorders
+               SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
+               WHERE orderId = ?`
+            : `UPDATE market_place.processorders
+               SET status = 'Cancelled'
+               WHERE orderId = ?`;
 
-        db.marketPlace.query(
-          notificationSql,
-          [actualId, "Order is Cancelled", 0], // Use actualId here
-          (notifErr, notifResult) => {
-            if (notifErr) {
-              console.error("Failed to insert notification:", notifErr);
-              return resolve({
-                success: true,
-                message: "Order cancelled successfully but notification failed",
-                orderId: orderId,
-                notificationInserted: false,
-                error: notifErr.message,
+          connection.query(updateOrderSql, [orderId], (updateErr, updateResult) => {
+            if (updateErr) {
+              return connection.rollback(() => {
+                connection.release();
+                reject(updateErr);
               });
             }
 
-            // Return success
-            resolve({
-              success: true,
-              message: "Order cancelled successfully",
-              orderId: orderId,
-              notificationInserted: true,
+            if (updateResult.affectedRows === 0) {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order not found or already cancelled" });
+              });
+            }
+
+            const finishWithNotification = (refundErr) => {
+              if (refundErr) {
+                return connection.rollback(() => {
+                  connection.release();
+                  reject(refundErr);
+                });
+              }
+
+              const notificationSql = `
+                INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
+                VALUES (?, ?, ?, NOW())
+              `;
+
+              connection.query(
+                notificationSql,
+                [actualId, "Order is Cancelled", 0],
+                (notifErr) => {
+                  // Match existing behavior: notification failure doesn't roll back
+                  // the cancellation/refund, it's just reported.
+                  connection.commit((commitErr) => {
+                    connection.release();
+                    if (commitErr) return reject(commitErr);
+                    resolve({
+                      success: true,
+                      message: notifErr
+                        ? "Order cancelled successfully but notification failed"
+                        : "Order cancelled successfully",
+                      orderId,
+                      refunded: shouldRefund,
+                      refundAmount: shouldRefund ? refundAmount : 0,
+                      notificationInserted: !notifErr,
+                      ...(notifErr ? { error: notifErr.message } : {}),
+                    });
+                  });
+                }
+              );
+            };
+
+            if (!shouldRefund) {
+              return finishWithNotification(null);
+            }
+
+            // Resolve userId via orders table.
+            // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
+            // so we must look it up by `id` here.
+            const userIdSql = `SELECT userId FROM market_place.orders WHERE id = ?`;
+            connection.query(userIdSql, [orderId], (userErr, userResult) => {
+              if (userErr) return finishWithNotification(userErr);
+              if (userResult.length === 0 || !userResult[0].userId) {
+                return finishWithNotification(
+                  new Error("Could not resolve userId for refund"),
+                );
+              }
+              const userId = userResult[0].userId;
+
+              const refundSql = `
+                UPDATE market_place.marketplaceusers
+                SET creditBalance = creditBalance + ?
+                WHERE id = ?
+              `;
+              connection.query(refundSql, [refundAmount, userId], (creditErr) => {
+                finishWithNotification(creditErr || null);
+              });
             });
-          },
-        );
+          });
+        });
       });
     });
   });
@@ -1595,7 +1695,6 @@ exports.getReturnReason = async (orderId) => {
     // Always release the connection back to the pool
     if (connection) {
       connection.release();
-      console.log("Database connection released");
     }
   }
 };
@@ -1606,47 +1705,92 @@ exports.getHold = async (orderId) => {
     connection = await db.marketPlace.promise().getConnection();
 
     const holdCheckSql = `
-            SELECT 
-                po.orderId as businessOrderId,
-                po.id as processOrderId,
-                do.id as driverOrderId,
-                do.drvStatus,
-                dho.id as holdRecordId,
-                dho.holdReasonId,
-                dho.createdAt as holdCreatedAt
-            FROM market_place.processorders po
-            LEFT JOIN collection_officer.driverorders do ON po.id = do.orderId
-            LEFT JOIN collection_officer.driverholdorders dho ON do.id = dho.drvOrderId
-            WHERE po.orderId = ?
-            LIMIT 1
-        `;
+      SELECT 
+        po.orderId        AS businessOrderId,
+        dho.id            AS holdRecordId,
+        dho.drvOrderId,
+        dho.restartedTime,
+        dho.createdAt     AS holdCreatedAt,
+        hr.rsnEnglish     AS holdReason
+      FROM market_place.processorders po
+      LEFT JOIN collection_officer.driverorders  do  ON po.id      = do.orderId
+      LEFT JOIN collection_officer.driverholdorders dho ON do.id   = dho.drvOrderId
+      LEFT JOIN collection_officer.holdreason     hr  ON dho.holdReasonId = hr.id
+      WHERE po.orderId = ?
+        AND dho.id IS NOT NULL
+      ORDER BY dho.createdAt ASC
+    `;
 
-    const [result] = await connection.query(holdCheckSql, [orderId]);
+    const [rows] = await connection.query(holdCheckSql, [orderId]);
 
-    if (!result || result.length === 0) {
-      return {
-        success: false,
-        message: "Order not found",
-      };
+    if (!rows || rows.length === 0) {
+      return { success: true, data: [] };
     }
 
-    // Check if holdRecordId exists to determine if order is on hold
-    const isHold = result[0].holdRecordId !== null;
+    const holdEvents = rows.map((row) => ({
+      holdRecordId: row.holdRecordId,
+      isHold: row.restartedTime === null,
+      holdReason: row.holdReason ?? null,
+      otherReason: null,
+      restartedTime: row.restartedTime ?? null,
+      holdCreatedAt: row.holdCreatedAt,
+    }));
 
-    return {
-      success: true,
-      orderId: result[0].businessOrderId, // Fixed: use businessOrderId
-      isHold: isHold, // Fixed: check if holdRecordId exists
-      holdReasonId: result[0].holdReasonId || null,
-      holdCreatedAt: result[0].holdCreatedAt || null,
-    };
+    return { success: true, data: holdEvents };
   } catch (err) {
-    console.error("Database error in getHoldReason:", err);
+    console.error("Database error in getHold:", err);
     throw err;
   } finally {
     if (connection) {
       connection.release();
-      console.log("Database connection released");
+    }
+  }
+};
+
+exports.checkOrderPaymentStatus = async (orderId) => {
+  let connection;
+  try {
+    connection = await db.marketPlace.promise().getConnection();
+
+    const paymentCheckSql = `
+      SELECT 
+        o.id,
+        o.userId,
+        po.orderId,
+        po.isPaid,
+        po.amount,
+        mu.cusId
+      FROM market_place.processorders po
+      LEFT JOIN market_place.orders o ON o.id = po.orderId
+      LEFT JOIN market_place.marketplaceusers mu ON mu.id = o.userId
+      WHERE po.orderId = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await connection.query(paymentCheckSql, [orderId]);
+
+    if (!rows || rows.length === 0) {
+      return { success: true, data: { isPaid: 0, amount: 0, cusId: null } };
+    }
+
+    const row = rows[0];
+    const amount = Number(row.amount) || 0;
+    const isPaid = Number(row.isPaid) === 1 && amount > 0 ? 1 : 0;
+
+    return {
+      success: true,
+      data: {
+        isPaid,
+        amount,
+        cusId: row.cusId ?? null,
+      },
+    };
+  } catch (err) {
+    console.error("Database error in checkOrderPaymentStatus:", err);
+    throw err;
+  } finally {
+    if (connection) {
+      connection.release();
     }
   }
 };
