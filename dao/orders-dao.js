@@ -805,6 +805,7 @@ exports.getOrderById = async (orderId) => {
 
     let formattedAddress = "";
     let buildingType = "";
+    let buildingDetails = {};
 
     // Filter out null/undefined items and create additional items array
     const additionalItems = orderResults
@@ -817,7 +818,7 @@ exports.getOrderById = async (orderId) => {
         discount: parseFloat(item.itemDiscount) || 0,
       }));
 
-    // Determine building type from orderhouse / orderapartment tables (by orderId)
+    // Determine building type + address from orderhouse / orderapartment tables (by orderId)
     const [houseRows] = await connection.execute(
       `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
       [orderId]
@@ -826,9 +827,20 @@ exports.getOrderById = async (orderId) => {
     if (houseRows.length > 0) {
       buildingType = "House";
       const addr = houseRows[0];
+
+      buildingDetails = {
+        houseNo: addr.houseNo || "",
+        streetName: addr.streetName || "",
+        city: addr.city || "",
+      };
+
       formattedAddress =
         `${addr.houseNo || ""}, ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-      formattedAddress = formattedAddress.replace(/,\s*,/g, ",").replace(/\s+/g, " ").replace(/,\s*$/, "").trim();
+      formattedAddress = formattedAddress
+        .replace(/,\s*,/g, ",")
+        .replace(/\s+/g, " ")
+        .replace(/,\s*$/, "")
+        .trim();
     } else {
       const [apartmentRows] = await connection.execute(
         `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
@@ -838,6 +850,16 @@ exports.getOrderById = async (orderId) => {
       if (apartmentRows.length > 0) {
         buildingType = "Apartment";
         const addr = apartmentRows[0];
+
+        buildingDetails = {
+          buildingNo: addr.buildingNo || "",
+          buildingName: addr.buildingName || "",
+          unitNo: addr.unitNo || "",
+          floorNo: addr.floorNo || "",
+          houseNo: addr.houseNo || "",
+          streetName: addr.streetName || "",
+          city: addr.city || "",
+        };
 
         formattedAddress = [
           addr.houseNo,
@@ -968,7 +990,8 @@ exports.getOrderById = async (orderId) => {
         phoneNumber: order.phoneNumber,
         buildingType: buildingType,
       },
-      fullAddress: formattedAddress,
+      fullAddress: formattedAddress,     // single-string address (e.g. for confirm screen)
+      buildingDetails: buildingDetails,  // raw fields (e.g. for invoice screen)
       orderStatus: {
         invoiceNumber: order.invoiceNumber,
         status: order.status,
@@ -996,6 +1019,7 @@ exports.getOrderById = async (orderId) => {
     }
   }
 };
+
 
 exports.getOrderByCustomerId = (
   customerId,
@@ -1248,77 +1272,142 @@ exports.reportOrder = (orderId, reportStatus) => {
 
 exports.cancelOrder = (orderId) => {
   return new Promise((resolve, reject) => {
-    // First, get the actual ID from processorders table
-    const selectSql = `
-            SELECT id FROM market_place.processorders 
-            WHERE orderId = ?
+    db.marketPlace.getConnection((connErr, connection) => {
+      if (connErr) return reject(connErr);
+
+      connection.beginTransaction((txErr) => {
+        if (txErr) {
+          connection.release();
+          return reject(txErr);
+        }
+
+        const selectSql = `
+          SELECT id, status, paymentMethod, isPaid, amount
+          FROM market_place.processorders
+          WHERE orderId = ?
+          FOR UPDATE
         `;
 
-    db.marketPlace.query(selectSql, [orderId], (selectErr, selectResult) => {
-      if (selectErr) {
-        console.error("Error selecting order:", selectErr);
-        return reject(selectErr);
-      }
+        connection.query(selectSql, [orderId], (selectErr, selectResult) => {
+          if (selectErr) {
+            return connection.rollback(() => {
+              connection.release();
+              reject(selectErr);
+            });
+          }
 
-      if (selectResult.length === 0) {
-        return resolve({
-          message: "Order not found",
-        });
-      }
+          if (selectResult.length === 0) {
+            return connection.rollback(() => {
+              connection.release();
+              resolve({ success: false, message: "Order not found" });
+            });
+          }
 
-      const actualId = selectResult[0].id;
+          const orderRow = selectResult[0];
+          const actualId = orderRow.id;
 
-      // Update order status to Cancelled
-      const updateSql = `
-                UPDATE market_place.processorders 
-                SET status = 'Cancelled' 
-                WHERE orderId = ?
-            `;
+          if (orderRow.status === "Cancelled") {
+            return connection.rollback(() => {
+              connection.release();
+              resolve({ success: false, message: "Order already cancelled" });
+            });
+          }
 
-      db.marketPlace.query(updateSql, [orderId], (err, result) => {
-        if (err) {
-          console.error("Error updating order:", err);
-          return reject(err);
-        }
+          const shouldRefund =
+            orderRow.paymentMethod === "Card" &&
+            (orderRow.isPaid === 1 || orderRow.isPaid === true);
 
-        // Check if any row was affected
-        if (result.affectedRows === 0) {
-          return resolve({
-            message: "Order not found or already cancelled",
-          });
-        }
+          const refundAmount = parseFloat(orderRow.amount) || 0;
 
-        // Insert notification using the actual ID (not orderId)
-        const notificationSql = `
-                    INSERT INTO dashnotification (
-                        orderId, title, readStatus, createdAt
-                    ) VALUES (?, ?, ?, NOW())
-                `;
+          const updateOrderSql = shouldRefund
+            ? `UPDATE market_place.processorders
+               SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
+               WHERE orderId = ?`
+            : `UPDATE market_place.processorders
+               SET status = 'Cancelled'
+               WHERE orderId = ?`;
 
-        db.marketPlace.query(
-          notificationSql,
-          [actualId, "Order is Cancelled", 0], // Use actualId here
-          (notifErr, notifResult) => {
-            if (notifErr) {
-              console.error("Failed to insert notification:", notifErr);
-              return resolve({
-                success: true,
-                message: "Order cancelled successfully but notification failed",
-                orderId: orderId,
-                notificationInserted: false,
-                error: notifErr.message,
+          connection.query(updateOrderSql, [orderId], (updateErr, updateResult) => {
+            if (updateErr) {
+              return connection.rollback(() => {
+                connection.release();
+                reject(updateErr);
               });
             }
 
-            // Return success
-            resolve({
-              success: true,
-              message: "Order cancelled successfully",
-              orderId: orderId,
-              notificationInserted: true,
+            if (updateResult.affectedRows === 0) {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order not found or already cancelled" });
+              });
+            }
+
+            const finishWithNotification = (refundErr) => {
+              if (refundErr) {
+                return connection.rollback(() => {
+                  connection.release();
+                  reject(refundErr);
+                });
+              }
+
+              const notificationSql = `
+                INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
+                VALUES (?, ?, ?, NOW())
+              `;
+
+              connection.query(
+                notificationSql,
+                [actualId, "Order is Cancelled", 0],
+                (notifErr) => {
+                  // Match existing behavior: notification failure doesn't roll back
+                  // the cancellation/refund, it's just reported.
+                  connection.commit((commitErr) => {
+                    connection.release();
+                    if (commitErr) return reject(commitErr);
+                    resolve({
+                      success: true,
+                      message: notifErr
+                        ? "Order cancelled successfully but notification failed"
+                        : "Order cancelled successfully",
+                      orderId,
+                      refunded: shouldRefund,
+                      refundAmount: shouldRefund ? refundAmount : 0,
+                      notificationInserted: !notifErr,
+                      ...(notifErr ? { error: notifErr.message } : {}),
+                    });
+                  });
+                }
+              );
+            };
+
+            if (!shouldRefund) {
+              return finishWithNotification(null);
+            }
+
+            // Resolve userId via orders table.
+            // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
+            // so we must look it up by `id` here.
+            const userIdSql = `SELECT userId FROM market_place.orders WHERE id = ?`;
+            connection.query(userIdSql, [orderId], (userErr, userResult) => {
+              if (userErr) return finishWithNotification(userErr);
+              if (userResult.length === 0 || !userResult[0].userId) {
+                return finishWithNotification(
+                  new Error("Could not resolve userId for refund"),
+                );
+              }
+              const userId = userResult[0].userId;
+
+              const refundSql = `
+                UPDATE market_place.marketplaceusers
+                SET creditBalance = creditBalance + ?
+                WHERE id = ?
+              `;
+              connection.query(refundSql, [refundAmount, userId], (creditErr) => {
+                finishWithNotification(creditErr || null);
+              });
             });
-          },
-        );
+          });
+        });
       });
     });
   });
