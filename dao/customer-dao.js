@@ -362,8 +362,8 @@ exports.updateCustomerData = async (cusId, customerData) => {
       phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
     }
 
-    // Check if customer exists
-    const getCustomerIdQuery = `SELECT id, phoneCode, phoneNumber, email FROM marketplaceusers WHERE id = ?`;
+    // Check if customer exists (now also fetching cusId)
+    const getCustomerIdQuery = `SELECT id, cusId, phoneCode, phoneNumber, email FROM marketplaceusers WHERE id = ?`;
     const [customerResult] = await connection.query(getCustomerIdQuery, [
       cusId,
     ]);
@@ -373,6 +373,7 @@ exports.updateCustomerData = async (cusId, customerData) => {
     }
 
     const customerId = customerResult[0].id;
+    const customerCusId = customerResult[0].cusId; // <-- NEW
     const existingPhoneCode = customerResult[0].phoneCode;
     const existingPhoneNumber = customerResult[0].phoneNumber;
     const existingEmail = customerResult[0].email;
@@ -440,7 +441,13 @@ exports.updateCustomerData = async (cusId, customerData) => {
     await connection.query(updateCustomerQuery, customerParams);
 
     await connection.commit();
-    return "Customer data updated successfully.";
+
+    // Return an object now, including cusId, instead of a plain string
+    return {
+      message: "Customer data updated successfully.",
+      id: customerId,
+      cusId: customerCusId,
+    };
   } catch (error) {
     if (connection) {
       await connection.rollback();

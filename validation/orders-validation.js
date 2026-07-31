@@ -36,6 +36,7 @@ const orderValidationSchema = Joi.object({
 
     items: Joi.array().items(itemSchema).optional(),
     isFinalizeImdt: Joi.number().valid(0, 1).optional(),
+    isPaySMS: Joi.number().valid(0, 1).optional(),
     deliveryAddress: Joi.object().allow(null).optional(),
   }).required(),
 });
