@@ -725,17 +725,17 @@ exports.getDeliveredOrdersTotal = async (userId) => {
   try {
     connection = await db.marketPlace.promise().getConnection();
     const [rows] = await connection.query(
-      `SELECT COALESCE(SUM(o.fullTotal), 0) AS deliveredTotal
-       FROM orders o
-       WHERE o.userId = ?`,
+      `SELECT COALESCE(SUM(p.amount), 0) AS deliveredTotal
+       FROM processorders p
+       INNER JOIN orders o ON o.id = p.orderId
+       WHERE o.userId = ?
+         AND p.status IN ('Delivered', 'Picked up')`,
       [userId],
     );
     const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
-
     // Base 2000, +250 for every full 25000 in total order value
     const tiersEarned = Math.floor(deliveredTotal / 25000);
     const creditBalance = 2000 + tiersEarned * 250;
-
     return { deliveredTotal, creditBalance };
   } catch (err) {
     console.error("Error in getDeliveredOrdersTotal:", err);
