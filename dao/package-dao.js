@@ -272,7 +272,7 @@ exports.checkDisabledItems = async (packageId, itemIds) => {
     // 1. Check if package itself is disabled
     const packageQuery = `SELECT status FROM marketplacepackages WHERE id = ?`;
     const [packages] = await db.marketPlace.promise().query(packageQuery, [packageId]);
-    if (packages.length > 0 && packages[0].status !== "Enabled") {
+    if (packages.length > 0 && packages[0].status === "Disabled") {
       result.packageDisabled = true;
     }
 
@@ -280,7 +280,7 @@ exports.checkDisabledItems = async (packageId, itemIds) => {
     const packageItemsQuery = `
       SELECT mi.id, mi.displayName
       FROM packagedetails pd
-      INNER JOIN marketplaceitems mi ON pd.productTypeId = mi.productTypeId
+      INNER JOIN marketplaceitems mi ON pd.mpItemId = mi.id
       WHERE pd.packageId = ? AND mi.isEnable = 0
     `;
     const [disabledPkgItems] = await db.marketPlace.promise().query(packageItemsQuery, [packageId]);
