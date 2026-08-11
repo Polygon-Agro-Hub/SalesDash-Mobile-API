@@ -756,6 +756,8 @@ exports.getOrderById = async (orderId) => {
              SELECT
                 o.id AS orderId,
                 o.userId,
+                o.title AS orderTitle,
+                o.fullName AS orderFullName,
                 o.sheduleType,
                 o.sheduleDate,
                 o.sheduleTime,
@@ -986,7 +988,8 @@ exports.getOrderById = async (orderId) => {
       isPackage: order.isPackage,
       delivaryMethod: order.delivaryMethod,
       customerInfo: {
-        title: order.title,
+        title: order.orderTitle,
+        fullName: order.orderFullName,
         firstName: order.firstName,
         lastName: order.lastName,
         phoneNumber: order.phoneNumber,

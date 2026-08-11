@@ -118,6 +118,7 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
     lastName: req.body.lastName,
     phoneNumber: req.body.phoneNumber,
     email: req.body.email,
+    nic: req.body.nic,
   };
 
   try {
@@ -130,12 +131,14 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
     if (error) {
       const isPhoneError = error.details[0].path.includes("phoneNumber");
       const isEmailError = error.details[0].path.includes("email");
+      const isNicError = error.details[0].path.includes("nic");
       return res.status(400).json({
         message: error.details[0].message,
         errors: {
           phoneNumber: isPhoneError,
           email: isEmailError,
-          general: !isPhoneError && !isEmailError,
+          nic: isNicError,
+          general: !isPhoneError && !isEmailError && !isNicError,
         },
       });
     }
@@ -155,6 +158,7 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
         errors: {
           email: true,
           phoneNumber: false,
+          nic: false,
         },
       });
     } else if (error.message === "Phone number already exists.") {
@@ -163,6 +167,16 @@ exports.updateCustomerData = asyncHandler(async (req, res) => {
         errors: {
           phoneNumber: true,
           email: false,
+          nic: false,
+        },
+      });
+    } else if (error.message === "NIC already exists.") {
+      return res.status(400).json({
+        message: "NIC already exists.",
+        errors: {
+          phoneNumber: false,
+          email: false,
+          nic: true,
         },
       });
     } else if (error.message === "Customer not found") {
@@ -187,14 +201,25 @@ exports.checkCustomer = (req, res) => {
   if (error) {
     return res.status(400).json({ message: error.details[0].message });
   }
-  const { phoneNumber, email, excludeId } = value;
-
+  const { phoneNumber, email, nic, excludeId } = value;
   customerDAO
-    .findCustomerByPhoneOrEmail(phoneNumber, email, excludeId)
+    .findCustomerByPhoneOrEmail(phoneNumber, email, nic, excludeId)
     .then((result) => {
-      if (result.phoneExists && result.emailExists) {
+      if (result.phoneExists && result.emailExists && result.nicExists) {
+        return res.status(400).json({
+          message: "Mobile Number, Email and NIC already exist.",
+        });
+      } else if (result.phoneExists && result.emailExists) {
         return res.status(400).json({
           message: "Mobile Number and Email already exist.",
+        });
+      } else if (result.phoneExists && result.nicExists) {
+        return res.status(400).json({
+          message: "Mobile Number and NIC already exist.",
+        });
+      } else if (result.emailExists && result.nicExists) {
+        return res.status(400).json({
+          message: "Email and NIC already exist.",
         });
       } else if (result.phoneExists) {
         return res.status(400).json({
@@ -204,8 +229,11 @@ exports.checkCustomer = (req, res) => {
         return res.status(400).json({
           message: "Email already exists.",
         });
+      } else if (result.nicExists) {
+        return res.status(400).json({
+          message: "NIC already exists.",
+        });
       }
-
       res.status(200).json({ message: "Valid new customer." });
     })
     .catch((error) => {
@@ -213,7 +241,6 @@ exports.checkCustomer = (req, res) => {
       res.status(500).json({ message: "Internal server error" });
     });
 };
-
 exports.getCustomerCountBySalesAgent = async (req, res) => {
   try {
     const salesAgentId = req.user.id;
