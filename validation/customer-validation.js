@@ -55,6 +55,15 @@ exports.createCustomerSchema = Joi.object({
   email: Joi.string().email().optional().allow("", null).messages({
     "string.email": "Email must be a valid email address",
   }),
+  nic: Joi.string()
+    .trim()
+    .pattern(/^([0-9]{9}[vVxX]|[0-9]{12})$/)
+    .required()
+    .messages({
+      "string.empty": "NIC number is required",
+      "string.pattern.base":
+        "NIC must be 9 digits followed by V/X, or 12 digits",
+    }),
   city: Joi.string().trim().required().messages({
     "string.empty": "City is required",
   }),
@@ -108,6 +117,14 @@ exports.updateCustomerSchema = Joi.object({
     "string.empty": "Last name is required",
   }),
   phoneNumber: exports.phoneNumberSchema,
+  nic: Joi.string()
+    .trim()
+    .pattern(/^([0-9]{9}[vVxX]|[0-9]{12})$/)
+    .required()
+    .messages({
+      "string.empty": "NIC number is required",
+      "string.pattern.base": "NIC must be 9 digits followed by V/X, or 12 digits",
+    }),
   email: Joi.string().email().optional().allow("", null).messages({
     "string.email": "Email must be a valid email address",
   }),
@@ -255,5 +272,13 @@ exports.checkCustomerSchema = Joi.object({
     Joi.number().integer().min(1000000000).max(999999999999999).custom((value) => String(value))
   ).required(),
   email: Joi.string().email().optional().allow("", null),
+  nic: Joi.string()
+    .trim()
+    .pattern(/^([0-9]{9}[vVxX]|[0-9]{12})$/)
+    .optional()
+    .allow("", null)
+    .messages({
+      "string.pattern.base": "NIC must be 9 digits followed by V/X, or 12 digits",
+    }),
   excludeId: Joi.number().integer().positive().optional().allow(null),
 });

@@ -97,128 +97,42 @@ cron.schedule("00 18 * * *", async () => {
   }
 });
 
-// Start server using HTTP server for Socket.io support
 const PORT = process.env.PORT || 3000;
 const http = require("http");
-const server = http.createServer(app);
 const { Server } = require("socket.io");
+
+const server = http.createServer(app);
 const io = new Server(server, {
-  path: `${BASE_PATH}/socket.io`,
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+  },
 });
 
-// Active orders to monitor: orderId -> Set of socket IDs
-const activeOrderChecks = new Map();
-// Active sales agents to monitor: salesAgentId -> { count: number, sockets: Set }
-const activeAgentChecks = new Map();
-
 io.on("connection", (socket) => {
-  console.log("🔌 Socket connected:", socket.id);
+  console.log("⚡ Client connected to Socket.IO:", socket.id);
 
   socket.on("joinOrder", (orderId) => {
-    const numericOrderId = Number(orderId);
-    if (!numericOrderId) return;
-    
-    socket.join(`order_${numericOrderId}`);
-    console.log(`🔌 Socket ${socket.id} joined order_${numericOrderId}`);
-
-    if (!activeOrderChecks.has(numericOrderId)) {
-      activeOrderChecks.set(numericOrderId, new Set());
-    }
-    activeOrderChecks.get(numericOrderId).add(socket.id);
-  });
-
-  socket.on("registerSalesAgent", (salesAgentId) => {
-    const numericAgentId = Number(salesAgentId);
-    if (!numericAgentId) return;
-
-    socket.join(`salesAgent_${numericAgentId}`);
-    console.log(`🔌 Socket ${socket.id} registered for salesAgent_${numericAgentId}`);
-
-    if (!activeAgentChecks.has(numericAgentId)) {
-      activeAgentChecks.set(numericAgentId, { lastCount: null, sockets: new Set() });
-    }
-    activeAgentChecks.get(numericAgentId).sockets.add(socket.id);
+    socket.join(`order_${orderId}`);
+    console.log(`Socket ${socket.id} joined room order_${orderId}`);
   });
 
   socket.on("disconnect", () => {
-    console.log("🔌 Socket disconnected:", socket.id);
-    
-    // Clean up order checks
-    for (const [orderId, socketSet] of activeOrderChecks.entries()) {
-      if (socketSet.has(socket.id)) {
-        socketSet.delete(socket.id);
-        if (socketSet.size === 0) {
-          activeOrderChecks.delete(orderId);
-        }
-      }
-    }
-
-    // Clean up agent checks
-    for (const [agentId, info] of activeAgentChecks.entries()) {
-      if (info.sockets.has(socket.id)) {
-        info.sockets.delete(socket.id);
-        if (info.sockets.size === 0) {
-          activeAgentChecks.delete(agentId);
-        }
-      }
-    }
+    console.log("🔌 Client disconnected from Socket.IO:", socket.id);
   });
 });
 
-// Periodic payment status checker (every 2 seconds)
-setInterval(async () => {
-  if (activeOrderChecks.size === 0) return;
+// Attach io instance to express app
+app.set("io", io);
 
-  for (const orderId of Array.from(activeOrderChecks.keys())) {
-    try {
-      const result = await orderDao.checkOrderPaymentStatus(orderId);
-      const isPaid = result?.data?.isPaid;
-
-      if (Number(isPaid) === 1) {
-        console.log(`💲 Order ${orderId} has been PAID. Emitting event.`);
-        io.to(`order_${orderId}`).emit("paymentStatusChanged", { orderId, isPaid: 1 });
-        activeOrderChecks.delete(orderId);
-      }
-    } catch (err) {
-      console.error(`Error in socket payment status check for order ${orderId}:`, err);
-    }
-  }
-}, 2000);
-
-// Periodic notification checker (every 5 seconds)
-setInterval(async () => {
-  if (activeAgentChecks.size === 0) return;
-
-  for (const agentId of Array.from(activeAgentChecks.keys())) {
-    const info = activeAgentChecks.get(agentId);
-    if (!info || info.sockets.size === 0) continue;
-
-    try {
-      const { unreadCount, notifications } = await notificationDao.getNotificationsBySalesAgentDAO(agentId);
-      const currentCount = Number(unreadCount) || 0;
-
-      if (info.lastCount !== null && currentCount > info.lastCount) {
-        console.log(`🔔 New notification for agent ${agentId}. Emitting event.`);
-        io.to(`salesAgent_${agentId}`).emit("newNotification", { unreadCount: currentCount, notifications });
-      }
-      info.lastCount = currentCount;
-    } catch (err) {
-      console.error(`Error in socket notification check for agent ${agentId}:`, err);
-    }
-  }
-}, 5000);
+// Attach io and app to server instance
+server.io = io;
+server.app = app;
 
 // Only listen locally, Vercel will export the handler and call listen internally
 if (!process.env.VERCEL) {
   server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log(`📍 Base Path: ${BASE_PATH}`);
-    console.log(`💓 Health Check URL: ${BASE_PATH}/health`);
+    console.log(`🚀 Main API server running with Socket.IO on port ${PORT} with base path ${BASE_PATH}`);
   });
 }
 

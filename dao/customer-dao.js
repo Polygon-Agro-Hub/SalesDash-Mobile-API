@@ -1,4 +1,8 @@
 const db = require("../startup/database");
+const bcrypt = require("bcryptjs");
+const smsService = require("../services/sms-service");
+
+const SALT_ROUNDS = 10;
 
 exports.addCustomer = (customerData, salesAgent) => {
   return new Promise(async (resolve, reject) => {
@@ -28,8 +32,20 @@ exports.addCustomer = (customerData, salesAgent) => {
         phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
       }
 
-      const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nearesCity, salesAgent, isDashUser)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+      // normalize NIC to uppercase (old-format NICs end in V/X)
+      const nic = customerData.nic
+        ? customerData.nic.toString().trim().toUpperCase()
+        : null;
+
+      if (!nic) {
+        return reject(new Error("NIC is required to create a customer"));
+      }
+
+      // hash the NIC and store it as the initial login password
+      const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
+
+      const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nic, password, nearesCity, salesAgent, isDashUser)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
 
       db.marketPlace.query(
         sqlCustomer,
@@ -41,6 +57,8 @@ exports.addCustomer = (customerData, salesAgent) => {
           phoneNumber,
           customerData.email,
           customerData.title,
+          nic,
+          hashedPassword,
           customerData.city,
           salesAgent,
           1,
@@ -52,7 +70,11 @@ exports.addCustomer = (customerData, salesAgent) => {
 
           const insertId = customerResult.insertId;
 
-          insertBuildingData(insertId, customerData)
+          insertBuildingData(insertId, customerData, {
+            phoneCode,
+            phoneNumber,
+            nic,
+          })
             .then(() => {
               resolve({
                 success: true,
@@ -97,7 +119,37 @@ const generateCustomerId = async () => {
   return newCustomerId;
 };
 
-const insertBuildingData = async (customerId, customerData) => {
+async function sendCustomerWelcomeSMS(phoneCode, phoneNumber, nic) {
+  try {
+    const fullPhoneNumber = `${phoneCode}${phoneNumber}`;
+
+    const smsMessage =
+      `Welcome to Polygon! Your Polygon Mobile App login details are:\n` +
+      `Username: ${phoneNumber}\n` +
+      `Password: ${nic} (Your NIC)\n` +
+      `Please keep your login details confidential.`;
+
+    const smsResult = await smsService.sendSMS(fullPhoneNumber, smsMessage);
+
+    if (!smsResult || !smsResult.success) {
+      console.error(
+        `❌ Failed to send welcome SMS to ${fullPhoneNumber}:`,
+        smsResult,
+      );
+      throw new Error("Welcome SMS sending failed");
+    }
+
+    return smsResult;
+  } catch (error) {
+    console.error("Error sending customer welcome SMS:", error);
+    // Re-throw so the caller decides how to handle it (matches
+    // sendOrderConfirmationSMS behaviour) - the caller wraps this in a
+    // try/catch that logs but never fails customer creation.
+    throw error;
+  }
+}
+
+const insertBuildingData = async (customerId, customerData, contactInfo) => {
   let insertQuery;
   let queryParams;
 
@@ -128,7 +180,28 @@ const insertBuildingData = async (customerId, customerData) => {
   } else {
     throw new Error("Invalid building type");
   }
+
   await db.marketPlace.promise().query(insertQuery, queryParams);
+
+  // Address saved successfully - send the welcome SMS with login
+  // credentials (username = phone number, password = NIC). Best effort:
+  // logged on failure but never throws, so a bad SMS gateway response
+  // can't roll back or fail customer creation, which has already
+  // succeeded at this point.
+  if (contactInfo) {
+    try {
+      await sendCustomerWelcomeSMS(
+        contactInfo.phoneCode,
+        contactInfo.phoneNumber,
+        contactInfo.nic,
+      );
+    } catch (smsError) {
+      console.error(
+        "Failed to send welcome SMS to new customer:",
+        smsError,
+      );
+    }
+  }
 };
 
 exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
@@ -362,8 +435,13 @@ exports.updateCustomerData = async (cusId, customerData) => {
       phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
     }
 
-    // Check if customer exists (now also fetching cusId)
-    const getCustomerIdQuery = `SELECT id, cusId, phoneCode, phoneNumber, email FROM marketplaceusers WHERE id = ?`;
+    // normalize NIC to uppercase (old-format NICs end in V/X)
+    const nic = customerData.nic
+      ? customerData.nic.toString().trim().toUpperCase()
+      : null;
+
+    // Check if customer exists (now also fetching nic)
+    const getCustomerIdQuery = `SELECT id, cusId, phoneCode, phoneNumber, email, nic FROM marketplaceusers WHERE id = ?`;
     const [customerResult] = await connection.query(getCustomerIdQuery, [
       cusId,
     ]);
@@ -373,10 +451,13 @@ exports.updateCustomerData = async (cusId, customerData) => {
     }
 
     const customerId = customerResult[0].id;
-    const customerCusId = customerResult[0].cusId; // <-- NEW
+    const customerCusId = customerResult[0].cusId;
     const existingPhoneCode = customerResult[0].phoneCode;
     const existingPhoneNumber = customerResult[0].phoneNumber;
     const existingEmail = customerResult[0].email;
+    const existingNic = customerResult[0].nic
+      ? customerResult[0].nic.toString().trim().toUpperCase()
+      : null;
 
     // Check for duplicate phone number (only if changed)
     if (
@@ -422,27 +503,80 @@ exports.updateCustomerData = async (cusId, customerData) => {
       finalEmail = null;
     }
 
-    // Update only the 4 relevant fields (+ phone, since it's parsed here)
-    const updateCustomerQuery = `
-      UPDATE marketplaceusers 
-      SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?
-      WHERE id = ?`;
+    // Handle NIC duplicate check (only if changed)
+    if (nic && nic !== existingNic) {
+      const checkNicQuery = `SELECT id FROM marketplaceusers WHERE UPPER(nic) = ? AND id != ?`;
+      const [nicResult] = await connection.query(checkNicQuery, [
+        nic,
+        customerId,
+      ]);
 
-    const customerParams = [
-      customerData.title,
-      customerData.firstName,
-      customerData.lastName,
-      phoneCode,
-      phoneNumber,
-      finalEmail,
-      cusId,
-    ];
+      if (nicResult.length > 0) {
+        throw new Error("NIC already exists.");
+      }
+    } else {
+      console.log("ℹ️ NIC not changed, skipping NIC duplicate check");
+    }
+
+    const isNicChanged = nic && nic !== existingNic;
+
+    let updateCustomerQuery;
+    let customerParams;
+
+    if (isNicChanged) {
+      const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
+      updateCustomerQuery = `
+        UPDATE marketplaceusers 
+        SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, nic = ?, password = ?
+        WHERE id = ?`;
+      customerParams = [
+        customerData.title,
+        customerData.firstName,
+        customerData.lastName,
+        phoneCode,
+        phoneNumber,
+        finalEmail,
+        nic,
+        hashedPassword,
+        cusId,
+      ];
+    } else {
+      updateCustomerQuery = `
+        UPDATE marketplaceusers 
+        SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, nic = ?
+        WHERE id = ?`;
+      customerParams = [
+        customerData.title,
+        customerData.firstName,
+        customerData.lastName,
+        phoneCode,
+        phoneNumber,
+        finalEmail,
+        nic || existingNic,
+        cusId,
+      ];
+    }
 
     await connection.query(updateCustomerQuery, customerParams);
 
     await connection.commit();
 
-    // Return an object now, including cusId, instead of a plain string
+    // Send updated credentials SMS if NIC changed
+    if (isNicChanged) {
+      try {
+        await sendCustomerWelcomeSMS(
+          phoneCode || existingPhoneCode,
+          phoneNumber || existingPhoneNumber,
+          nic,
+        );
+      } catch (smsError) {
+        console.error(
+          "Failed to send welcome SMS to updated customer with new NIC:",
+          smsError,
+        );
+      }
+    }
+
     return {
       message: "Customer data updated successfully.",
       id: customerId,
@@ -464,18 +598,19 @@ exports.updateCustomerData = async (cusId, customerData) => {
 exports.findCustomerByPhoneOrEmail = async (
   phoneNumber,
   email,
+  nic = null,
   excludeId = null,
 ) => {
   try {
     let phoneExists = false;
     let emailExists = false;
+    let nicExists = false;
 
     // Check phone number if provided
     if (phoneNumber) {
       // Parse the incoming phone number (your existing code)
       let phoneCodeToCheck = "";
       let phoneNumberToCheck = "";
-
       const fullPhone = phoneNumber.toString();
       if (fullPhone.startsWith("+94")) {
         phoneCodeToCheck = "+94";
@@ -484,12 +619,10 @@ exports.findCustomerByPhoneOrEmail = async (
       // Modify the query to exclude current user if excludeId is provided
       let phoneQuery = `SELECT id FROM marketplaceusers WHERE phoneCode = ? AND phoneNumber = ?`;
       const phoneParams = [phoneCodeToCheck, phoneNumberToCheck];
-
       if (excludeId) {
         phoneQuery += ` AND id != ?`;
         phoneParams.push(excludeId);
       }
-
       const [phoneRows] = await db.marketPlace
         .promise()
         .query(phoneQuery, phoneParams);
@@ -500,22 +633,36 @@ exports.findCustomerByPhoneOrEmail = async (
     if (email) {
       let emailQuery = `SELECT id FROM marketplaceusers WHERE email = ?`;
       const emailParams = [email];
-
       if (excludeId) {
         emailQuery += ` AND id != ?`;
         emailParams.push(excludeId);
       }
-
       const [emailRows] = await db.marketPlace
         .promise()
         .query(emailQuery, emailParams);
       emailExists = emailRows.length > 0;
     }
 
+    // Check NIC if provided
+    if (nic) {
+      const nicToCheck = nic.toString().trim().toUpperCase();
+      let nicQuery = `SELECT id FROM marketplaceusers WHERE UPPER(nic) = ?`;
+      const nicParams = [nicToCheck];
+      if (excludeId) {
+        nicQuery += ` AND id != ?`;
+        nicParams.push(excludeId);
+      }
+      const [nicRows] = await db.marketPlace
+        .promise()
+        .query(nicQuery, nicParams);
+      nicExists = nicRows.length > 0;
+    }
+
     return {
       phoneExists,
       emailExists,
-      hasConflict: phoneExists || emailExists,
+      nicExists,
+      hasConflict: phoneExists || emailExists || nicExists,
     };
   } catch (error) {
     console.error("Error finding customer:", error);
