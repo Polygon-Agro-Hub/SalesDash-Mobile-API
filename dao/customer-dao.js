@@ -459,11 +459,12 @@ exports.updateCustomerData = async (cusId, customerData) => {
       ? customerResult[0].nic.toString().trim().toUpperCase()
       : null;
 
+    // Track whether phone number actually changed (used for duplicate check + SMS trigger)
+    const isPhoneChanged =
+      phoneCode !== existingPhoneCode || phoneNumber !== existingPhoneNumber;
+
     // Check for duplicate phone number (only if changed)
-    if (
-      phoneCode !== existingPhoneCode ||
-      phoneNumber !== existingPhoneNumber
-    ) {
+    if (isPhoneChanged) {
       const checkPhoneQuery = `SELECT id FROM marketplaceusers WHERE phoneCode = ? AND phoneNumber = ? AND id != ?`;
       const [phoneResult] = await connection.query(checkPhoneQuery, [
         phoneCode,
@@ -474,10 +475,6 @@ exports.updateCustomerData = async (cusId, customerData) => {
       if (phoneResult.length > 0) {
         throw new Error("Phone number already exists.");
       }
-    } else {
-      console.log(
-        "ℹ️ Phone number not changed, skipping phone duplicate check",
-      );
     }
 
     // Handle email validation and duplicate check
@@ -496,8 +493,6 @@ exports.updateCustomerData = async (cusId, customerData) => {
         if (emailResult.length > 0) {
           throw new Error("Email already exists.");
         }
-      } else {
-        console.log("ℹ️ Email not changed, skipping email duplicate check");
       }
     } else {
       finalEmail = null;
@@ -514,8 +509,6 @@ exports.updateCustomerData = async (cusId, customerData) => {
       if (nicResult.length > 0) {
         throw new Error("NIC already exists.");
       }
-    } else {
-      console.log("ℹ️ NIC not changed, skipping NIC duplicate check");
     }
 
     const isNicChanged = nic && nic !== existingNic;
@@ -561,17 +554,19 @@ exports.updateCustomerData = async (cusId, customerData) => {
 
     await connection.commit();
 
-    // Send updated credentials SMS if NIC changed
-    if (isNicChanged) {
+    // Send updated credentials SMS if NIC changed OR phone number changed —
+    // the SMS shows username (phone) + password (NIC), so either change
+    // means the customer needs to see it again.
+    if (isNicChanged || isPhoneChanged) {
       try {
         await sendCustomerWelcomeSMS(
           phoneCode || existingPhoneCode,
           phoneNumber || existingPhoneNumber,
-          nic,
+          nic || existingNic,
         );
       } catch (smsError) {
         console.error(
-          "Failed to send welcome SMS to updated customer with new NIC:",
+          "Failed to send welcome SMS to updated customer:",
           smsError,
         );
       }
