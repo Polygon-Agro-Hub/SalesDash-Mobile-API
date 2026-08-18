@@ -1180,6 +1180,8 @@ exports.addSavedAddress = async ({
     await conn.beginTransaction();
 
     // ── 1. Check for duplicate saveAs across both tables for this customer ──
+    // This is the ONLY uniqueness constraint — address location and
+    // phone numbers are intentionally allowed to repeat.
     const [[hDup]] = await conn.query(
       `SELECT id FROM house WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) LIMIT 1`,
       [customerId, saveAs],
@@ -1197,112 +1199,10 @@ exports.addSavedAddress = async ({
       throw err;
     }
 
-    // ── 2. Check for duplicate physical address location ──
-    if (buildingType === "Apartment") {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND LOWER(TRIM(buildingNo))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(buildingName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(unitNo))       = LOWER(TRIM(?))
-           AND LOWER(TRIM(floorNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(houseNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))         = LOWER(TRIM(?))
-         LIMIT 1`,
-        [
-          customerId,
-          buildingNo,
-          buildingName,
-          unitNo,
-          floorNo,
-          houseNo,
-          streetName,
-          nearestCity || "",
-        ],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This apartment address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    } else {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND LOWER(TRIM(houseNo))    = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))       = LOWER(TRIM(?))
-         LIMIT 1`,
-        [customerId, houseNo, streetName, nearestCity || ""],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This house address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    }
-
     const phone1Parsed = parsePhone(billingPhone1);
     const phone2Parsed = billingPhone2
       ? parsePhone(billingPhone2)
       : { code: null, number: null };
-
-    // ── 3. Check for duplicate phone number across both tables for this customer ──
-    const targetPhone1 = phone1Parsed.number;
-    const targetPhone2 = phone2Parsed.number;
-
-    if (targetPhone1) {
-      const [[hPhoneDup]] = await conn.query(
-        `SELECT id FROM house 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone1, targetPhone1],
-      );
-      const [[aPhoneDup]] = await conn.query(
-        `SELECT id FROM apartment 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone1, targetPhone1],
-      );
-      if (hPhoneDup || aPhoneDup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 1 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
-        throw err;
-      }
-    }
-
-    if (targetPhone2) {
-      const [[hPhone2Dup]] = await conn.query(
-        `SELECT id FROM house 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone2, targetPhone2],
-      );
-      const [[aPhone2Dup]] = await conn.query(
-        `SELECT id FROM apartment 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone2, targetPhone2],
-      );
-      if (hPhone2Dup || aPhone2Dup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 2 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
-        throw err;
-      }
-    }
 
     let insertId;
     if (buildingType === "Apartment") {
@@ -1433,6 +1333,8 @@ exports.updateSavedAddress = async (
       : { code: null, number: null };
 
     // ── 1. Check duplicate saveAs (excluding current record by id) ──
+    // This is the ONLY uniqueness constraint — address location and
+    // phone numbers are intentionally allowed to repeat.
     if (resolvedCustomerId && saveAs) {
       const [[hSaveDup]] = await conn.query(
         `SELECT id FROM house WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) AND id != ? LIMIT 1`,
@@ -1448,119 +1350,6 @@ exports.updateSavedAddress = async (
           `An address named "${saveAs}" already exists for this customer.`,
         );
         err.code = "DUPLICATE_SAVE_AS";
-        throw err;
-      }
-    }
-
-    // ── 2. Check duplicate physical address location (excluding current record by id) ──
-    if (type === "Apartment") {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND LOWER(TRIM(buildingNo))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(buildingName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(unitNo))       = LOWER(TRIM(?))
-           AND LOWER(TRIM(floorNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(houseNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))         = LOWER(TRIM(?))
-           AND id != ?
-         LIMIT 1`,
-        [
-          resolvedCustomerId,
-          buildingNo,
-          buildingName,
-          unitNo,
-          floorNo,
-          houseNo,
-          streetName,
-          nearestCity || "",
-          addressId,
-        ],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This apartment address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    } else {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND LOWER(TRIM(houseNo))    = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))       = LOWER(TRIM(?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, houseNo, streetName, nearestCity || "", addressId],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This house address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    }
-
-    // ── 3. Check duplicate phone number (excluding current record by id — works for both same-type and type-change edits) ──
-    const targetPhone1 = phone1Parsed.number;
-    const targetPhone2 = phone2Parsed.number;
-
-    if (resolvedCustomerId && targetPhone1) {
-      const [[hPhoneDup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone1, targetPhone1, addressId],
-      );
-      const [[aPhoneDup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone1, targetPhone1, addressId],
-      );
-      if (hPhoneDup || aPhoneDup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 1 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
-        throw err;
-      }
-    }
-
-    if (resolvedCustomerId && targetPhone2) {
-      const [[hPhone2Dup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone2, targetPhone2, addressId],
-      );
-      const [[aPhone2Dup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone2, targetPhone2, addressId],
-      );
-      if (hPhone2Dup || aPhone2Dup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 2 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
         throw err;
       }
     }

@@ -397,48 +397,24 @@ async function generateQRCode(text) {
   }
 }
 
+
 async function insertProcessOrder(connection, orderId, orderData) {
   try {
-    // Generate date prefix (YYMMDD)
-    const today = new Date();
-    const year = today.getFullYear().toString().slice(-2); // Last 2 digits of year (25)
-    const month = (today.getMonth() + 1).toString().padStart(2, "0"); // Month (08)
-    const day = today.getDate().toString().padStart(2, "0"); // Day (04)
 
-    const datePrefix = `${year}${month}${day}`;
-
-    // Get the current max sequence number for today (last 4 digits)
-    const [sequenceResult] = await connection.query(
-      `
-            SELECT MAX(CAST(RIGHT(invNo, 4) AS UNSIGNED)) as maxSequence
-            FROM processorders 
-            WHERE invNo LIKE ? 
-              AND LENGTH(invNo) = 10
-              AND invNo REGEXP '^[0-9]+$'
-        `,
-      [`${datePrefix}%`],
+    await connection.query("CALL generate_invoice_number(@new_inv_no)");
+    const [invNoResult] = await connection.query(
+      "SELECT @new_inv_no AS inv_no",
     );
+    const invNo = invNoResult[0].inv_no;
 
-    // Calculate next sequence number (4 digits)
-    let sequenceNumber = 1;
-    if (sequenceResult[0] && sequenceResult[0].maxSequence !== null) {
-      sequenceNumber = sequenceResult[0].maxSequence + 1;
-    }
-
-    // Generate final 10-digit invoice number: YYMMDDXXXX
-    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, "0")}`;
-
-    // ✨ GENERATE QR CODE containing the invoice number
     const qrCodeDataURL = await generateQRCode(invNo);
 
-    // Normalize paymentMethod: "Card" or "Cash"
     const paymentMethodValue =
       orderData.paymentMethod &&
         orderData.paymentMethod.toLowerCase().includes("card")
         ? "Card"
         : "Cash";
 
-    const isCardPayment = paymentMethodValue === "Card";
     const isPaidValue = 0;
     const amountValue = 0.0;
 
