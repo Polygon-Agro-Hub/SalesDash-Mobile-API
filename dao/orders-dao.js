@@ -260,8 +260,13 @@ async function insertMainOrder(
     return digits.slice(-9);
   };
 
-  const orderTitle =
-    orderData.deliveryAddress?.billingTitle || userDetails.title;
+  const orderTitle = (
+    orderData.deliveryAddress?.billingTitle ||
+    userDetails.title ||
+    ""
+  )
+    .trim()
+    .replace(/\.$/, "");
   const orderFullName = orderData.deliveryAddress?.billingName
     ? orderData.deliveryAddress.billingName.trim()
     : `${userDetails.firstName} ${userDetails.lastName}`.trim();
@@ -392,48 +397,24 @@ async function generateQRCode(text) {
   }
 }
 
+
 async function insertProcessOrder(connection, orderId, orderData) {
   try {
-    // Generate date prefix (YYMMDD)
-    const today = new Date();
-    const year = today.getFullYear().toString().slice(-2); // Last 2 digits of year (25)
-    const month = (today.getMonth() + 1).toString().padStart(2, "0"); // Month (08)
-    const day = today.getDate().toString().padStart(2, "0"); // Day (04)
 
-    const datePrefix = `${year}${month}${day}`;
-
-    // Get the current max sequence number for today (last 4 digits)
-    const [sequenceResult] = await connection.query(
-      `
-            SELECT MAX(CAST(RIGHT(invNo, 4) AS UNSIGNED)) as maxSequence
-            FROM processorders 
-            WHERE invNo LIKE ? 
-              AND LENGTH(invNo) = 10
-              AND invNo REGEXP '^[0-9]+$'
-        `,
-      [`${datePrefix}%`],
+    await connection.query("CALL generate_invoice_number(@new_inv_no)");
+    const [invNoResult] = await connection.query(
+      "SELECT @new_inv_no AS inv_no",
     );
+    const invNo = invNoResult[0].inv_no;
 
-    // Calculate next sequence number (4 digits)
-    let sequenceNumber = 1;
-    if (sequenceResult[0] && sequenceResult[0].maxSequence !== null) {
-      sequenceNumber = sequenceResult[0].maxSequence + 1;
-    }
-
-    // Generate final 10-digit invoice number: YYMMDDXXXX
-    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, "0")}`;
-
-    // ✨ GENERATE QR CODE containing the invoice number
     const qrCodeDataURL = await generateQRCode(invNo);
 
-    // Normalize paymentMethod: "Card" or "Cash"
     const paymentMethodValue =
       orderData.paymentMethod &&
         orderData.paymentMethod.toLowerCase().includes("card")
         ? "Card"
         : "Cash";
 
-    const isCardPayment = paymentMethodValue === "Card";
     const isPaidValue = 0;
     const amountValue = 0.0;
 
@@ -725,17 +706,17 @@ exports.getDeliveredOrdersTotal = async (userId) => {
   try {
     connection = await db.marketPlace.promise().getConnection();
     const [rows] = await connection.query(
-      `SELECT COALESCE(SUM(o.fullTotal), 0) AS deliveredTotal
-       FROM orders o
-       WHERE o.userId = ?`,
+      `SELECT COALESCE(SUM(p.amount), 0) AS deliveredTotal
+       FROM processorders p
+       INNER JOIN orders o ON o.id = p.orderId
+       WHERE o.userId = ?
+         AND p.status IN ('Delivered', 'Picked up')`,
       [userId],
     );
     const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
-
     // Base 2000, +250 for every full 25000 in total order value
     const tiersEarned = Math.floor(deliveredTotal / 25000);
     const creditBalance = 2000 + tiersEarned * 250;
-
     return { deliveredTotal, creditBalance };
   } catch (err) {
     console.error("Error in getDeliveredOrdersTotal:", err);
@@ -756,6 +737,8 @@ exports.getOrderById = async (orderId) => {
              SELECT
                 o.id AS orderId,
                 o.userId,
+                o.title AS orderTitle,
+                o.fullName AS orderFullName,
                 o.sheduleType,
                 o.sheduleDate,
                 o.sheduleTime,
@@ -823,7 +806,7 @@ exports.getOrderById = async (orderId) => {
     // Determine building type + address from orderhouse / orderapartment tables (by orderId)
     const [houseRows] = await connection.execute(
       `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
-      [orderId]
+      [orderId],
     );
 
     if (houseRows.length > 0) {
@@ -846,7 +829,7 @@ exports.getOrderById = async (orderId) => {
     } else {
       const [apartmentRows] = await connection.execute(
         `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
-        [orderId]
+        [orderId],
       );
 
       if (apartmentRows.length > 0) {
@@ -986,14 +969,15 @@ exports.getOrderById = async (orderId) => {
       isPackage: order.isPackage,
       delivaryMethod: order.delivaryMethod,
       customerInfo: {
-        title: order.title,
+        title: order.orderTitle,
+        fullName: order.orderFullName,
         firstName: order.firstName,
         lastName: order.lastName,
         phoneNumber: order.phoneNumber,
         buildingType: buildingType,
       },
-      fullAddress: formattedAddress,     // single-string address (e.g. for confirm screen)
-      buildingDetails: buildingDetails,  // raw fields (e.g. for invoice screen)
+      fullAddress: formattedAddress, // single-string address (e.g. for confirm screen)
+      buildingDetails: buildingDetails, // raw fields (e.g. for invoice screen)
       orderStatus: {
         invoiceNumber: order.invoiceNumber,
         status: order.status,
@@ -1021,7 +1005,6 @@ exports.getOrderById = async (orderId) => {
     }
   }
 };
-
 
 exports.getOrderByCustomerId = (
   customerId,
@@ -1329,86 +1312,97 @@ exports.cancelOrder = (orderId) => {
                SET status = 'Cancelled'
                WHERE orderId = ?`;
 
-          connection.query(updateOrderSql, [orderId], (updateErr, updateResult) => {
-            if (updateErr) {
-              return connection.rollback(() => {
-                connection.release();
-                reject(updateErr);
-              });
-            }
-
-            if (updateResult.affectedRows === 0) {
-              return connection.rollback(() => {
-                connection.release();
-                resolve({ success: false, message: "Order not found or already cancelled" });
-              });
-            }
-
-            const finishWithNotification = (refundErr) => {
-              if (refundErr) {
+          connection.query(
+            updateOrderSql,
+            [orderId],
+            (updateErr, updateResult) => {
+              if (updateErr) {
                 return connection.rollback(() => {
                   connection.release();
-                  reject(refundErr);
+                  reject(updateErr);
                 });
               }
 
-              const notificationSql = `
+              if (updateResult.affectedRows === 0) {
+                return connection.rollback(() => {
+                  connection.release();
+                  resolve({
+                    success: false,
+                    message: "Order not found or already cancelled",
+                  });
+                });
+              }
+
+              const finishWithNotification = (refundErr) => {
+                if (refundErr) {
+                  return connection.rollback(() => {
+                    connection.release();
+                    reject(refundErr);
+                  });
+                }
+
+                const notificationSql = `
                 INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
                 VALUES (?, ?, ?, NOW())
               `;
 
-              connection.query(
-                notificationSql,
-                [actualId, "Order is Cancelled", 0],
-                (notifErr) => {
-                  // Match existing behavior: notification failure doesn't roll back
-                  // the cancellation/refund, it's just reported.
-                  connection.commit((commitErr) => {
-                    connection.release();
-                    if (commitErr) return reject(commitErr);
-                    resolve({
-                      success: true,
-                      message: notifErr
-                        ? "Order cancelled successfully but notification failed"
-                        : "Order cancelled successfully",
-                      orderId,
-                      refunded: shouldRefund,
-                      refundAmount: shouldRefund ? refundAmount : 0,
-                      notificationInserted: !notifErr,
-                      ...(notifErr ? { error: notifErr.message } : {}),
+                connection.query(
+                  notificationSql,
+                  [actualId, "Order is Cancelled", 0],
+                  (notifErr) => {
+                    // Match existing behavior: notification failure doesn't roll back
+                    // the cancellation/refund, it's just reported.
+                    connection.commit((commitErr) => {
+                      connection.release();
+                      if (commitErr) return reject(commitErr);
+                      resolve({
+                        success: true,
+                        message: notifErr
+                          ? "Order cancelled successfully but notification failed"
+                          : "Order cancelled successfully",
+                        orderId,
+                        refunded: shouldRefund,
+                        refundAmount: shouldRefund ? refundAmount : 0,
+                        notificationInserted: !notifErr,
+                        ...(notifErr ? { error: notifErr.message } : {}),
+                      });
                     });
-                  });
-                }
-              );
-            };
-
-            if (!shouldRefund) {
-              return finishWithNotification(null);
-            }
-
-            // Resolve userId via orders table.
-            // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
-            // so we must look it up by `id` here.
-            const userIdSql = `SELECT userId FROM market_place.orders WHERE id = ?`;
-            connection.query(userIdSql, [orderId], (userErr, userResult) => {
-              if (userErr) return finishWithNotification(userErr);
-              if (userResult.length === 0 || !userResult[0].userId) {
-                return finishWithNotification(
-                  new Error("Could not resolve userId for refund"),
+                  },
                 );
-              }
-              const userId = userResult[0].userId;
+              };
 
-              const refundSql = `
+              if (!shouldRefund) {
+                return finishWithNotification(null);
+              }
+
+              // Resolve userId via orders table.
+              // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
+              // so we must look it up by `id` here.
+              const userIdSql = `SELECT userId FROM market_place.orders WHERE id = ?`;
+              connection.query(userIdSql, [orderId], (userErr, userResult) => {
+                if (userErr) return finishWithNotification(userErr);
+                if (userResult.length === 0 || !userResult[0].userId) {
+                  return finishWithNotification(
+                    new Error("Could not resolve userId for refund"),
+                  );
+                }
+                const userId = userResult[0].userId;
+
+                const refundSql = `
                 UPDATE market_place.marketplaceusers
                 SET creditBalance = creditBalance + ?
                 WHERE id = ?
               `;
-              connection.query(refundSql, [refundAmount, userId], (creditErr) => {
-                finishWithNotification(creditErr || null);
+                connection.query(
+                  refundSql,
+                  [refundAmount, userId],
+                  (creditErr) => {
+                    finishWithNotification(creditErr || null);
+                  },
+                );
               });
-            });
-          });
+            },
+          );
         });
       });
     });
