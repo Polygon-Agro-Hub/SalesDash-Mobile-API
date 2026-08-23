@@ -35,6 +35,7 @@ app.get([`${BASE_PATH}/health`, `${BASE_PATH}/healthz`], (req, res) => {
   });
 });
 
+// Database connection check function
 const DatabaseConnection = (db, name) => {
   db.getConnection((err, connection) => {
     if (err) {
