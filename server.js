@@ -15,9 +15,9 @@ app.use(compression());
 const BASE_PATH = "/agro-api/salesdash";
 
 const corsOptions = {
-  origin: process.env.CLIENT_ORIGIN || "http://localhost:8081",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  credentials: true,
+  origin: process.env.CLIENT_ORIGIN || "*",
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin"],
 };
 
 app.use(cors(corsOptions));
