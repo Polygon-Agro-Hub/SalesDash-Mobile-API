@@ -35,10 +35,10 @@ ORDER BY dn.createdAt DESC
       WHERE mps.salesAgent = ? AND dn.readStatus = 0
     `;
 
-    db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
+    db.collectionofficer.query(query, [salesAgentId], (err, notifications) => {
       if (err) return reject(err);
 
-      db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
+      db.collectionofficer.query(countQuery, [salesAgentId], (err, countResult) => {
         if (err) return reject(err);
 
         resolve({
@@ -59,7 +59,7 @@ exports.markNotificationsAsReadByOrderIdDAO = (id) => {
       WHERE id = ? AND readStatus = 0
     `;
 
-    db.marketPlace.query(query, [id], (err, result) => {
+    db.collectionofficer.query(query, [id], (err, result) => {
       if (err) return reject(err);
       resolve(result.affectedRows);
     });
@@ -74,7 +74,7 @@ exports.deleteNotificationsByOrderIdDAO = (id) => {
       WHERE id = ?
     `;
 
-    db.marketPlace.query(query, [id], (err, result) => {
+    db.collectionofficer.query(query, [id], (err, result) => {
       if (err) return reject(err);
       resolve(result.affectedRows);
     });

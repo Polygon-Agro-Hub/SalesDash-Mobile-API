@@ -1,4 +1,4 @@
-const { marketPlace } = require("../../startup/database");
+const { collectionofficer } = require("../../startup/database");
 
 const createMarketPlaceUsersTable = () => {
   const sql = `
@@ -12,7 +12,7 @@ const createMarketPlaceUsersTable = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating market place users table: " + err);
       } else {
@@ -33,7 +33,7 @@ const createMarketPlacePackages = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating market place users package: " + err);
       } else {
@@ -60,7 +60,7 @@ const createCoupon = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating coupen table: " + err);
       } else {
@@ -91,7 +91,7 @@ const createMarketPlaceItems = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating market place items table: " + err);
       } else {
@@ -120,7 +120,7 @@ const createPackageDetails = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating package details table: " + err);
       } else {
@@ -143,7 +143,7 @@ const createPromoItems = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating promo items table: " + err);
       } else {
@@ -166,7 +166,7 @@ const createCart = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating cart table: " + err);
       } else {
@@ -194,7 +194,7 @@ const createCartItems = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating cart table: " + err);
       } else {

@@ -39,7 +39,7 @@ const auth = (req, res, next) => {
 
     // Verify user status from DB
     const sql = "SELECT status FROM salesagent WHERE id = ?";
-    db.marketPlace.query(sql, [decoded.id], (dbErr, results) => {
+    db.collectionofficer.query(sql, [decoded.id], (dbErr, results) => {
       if (dbErr) {
         console.error("Database error during status verification:", dbErr);
         return res.status(500).json({

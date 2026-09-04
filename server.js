@@ -6,7 +6,6 @@ require("dotenv").config();
 const {
   plantcare,
   collectionofficer,
-  marketPlace,
   admin,
 } = require("./startup/database");
 const setupSwagger = require("./startup/swagger");
@@ -56,7 +55,6 @@ const DatabaseConnection = (db, name) => {
 // Initial database connections
 DatabaseConnection(plantcare, "PlantCare");
 DatabaseConnection(collectionofficer, "CollectionOfficer");
-DatabaseConnection(marketPlace, "MarketPlace");
 DatabaseConnection(admin, "Admin");
 
 const routes = {

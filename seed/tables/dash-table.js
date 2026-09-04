@@ -1,4 +1,4 @@
-const { dash } = require("../../startup/database");
+const { dash, collectionofficer } = require("../../startup/database");
 
 const createSalesAgentTable = () => {
   const sql = `
@@ -227,7 +227,7 @@ const createOrdersTable = () => {
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating orders table: " + err);
       } else {
@@ -252,13 +252,13 @@ const createOrderItemsTable = () => {
       FOREIGN KEY (orderId) REFERENCES orders(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
-      FOREIGN KEY (packageId) REFERENCES market_place.marketplacepackages(id)
+      FOREIGN KEY (packageId) REFERENCES collection_officer.marketplacepackages(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating orderitems table: " + err);
       } else {
@@ -282,13 +282,13 @@ const createModifiedPlustemsTable = () => {
       FOREIGN KEY (orderItemsId) REFERENCES orderitems(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
-      FOREIGN KEY (packageDetailsId) REFERENCES market_place.marketplacepackages(id)
+      FOREIGN KEY (packageDetailsId) REFERENCES collection_officer.marketplacepackages(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating modifiedplusitems table: " + err);
       } else {
@@ -312,13 +312,13 @@ const createModifiedMintemsTable = () => {
       FOREIGN KEY (orderItemsId) REFERENCES orderitems(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
-      FOREIGN KEY (packageDetailsId) REFERENCES market_place.marketplacepackages(id)
+      FOREIGN KEY (packageDetailsId) REFERENCES collection_officer.marketplacepackages(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating modifiedminitems table: " + err);
       } else {
@@ -340,13 +340,13 @@ const createAdditionaltemsTable = () => {
       FOREIGN KEY (orderItemsId) REFERENCES orderitems(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
-      FOREIGN KEY (mpItemId) REFERENCES market_place.marketplaceitems(id)
+      FOREIGN KEY (mpItemId) REFERENCES collection_officer.marketplaceitems(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE
     )
   `;
   return new Promise((resolve, reject) => {
-    marketPlace.query(sql, (err, result) => {
+    collectionofficer.query(sql, (err, result) => {
       if (err) {
         reject("Error creating additionalitem table: " + err);
       } else {

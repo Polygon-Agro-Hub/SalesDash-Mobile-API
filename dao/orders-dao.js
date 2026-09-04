@@ -10,7 +10,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     // Start transaction
     await connection.beginTransaction();
@@ -643,7 +643,7 @@ exports.getDataCustomerId = async (customerId) => {
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     // First query to get basic customer info including phoneCode and phoneNumber
     const customerSql = `
@@ -704,7 +704,7 @@ exports.getDataCustomerId = async (customerId) => {
 exports.getDeliveredOrdersTotal = async (userId) => {
   let connection;
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
     const [rows] = await connection.query(
       `SELECT COALESCE(SUM(p.amount), 0) AS deliveredTotal
        FROM processorders p
@@ -731,7 +731,7 @@ exports.getOrderById = async (orderId) => {
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     const sql = `
              SELECT
@@ -1022,12 +1022,12 @@ exports.getOrderByCustomerId = (
     const countSql = `
       SELECT COUNT(*) as totalCount
       FROM orders o
-      LEFT JOIN market_place.processorders p ON o.id = p.orderId
+      LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
       WHERE o.userId = ?
       ${statusClause}
     `;
 
-    db.marketPlace.query(countSql, countParams, (err, countResult) => {
+    db.collectionofficer.query(countSql, countParams, (err, countResult) => {
       if (err) return reject(err);
 
       const totalCount = countResult[0].totalCount;
@@ -1056,14 +1056,14 @@ exports.getOrderByCustomerId = (
           p.paymentMethod AS paymentMethod,
           p.status AS status
         FROM orders o
-        LEFT JOIN market_place.processorders p ON o.id = p.orderId
+        LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
         WHERE o.userId = ?
         ${statusClause}
         ORDER BY o.createdAt DESC
         LIMIT ? OFFSET ?
       `;
 
-      db.marketPlace.query(ordersSql, orderParams, (err, orderResults) => {
+      db.collectionofficer.query(ordersSql, orderParams, (err, orderResults) => {
         if (err) return reject(err);
         resolve({ orders: orderResults, totalCount });
       });
@@ -1076,7 +1076,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     // Ensure page and limit are integers
     const pageNum = parseInt(page);
@@ -1087,8 +1087,8 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     let countSql = `
             SELECT COUNT(*) as totalCount
             FROM orders o
-            LEFT JOIN market_place.processorders p ON o.id = p.orderId
-            LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
+            LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
+            LEFT JOIN collection_officer.marketplaceusers m ON o.userId = m.id
         `;
 
     const countParams = [];
@@ -1121,8 +1121,8 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 p.paymentMethod AS paymentMethod,
                 p.status As status
             FROM orders o
-            LEFT JOIN market_place.processorders p ON o.id = p.orderId
-            LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
+            LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
+            LEFT JOIN collection_officer.marketplaceusers m ON o.userId = m.id
         `;
 
     // Add WHERE clause if salesAgentId is provided
@@ -1227,12 +1227,12 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
 exports.reportOrder = (orderId, reportStatus) => {
   return new Promise((resolve, reject) => {
     const updateSql = `
-      UPDATE market_place.processorders 
+      UPDATE collection_officer.processorders 
       SET reportStatus = ?
       WHERE orderId = ?
     `;
 
-    db.marketPlace.query(updateSql, [reportStatus, orderId], (err, result) => {
+    db.collectionofficer.query(updateSql, [reportStatus, orderId], (err, result) => {
       if (err) {
         return reject(err);
       }
@@ -1257,7 +1257,7 @@ exports.reportOrder = (orderId, reportStatus) => {
 
 exports.cancelOrder = (orderId) => {
   return new Promise((resolve, reject) => {
-    db.marketPlace.getConnection((connErr, connection) => {
+    db.collectionofficer.getConnection((connErr, connection) => {
       if (connErr) return reject(connErr);
 
       connection.beginTransaction((txErr) => {
@@ -1268,7 +1268,7 @@ exports.cancelOrder = (orderId) => {
 
         const selectSql = `
           SELECT id, status, paymentMethod, isPaid, amount
-          FROM market_place.processorders
+          FROM collection_officer.processorders
           WHERE orderId = ?
           FOR UPDATE
         `;
@@ -1305,10 +1305,10 @@ exports.cancelOrder = (orderId) => {
           const refundAmount = parseFloat(orderRow.amount) || 0;
 
           const updateOrderSql = shouldRefund
-            ? `UPDATE market_place.processorders
+            ? `UPDATE collection_officer.processorders
                SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
                WHERE orderId = ?`
-            : `UPDATE market_place.processorders
+            : `UPDATE collection_officer.processorders
                SET status = 'Cancelled'
                WHERE orderId = ?`;
 
@@ -1378,7 +1378,7 @@ exports.cancelOrder = (orderId) => {
               // Resolve userId via orders table.
               // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
               // so we must look it up by `id` here.
-              const userIdSql = `SELECT userId FROM market_place.orders WHERE id = ?`;
+              const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
               connection.query(userIdSql, [orderId], (userErr, userResult) => {
                 if (userErr) return finishWithNotification(userErr);
                 if (userResult.length === 0 || !userResult[0].userId) {
@@ -1389,7 +1389,7 @@ exports.cancelOrder = (orderId) => {
                 const userId = userResult[0].userId;
 
                 const refundSql = `
-                UPDATE market_place.marketplaceusers
+                UPDATE collection_officer.marketplaceusers
                 SET creditBalance = creditBalance + ?
                 WHERE id = ?
               `;
@@ -1411,7 +1411,7 @@ exports.cancelOrder = (orderId) => {
 
 exports.getOrderCountBySalesAgent = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
     try {
       // First get all customers assigned to this sales agent
       const customersQuery = `
@@ -1466,7 +1466,7 @@ exports.getOrderCountBySalesAgent = async (salesAgentId) => {
 
 exports.getTodayStats = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
 
     try {
       // Get current date in YYYY-MM-DD format
@@ -1512,7 +1512,7 @@ exports.getTodayStats = async (salesAgentId) => {
 
 exports.getMonthlyStats = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
 
     try {
       // Get current month range
@@ -1560,7 +1560,7 @@ exports.getCombinedStats = async (salesAgentId) => {
 
 exports.getAllAgentStats = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
 
     try {
       // Get today's stats
@@ -1659,12 +1659,12 @@ exports.getReturnReason = async (orderId) => {
   let connection;
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     // Single query with joins to get return reason directly
     const returnReasonSql = `
             SELECT rr.rsnEnglish as returnReason , dro.note as otherReason
-            FROM market_place.processorders po
+            FROM collection_officer.processorders po
             INNER JOIN collection_officer.driverorders do ON do.orderId = po.id
             INNER JOIN collection_officer.driverreturnorders dro ON dro.drvOrderId = do.id
             INNER JOIN collection_officer.returnreason rr ON rr.id = dro.returnReasonId
@@ -1696,7 +1696,7 @@ exports.getReturnReason = async (orderId) => {
 exports.getHold = async (orderId) => {
   let connection;
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     const holdCheckSql = `
       SELECT 
@@ -1706,7 +1706,7 @@ exports.getHold = async (orderId) => {
         dho.restartedTime,
         dho.createdAt     AS holdCreatedAt,
         hr.rsnEnglish     AS holdReason
-      FROM market_place.processorders po
+      FROM collection_officer.processorders po
       LEFT JOIN collection_officer.driverorders  do  ON po.id      = do.orderId
       LEFT JOIN collection_officer.driverholdorders dho ON do.id   = dho.drvOrderId
       LEFT JOIN collection_officer.holdreason     hr  ON dho.holdReasonId = hr.id
@@ -1744,7 +1744,7 @@ exports.getHold = async (orderId) => {
 exports.checkOrderPaymentStatus = async (orderId) => {
   let connection;
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     const paymentCheckSql = `
       SELECT 
@@ -1754,9 +1754,9 @@ exports.checkOrderPaymentStatus = async (orderId) => {
         po.isPaid,
         po.amount,
         mu.cusId
-      FROM market_place.processorders po
-      LEFT JOIN market_place.orders o ON o.id = po.orderId
-      LEFT JOIN market_place.marketplaceusers mu ON mu.id = o.userId
+      FROM collection_officer.processorders po
+      LEFT JOIN collection_officer.orders o ON o.id = po.orderId
+      LEFT JOIN collection_officer.marketplaceusers mu ON mu.id = o.userId
       WHERE po.orderId = ?
       LIMIT 1
     `;
