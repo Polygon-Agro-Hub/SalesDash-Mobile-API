@@ -59,7 +59,7 @@ exports.getAllPackages = async (filters = {}) => {
       queryParams.push(filters.limit, filters.offset || 0);
     }
 
-    db.marketPlace.query(query, queryParams, (error, results) => {
+    db.collectionofficer.query(query, queryParams, (error, results) => {
       if (error) {
         console.error("Error fetching packages:", error);
         reject(error);
@@ -83,7 +83,7 @@ exports.getItemsByPackageId = async (packageId) => {
         WHERE pd.packageId = ?
         `;
 
-    db.marketPlace.query(query, [packageId], (error, results) => {
+    db.collectionofficer.query(query, [packageId], (error, results) => {
       if (error) {
         console.error("Error fetching items for package:", error);
         reject(error);
@@ -109,7 +109,7 @@ exports.getMarketplaceItemDetails = async (mpItemId) => {
         WHERE id = ?;
         `;
 
-    db.marketPlace.query(query, [mpItemId], (error, results) => {
+    db.collectionofficer.query(query, [mpItemId], (error, results) => {
       if (error) {
         console.error("Error fetching marketplace item details:", error);
         reject(error);
@@ -132,7 +132,7 @@ exports.getMarketplacePackage = async (packageId) => {
         WHERE id = ?;
         `;
 
-    db.marketPlace.query(query, [packageId], (error, results) => {
+    db.collectionofficer.query(query, [packageId], (error, results) => {
       if (error) {
         console.error("Error fetching package details:", error);
         reject(error);
@@ -155,7 +155,7 @@ exports.getAllCrops = async () => {
           AND mpi.isEnable = 1
         ORDER BY mpi.displayName ASC;
         `;
-    const [results] = await db.marketPlace.promise().query(query);
+    const [results] = await db.collectionofficer.promise().query(query);
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
@@ -174,7 +174,7 @@ exports.getCropById = async (id) => {
             WHERE id = ?;
         `;
 
-    const [results] = await db.marketPlace.promise().query(query, [id]);
+    const [results] = await db.collectionofficer.promise().query(query, [id]);
 
     return results[0];
   } catch (error) {
@@ -201,12 +201,12 @@ exports.getPackageItemByProductId = async (packageId, productId) => {
           mi.unitType,
           mi.startValue,
           mi.changeby
-        FROM market_place.packagedetails pd
+        FROM collection_officer.packagedetails pd
         LEFT JOIN marketplaceitems mi ON pd.mpItemId = mi.id
         WHERE pd.packageId = ? AND pd.mpItemId = ?;
         `;
 
-    db.marketPlace.query(query, [packageId, productId], (error, results) => {
+    db.collectionofficer.query(query, [packageId, productId], (error, results) => {
       if (error) {
         console.error("Error fetching package item details:", error);
         reject(error);
@@ -251,7 +251,7 @@ exports.getChangeByValue = async (mpItemId) => {
         WHERE id = ?;
         `;
 
-    db.marketPlace.query(query, [mpItemId], (error, results) => {
+    db.collectionofficer.query(query, [mpItemId], (error, results) => {
       if (error) {
         console.error("Error fetching marketplace item details:", error);
         reject(error);
@@ -271,7 +271,7 @@ exports.checkDisabledItems = async (packageId, itemIds) => {
   if (packageId) {
     // 1. Check if package itself is disabled
     const packageQuery = `SELECT status FROM marketplacepackages WHERE id = ?`;
-    const [packages] = await db.marketPlace.promise().query(packageQuery, [packageId]);
+    const [packages] = await db.collectionofficer.promise().query(packageQuery, [packageId]);
     if (packages.length > 0 && packages[0].status === "Disabled") {
       result.packageDisabled = true;
     }
@@ -284,7 +284,7 @@ exports.checkDisabledItems = async (packageId, itemIds) => {
       FROM marketplaceitems
       WHERE id IN (${placeholders}) AND isEnable = 0
     `;
-    const [disabledItems] = await db.marketPlace.promise().query(itemsQuery, itemIds);
+    const [disabledItems] = await db.collectionofficer.promise().query(itemsQuery, itemIds);
     if (disabledItems.length > 0) {
       result.disabledItems.push(...disabledItems.map(item => ({ id: item.id, displayName: item.displayName })));
     }

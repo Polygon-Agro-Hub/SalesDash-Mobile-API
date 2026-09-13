@@ -12,4 +12,7 @@ router.patch('/mark-read/:id', auth, notificationEp.markAsReadByOrderId);
 // Delete Notification
 router.delete('/:id', notificationEp.deleteByOrderId);
 
+// Register Device Push Token
+router.post('/register-push-token', auth, notificationEp.registerPushToken);
+
 module.exports = router;
