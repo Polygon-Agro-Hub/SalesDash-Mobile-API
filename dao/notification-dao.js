@@ -134,3 +134,18 @@ exports.getPushTokensBySalesAgentDAO = (salesAgentId) => {
     });
   });
 };
+
+// Insert Notification DAO
+exports.insertNotificationDAO = (orderId, title) => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
+      VALUES (?, ?, 0, NOW())
+    `;
+
+    db.collectionofficer.query(query, [orderId, title], (err, result) => {
+      if (err) return reject(err);
+      resolve(result.insertId);
+    });
+  });
+};
