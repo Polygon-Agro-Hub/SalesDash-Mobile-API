@@ -145,7 +145,41 @@ exports.insertNotificationDAO = (orderId, title) => {
 
     db.collectionofficer.query(query, [orderId, title], (err, result) => {
       if (err) return reject(err);
-      resolve(result.insertId);
+      const insertedId = result.insertId;
+
+      // Automatically dispatch Push Notification for closed-app delivery
+      try {
+        const lookupQuery = `
+          SELECT mps.salesAgent, po.invNo, o.fullName AS customerName
+          FROM processorders po
+          JOIN orders o ON po.orderId = o.id
+          JOIN marketplaceusers mps ON o.userId = mps.id
+          WHERE po.id = ?
+        `;
+        db.collectionofficer.query(lookupQuery, [orderId], async (lErr, rows) => {
+          if (!lErr && rows && rows.length > 0) {
+            const { salesAgent, invNo, customerName } = rows[0];
+            const tokens = await exports.getPushTokensBySalesAgentDAO(salesAgent);
+            if (tokens && tokens.length > 0) {
+              const pushSender = require("../services/push-sender");
+              const message = invNo
+                ? `Order #${invNo} for ${customerName || "Customer"}`
+                : title;
+              pushSender
+                .sendExpoPushNotification(tokens, title, message, {
+                  orderId,
+                  invNo,
+                  notificationId: insertedId,
+                })
+                .catch(() => {});
+            }
+          }
+        });
+      } catch (_) {
+        // Push notification dispatch is non-blocking
+      }
+
+      resolve(insertedId);
     });
   });
 };
