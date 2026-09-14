@@ -119,3 +119,69 @@ exports.registerPushToken = async (req, res) => {
     });
   }
 };
+
+const pushSender = require("../services/push-sender");
+
+// Send Notification (Inserts into DB + sends Expo Push Notification to Device even when app is closed)
+exports.sendNotification = async (req, res) => {
+  try {
+    const { orderId, title, message } = req.body;
+    const targetAgentId = req.body.salesAgentId || req.user.id;
+
+    if (!orderId || !title) {
+      return res.status(400).json({
+        success: false,
+        message: "orderId and title are required",
+      });
+    }
+
+    // 1. Insert into dashnotification
+    const notificationId = await notificationDao.insertNotificationDAO(orderId, title);
+
+    // 2. Fetch push tokens for the sales agent
+    const tokens = await notificationDao.getPushTokensBySalesAgentDAO(targetAgentId);
+
+    // 3. Dispatch Expo Push Notification (delivers to phone even when app is closed / cleared / locked)
+    let pushResult = null;
+    if (tokens && tokens.length > 0) {
+      pushResult = await pushSender.sendExpoPushNotification(
+        tokens,
+        title,
+        message || title,
+        {
+          orderId,
+          notificationId,
+        }
+      );
+    }
+
+    // 4. Emit via Socket.IO if client is open
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`salesagent_${targetAgentId}`).emit("newNotification", {
+        id: notificationId,
+        orderId,
+        title,
+        message: message || title,
+        createdAt: new Date(),
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Notification created and push notification sent",
+      data: {
+        notificationId,
+        pushedToTokensCount: tokens ? tokens.length : 0,
+        pushResult,
+      },
+    });
+  } catch (error) {
+    console.error("Error sending notification:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to send notification",
+      error: error.message,
+    });
+  }
+};
