@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Push Notification Sender Service for Expo Push Notifications
  * Sends high-priority push notifications to Android / iOS devices 24/7.
  */
@@ -20,6 +20,7 @@ async function sendExpoPushNotification(tokens, title, body, data = {}) {
     data: data,
     priority: "high",
     channelId: "default",
+    color: "#6638CE",
     _displayInForeground: true,
   }));
 

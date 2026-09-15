@@ -1505,7 +1505,7 @@ exports.cancelOrder = (orderId) => {
         }
 
         const selectSql = `
-          SELECT id, status, paymentMethod, isPaid, amount
+          SELECT id, status, paymentMethod, isPaid, amount, invNo
           FROM collection_officer.processorders
           WHERE orderId = ?
           FOR UPDATE
@@ -1579,32 +1579,53 @@ exports.cancelOrder = (orderId) => {
                   });
                 }
 
-                const notificationSql = `
-                INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
-                VALUES (?, ?, ?, NOW())
-              `;
+                const dashNotificationSql = `
+    INSERT INTO collection_officer.dashnotification (orderId, title, readStatus, createdAt)
+    VALUES (?, ?, ?, NOW())
+  `;
+
+                const orderNotificationSql = `
+    INSERT INTO collection_officer.ordernotfication (orderId, Title, message, isRead, createdAt)
+    VALUES (?, ?, ?, ?, NOW())
+  `;
+
+                const invoiceNumber = orderRow.invNo || orderId;
+                const notificationMessage = `Your order #${invoiceNumber} has been cancelled successfully.`;
 
                 connection.query(
-                  notificationSql,
+                  dashNotificationSql,
                   [actualId, "Order is Cancelled", 0],
-                  (notifErr) => {
-                    // Match existing behavior: notification failure doesn't roll back
-                    // the cancellation/refund, it's just reported.
-                    connection.commit((commitErr) => {
-                      connection.release();
-                      if (commitErr) return reject(commitErr);
-                      resolve({
-                        success: true,
-                        message: notifErr
-                          ? "Order cancelled successfully but notification failed"
-                          : "Order cancelled successfully",
-                        orderId,
-                        refunded: shouldRefund,
-                        refundAmount: shouldRefund ? refundAmount : 0,
-                        notificationInserted: !notifErr,
-                        ...(notifErr ? { error: notifErr.message } : {}),
-                      });
-                    });
+                  (dashNotifErr) => {
+                    connection.query(
+                      orderNotificationSql,
+                      [actualId, "Order Cancelled", notificationMessage, 0],
+                      (orderNotifErr) => {
+                        // Match existing behavior: notification failure doesn't roll back
+                        // the cancellation/refund, it's just reported.
+                        const notifErr = dashNotifErr || orderNotifErr;
+                        connection.commit((commitErr) => {
+                          connection.release();
+                          if (commitErr) return reject(commitErr);
+                          resolve({
+                            success: true,
+                            message: notifErr
+                              ? "Order cancelled successfully but notification failed"
+                              : "Order cancelled successfully",
+                            orderId,
+                            refunded: shouldRefund,
+                            refundAmount: shouldRefund ? refundAmount : 0,
+                            notificationInserted: !notifErr,
+                            ...(notifErr
+                              ? {
+                                error:
+                                  (dashNotifErr && dashNotifErr.message) ||
+                                  (orderNotifErr && orderNotifErr.message),
+                              }
+                              : {}),
+                          });
+                        });
+                      },
+                    );
                   },
                 );
               };
@@ -1858,38 +1879,44 @@ exports.getAllAgentStats = async (salesAgentId) => {
 };
 
 async function updateSalesAgentStars(connection, salesAgentId) {
-  // Get current date in YYYY-MM-DD format
-  const today = new Date();
-  const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
+  try {
+    if (!salesAgentId) return;
 
-  // Check if a record exists for this sales agent on the current date
-  const [existingRows] = await connection.query(
-    "SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?",
-    [salesAgentId, formattedDate],
-  );
+    // Get current date in YYYY-MM-DD format
+    const today = new Date();
+    const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
 
-  if (existingRows.length > 0) {
-    // Record exists, update the completed count by incrementing it
-    const currentRecord = existingRows[0];
-    const currentCompleted = currentRecord.completed || 0;
-    const newCompleted = currentCompleted + 1;
-    const targetValue = currentRecord.target || 0;
+    // Check if a record exists for this sales agent on the current date
+    const [existingRows] = await connection.query(
+      "SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?",
+      [salesAgentId, formattedDate],
+    );
 
-    // Determine if numOfStars should be updated
-    let numOfStars = currentRecord.numOfStars || 0;
-    if (newCompleted === targetValue) {
-      numOfStars = 1;
+    if (existingRows.length > 0) {
+      // Record exists, update the completed count by incrementing it
+      const currentRecord = existingRows[0];
+      const currentCompleted = currentRecord.completed || 0;
+      const newCompleted = currentCompleted + 1;
+      const targetValue = currentRecord.target || 0;
+
+      // Determine if numOfStars should be updated
+      let numOfStars = currentRecord.numOfStars || 0;
+      if (newCompleted === targetValue) {
+        numOfStars = 1;
+      }
+
+      await connection.query(
+        "UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?",
+        [newCompleted, numOfStars, currentRecord.id],
+      );
+    } else {
+      await connection.query(
+        "INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)",
+        [salesAgentId, formattedDate, 1, 0, 0], // Initialize with defaults
+      );
     }
-
-    await connection.query(
-      "UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?",
-      [newCompleted, numOfStars, currentRecord.id],
-    );
-  } else {
-    await connection.query(
-      "INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)",
-      [salesAgentId, formattedDate, 1, 0, 0], // Initialize with defaults
-    );
+  } catch (error) {
+    console.error("Error updating sales agent stars:", error);
   }
 }
 
