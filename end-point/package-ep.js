@@ -253,3 +253,26 @@ exports.validatePackageItems = asyncHandler(async (req, res) => {
   }
 });
 
+// Notify mobile clients about package/product updates from Admin Panel
+exports.notifyPackageUpdate = asyncHandler(async (req, res) => {
+  try {
+    const io = req.app.get("io");
+    const payload = req.body || {};
+    if (io) {
+      io.emit("packageUpdated", payload);
+      io.emit("productUpdated", payload);
+      console.log("📢 Emitted packageUpdated/productUpdated to all connected clients:", payload);
+    }
+    res.status(200).json({
+      success: true,
+      message: "Package/product update broadcast successfully",
+    });
+  } catch (error) {
+    console.error("Error broadcasting package update:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to broadcast package update",
+    });
+  }
+});
+

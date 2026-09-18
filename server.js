@@ -116,6 +116,24 @@ io.on("connection", (socket) => {
     console.log(`Socket ${socket.id} joined room order_${orderId}`);
   });
 
+  // Package & Product Real-time broadcast for Admin Panel changes
+  const handlePackageUpdate = (data) => {
+    console.log("📦 Socket packageUpdated received, broadcasting to all clients:", data);
+    io.emit("packageUpdated", data || {});
+  };
+  const handleProductUpdate = (data) => {
+    console.log("🛒 Socket productUpdated received, broadcasting to all clients:", data);
+    io.emit("productUpdated", data || {});
+    io.emit("packageUpdated", data || {});
+  };
+
+  socket.on("packageUpdated", handlePackageUpdate);
+  socket.on("package_updated", handlePackageUpdate);
+  socket.on("packagesUpdated", handlePackageUpdate);
+  socket.on("productUpdated", handleProductUpdate);
+  socket.on("product_updated", handleProductUpdate);
+  socket.on("productsUpdated", handleProductUpdate);
+
   socket.on("disconnect", () => {
     console.log("🔌 Client disconnected from Socket.IO:", socket.id);
   });

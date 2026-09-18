@@ -21,4 +21,7 @@ router.get("/crops/:cropId", auth, packagesEp.getCropById);
 
 router.get("/package-item-by-product/:packageId/:productId", auth, packagesEp.getPackageItemByProductId);
 
+// Webhook / notification endpoint to broadcast package & product updates
+router.post("/notify-update", packagesEp.notifyPackageUpdate);
+
 module.exports = router;
