@@ -6,7 +6,6 @@ require("dotenv").config();
 const {
   plantcare,
   collectionofficer,
-  marketPlace,
   admin,
 } = require("./startup/database");
 const setupSwagger = require("./startup/swagger");
@@ -56,7 +55,6 @@ const DatabaseConnection = (db, name) => {
 // Initial database connections
 DatabaseConnection(plantcare, "PlantCare");
 DatabaseConnection(collectionofficer, "CollectionOfficer");
-DatabaseConnection(marketPlace, "MarketPlace");
 DatabaseConnection(admin, "Admin");
 
 const routes = {
@@ -116,6 +114,16 @@ io.on("connection", (socket) => {
   socket.on("joinOrder", (orderId) => {
     socket.join(`order_${orderId}`);
     console.log(`Socket ${socket.id} joined room order_${orderId}`);
+  });
+
+  socket.on("getPackages", async (filters) => {
+    try {
+      const packageDAO = require("./dao/package-dao");
+      const packages = await packageDAO.getAllPackages(filters || { status: "Enabled" });
+      socket.emit("packagesUpdated", packages || []);
+    } catch (err) {
+      console.error("Error getting packages via socket:", err);
+    }
   });
 
   socket.on("disconnect", () => {

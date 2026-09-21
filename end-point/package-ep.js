@@ -15,6 +15,13 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
 
     const packages = await packageDAO.getAllPackages(filters);
 
+    // Relay package data in real-time via Socket.IO to connected clients
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("packagesUpdated", packages || []);
+      io.emit("packageUpdated", packages || []);
+    }
+
     if (!packages || packages.length === 0) {
       return res.status(404).json({
         message: "No packages found",
@@ -252,4 +259,5 @@ exports.validatePackageItems = asyncHandler(async (req, res) => {
     });
   }
 });
+
 

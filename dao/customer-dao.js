@@ -47,7 +47,7 @@ exports.addCustomer = (customerData, salesAgent) => {
       const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nic, password, nearesCity, salesAgent, isDashUser)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
 
-      db.marketPlace.query(
+      db.collectionofficer.query(
         sqlCustomer,
         [
           newCustomerId,
@@ -104,7 +104,7 @@ const generateCustomerId = async () => {
         LIMIT 1
     `;
 
-  const [result] = await db.marketPlace.promise().query(sqlGetLastCustomerId);
+  const [result] = await db.collectionofficer.promise().query(sqlGetLastCustomerId);
 
   let newCustomerId = "CUS-00001";
 
@@ -181,7 +181,7 @@ const insertBuildingData = async (customerId, customerData, contactInfo) => {
     throw new Error("Invalid building type");
   }
 
-  await db.marketPlace.promise().query(insertQuery, queryParams);
+  await db.collectionofficer.promise().query(insertQuery, queryParams);
 
   // Address saved successfully - send the welcome SMS with login
   // credentials (username = phone number, password = NIC). Best effort:
@@ -237,7 +237,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
         `;
 
     // Execute count query first
-    db.marketPlace
+    db.collectionofficer
       .promise()
       .query(countQuery, [salesAgentId])
       .then(([countResult]) => {
@@ -246,7 +246,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
         const hasMore = page < totalPages;
 
         // Execute data query
-        return db.marketPlace
+        return db.collectionofficer
           .promise()
           .query(dataQuery, [salesAgentId, limit, offset])
           .then(([rows]) => {
@@ -294,7 +294,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
 exports.getCustomerData = async (cusId) => {
   const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
 
-  const [customerRows] = await db.marketPlace
+  const [customerRows] = await db.collectionofficer
     .promise()
     .query(sqlCustomerQuery, [cusId]);
 
@@ -316,7 +316,7 @@ exports.getCustomerData = async (cusId) => {
   }
   delete customerData.phoneCode;
 
-  const [houseRows] = await db.marketPlace
+  const [houseRows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM dashuserhouse WHERE customerId = ?`, [
       customerData.id,
@@ -328,7 +328,7 @@ exports.getCustomerData = async (cusId) => {
     buildingData = houseRows[0];
     customerData.buildingType = "House";
   } else {
-    const [apartmentRows] = await db.marketPlace
+    const [apartmentRows] = await db.collectionofficer
       .promise()
       .query(`SELECT * FROM dashuserapartment WHERE customerId = ?`, [
         customerData.id,
@@ -342,13 +342,13 @@ exports.getCustomerData = async (cusId) => {
     }
   }
 
-  const [houseCountRows] = await db.marketPlace
+  const [houseCountRows] = await db.collectionofficer
     .promise()
     .query(`SELECT COUNT(*) AS count FROM house WHERE customerId = ?`, [
       customerData.id,
     ]);
 
-  const [apartmentCountRows] = await db.marketPlace
+  const [apartmentCountRows] = await db.collectionofficer
     .promise()
     .query(`SELECT COUNT(*) AS count FROM apartment WHERE customerId = ?`, [
       customerData.id,
@@ -367,7 +367,7 @@ exports.getCustomerData = async (cusId) => {
 
 exports.getCusDataExc = async (customerId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
     try {
       // First try the most likely case
       const [results] = await connection.query(
@@ -408,7 +408,7 @@ exports.updateCustomerData = async (cusId, customerData) => {
   let connection;
 
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
     await connection.beginTransaction();
 
     // Parse phone number to extract phone code and number
@@ -618,7 +618,7 @@ exports.findCustomerByPhoneOrEmail = async (
         phoneQuery += ` AND id != ?`;
         phoneParams.push(excludeId);
       }
-      const [phoneRows] = await db.marketPlace
+      const [phoneRows] = await db.collectionofficer
         .promise()
         .query(phoneQuery, phoneParams);
       phoneExists = phoneRows.length > 0;
@@ -632,7 +632,7 @@ exports.findCustomerByPhoneOrEmail = async (
         emailQuery += ` AND id != ?`;
         emailParams.push(excludeId);
       }
-      const [emailRows] = await db.marketPlace
+      const [emailRows] = await db.collectionofficer
         .promise()
         .query(emailQuery, emailParams);
       emailExists = emailRows.length > 0;
@@ -647,7 +647,7 @@ exports.findCustomerByPhoneOrEmail = async (
         nicQuery += ` AND id != ?`;
         nicParams.push(excludeId);
       }
-      const [nicRows] = await db.marketPlace
+      const [nicRows] = await db.collectionofficer
         .promise()
         .query(nicQuery, nicParams);
       nicExists = nicRows.length > 0;
@@ -667,7 +667,7 @@ exports.findCustomerByPhoneOrEmail = async (
 
 exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
     try {
       const [rows] = await connection.query(
         `
@@ -735,7 +735,7 @@ exports.getAllCrops = async (cusId) => {
         ORDER BY mpi.displayName ASC;
         `;
 
-    const [results] = await db.marketPlace.promise().query(query);
+    const [results] = await db.collectionofficer.promise().query(query);
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
@@ -745,7 +745,7 @@ exports.getAllCrops = async (cusId) => {
 
 exports.addExcludeList = async (customerId, selectedCrops) => {
   try {
-    const [existingRows] = await db.marketPlace
+    const [existingRows] = await db.collectionofficer
       .promise()
       .query(`SELECT mpItemId FROM excludelist WHERE userId = ?`, [customerId]);
     const existingIds = existingRows.map((row) => row.mpItemId);
@@ -757,13 +757,13 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
 
     if (toInsert.length > 0) {
       const values = toInsert.map((cropId) => [customerId, cropId]);
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`INSERT INTO excludelist (userId, mpItemId) VALUES ?`, [values]);
     }
 
     if (toRemove.length > 0) {
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`DELETE FROM excludelist WHERE userId = ? AND mpItemId IN (?)`, [
           customerId,
@@ -780,7 +780,7 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
 
 exports.addPreList = async (customerId, selectedCrops) => {
   try {
-    const [existingRows] = await db.marketPlace
+    const [existingRows] = await db.collectionofficer
       .promise()
       .query(`SELECT mpItemId FROM preferlist WHERE userId = ?`, [customerId]);
     const existingIds = existingRows.map((row) => row.mpItemId);
@@ -790,13 +790,13 @@ exports.addPreList = async (customerId, selectedCrops) => {
 
     if (toInsert.length > 0) {
       const values = toInsert.map((cropId) => [customerId, cropId]);
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`INSERT INTO preferlist (userId, mpItemId) VALUES ?`, [values]);
     }
 
     if (toRemove.length > 0) {
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`DELETE FROM preferlist WHERE userId = ? AND mpItemId IN (?)`, [
           customerId,
@@ -832,7 +832,7 @@ exports.getExcludeList = async (customerId) => {
       WHERE mps.id = ?  -- Filter by customerId
       ORDER BY mpi.displayName ASC; 
     `;
-    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    const [results] = await db.collectionofficer.promise().query(query, [customerId]);
 
     return results;
     ta;
@@ -863,7 +863,7 @@ exports.getCustomerPreferlist = async (customerId) => {
       WHERE mps.id = ?
       ORDER BY mpi.displayName ASC; 
     `;
-    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    const [results] = await db.collectionofficer.promise().query(query, [customerId]);
     return results;
   } catch (error) {
     console.error("Error fetching prefer list:", error);
@@ -877,7 +877,7 @@ exports.deleteExcludeItem = async (excludeId) => {
       DELETE FROM excludelist 
       WHERE Id = ?
     `;
-    await db.marketPlace.promise().query(query, [excludeId]);
+    await db.collectionofficer.promise().query(query, [excludeId]);
 
     return { message: "Exclude list updated successfully" };
   } catch (error) {
@@ -892,7 +892,7 @@ exports.deletePreferItem = async (preferId) => {
       DELETE FROM preferlist 
       WHERE Id = ?
     `;
-    await db.marketPlace.promise().query(query, [preferId]);
+    await db.collectionofficer.promise().query(query, [preferId]);
 
     return { message: "Exclude list updated successfully" };
   } catch (error) {
@@ -927,7 +927,7 @@ exports.getCustomerDataLocation = async (customerId) => {
             WHERE cusId = ?
         `;
 
-    db.marketPlace.query(query, [customerId], (error, results) => {
+    db.collectionofficer.query(query, [customerId], (error, results) => {
       if (error) {
         console.error("Error fetching customer data:", error);
         reject(error);
@@ -948,7 +948,7 @@ exports.checkDeliveredOrder = async (customerId) => {
       WHERE o.userId = ? AND po.status = 'Delivered'
       LIMIT 1
     `;
-    db.marketPlace
+    db.collectionofficer
       .promise()
       .query(sql, [customerId])
       .then(([rows]) => {
@@ -975,7 +975,7 @@ exports.updateResidentialAddress = async (cusId, data) => {
       if (!nearestCity || !nearestCity.trim()) {
         return Promise.resolve();
       }
-      return db.marketPlace
+      return db.collectionofficer
         .promise()
         .query(`UPDATE marketplaceusers SET nearesCity = ? WHERE id = ?`, [
           nearestCity.trim(),
@@ -986,27 +986,27 @@ exports.updateResidentialAddress = async (cusId, data) => {
     updateNearestCity()
       .then(async () => {
         if (buildingType === "House") {
-          await db.marketPlace
+          await db.collectionofficer
             .promise()
             .query(`DELETE FROM dashuserapartment WHERE customerId = ?`, [
               cusId,
             ]);
 
-          const [existingHouseRows] = await db.marketPlace
+          const [existingHouseRows] = await db.collectionofficer
             .promise()
             .query(`SELECT id FROM dashuserhouse WHERE customerId = ?`, [
               cusId,
             ]);
 
           if (existingHouseRows.length > 0) {
-            await db.marketPlace
+            await db.collectionofficer
               .promise()
               .query(
                 `UPDATE dashuserhouse SET houseNo = ?, streetName = ? WHERE customerId = ?`,
                 [houseNo.trim(), streetName.trim(), cusId],
               );
           } else {
-            await db.marketPlace
+            await db.collectionofficer
               .promise()
               .query(
                 `INSERT INTO dashuserhouse (customerId, houseNo, streetName) VALUES (?, ?, ?)`,
@@ -1014,18 +1014,18 @@ exports.updateResidentialAddress = async (cusId, data) => {
               );
           }
         } else if (buildingType === "Apartment") {
-          await db.marketPlace
+          await db.collectionofficer
             .promise()
             .query(`DELETE FROM dashuserhouse WHERE customerId = ?`, [cusId]);
 
-          const [existingAptRows] = await db.marketPlace
+          const [existingAptRows] = await db.collectionofficer
             .promise()
             .query(`SELECT id FROM dashuserapartment WHERE customerId = ?`, [
               cusId,
             ]);
 
           if (existingAptRows.length > 0) {
-            await db.marketPlace.promise().query(
+            await db.collectionofficer.promise().query(
               `UPDATE dashuserapartment
                    SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?
                  WHERE customerId = ?`,
@@ -1040,7 +1040,7 @@ exports.updateResidentialAddress = async (cusId, data) => {
               ],
             );
           } else {
-            await db.marketPlace.promise().query(
+            await db.collectionofficer.promise().query(
               `INSERT INTO dashuserapartment
                    (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName)
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -1066,13 +1066,13 @@ exports.updateResidentialAddress = async (cusId, data) => {
 };
 
 exports.getAddressBook = async (customerId) => {
-  const [houseRows] = await db.marketPlace
+  const [houseRows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM house WHERE customerId = ? ORDER BY id DESC`, [
       customerId,
     ]);
 
-  const [apartmentRows] = await db.marketPlace
+  const [apartmentRows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM apartment WHERE customerId = ? ORDER BY id DESC`, [
       customerId,
@@ -1135,7 +1135,7 @@ const parsePhone = (phone) => {
 
 exports.getSavedAddress = async (addressId, type) => {
   const table = type === "Apartment" ? "apartment" : "house";
-  const [rows] = await db.marketPlace
+  const [rows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM ${table} WHERE id = ? LIMIT 1`, [addressId]);
   if (!rows.length) return null;
@@ -1175,7 +1175,7 @@ exports.addSavedAddress = async ({
   unitNo,
   floorNo,
 }) => {
-  const conn = await db.marketPlace.promise().getConnection();
+  const conn = await db.collectionofficer.promise().getConnection();
   try {
     await conn.beginTransaction();
 
@@ -1296,7 +1296,7 @@ exports.updateSavedAddress = async (
   },
 ) => {
   const table = type === "Apartment" ? "apartment" : "house";
-  const conn = await db.marketPlace.promise().getConnection();
+  const conn = await db.collectionofficer.promise().getConnection();
   try {
     await conn.beginTransaction();
 

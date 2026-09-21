@@ -4,7 +4,6 @@ const { performance } = require('perf_hooks');
 jest.mock('../../startup/database', () => ({
   plantcare: { promise: () => ({ query: jest.fn() }), query: jest.fn() },
   collectionofficer: { promise: () => ({ query: jest.fn() }), query: jest.fn() },
-  marketPlace: { promise: () => ({ query: jest.fn() }), query: jest.fn() },
   admin: { promise: () => ({ query: jest.fn() }), query: jest.fn() },
   closeAllPools: jest.fn().mockResolvedValue(),
   closePool: jest.fn().mockResolvedValue()
