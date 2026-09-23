@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const compression = require("compression");
+const path = require("path");
 require("dotenv").config();
 const {
   plantcare,
@@ -75,6 +76,18 @@ app.use(`${BASE_PATH}/api/complain`, routes.complain);
 app.use(`${BASE_PATH}/api/packages`, routes.packages);
 app.use(`${BASE_PATH}/api/orders`, routes.orders);
 app.use(`${BASE_PATH}/api/notifications`, routes.notifications);
+
+// ─── App Version Policy ────────────────────────────────────────────────────────
+// Returns the version policy JSON that controls in-app update prompts in the
+// mobile app. Edit remote-config/app-version.json to trigger or stop prompts
+// without redeploying code.
+app.get(`${BASE_PATH}/api/app-version`, (req, res) => {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.set("Content-Type", "application/json");
+  res.sendFile(path.join(__dirname, "remote-config", "app-version.json"));
+});
 
 // Error Handler
 app.use((err, req, res, next) => {
