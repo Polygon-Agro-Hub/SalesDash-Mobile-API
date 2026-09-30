@@ -154,3 +154,26 @@ exports.insertNotificationDAO = (orderId, title) => {
     });
   });
 };
+
+// Resolve Sales Agent ID, invoice number, and customer name from order ID
+exports.resolveSalesAgentDetailsDAO = (orderId) => {
+  return new Promise((resolve) => {
+    if (!orderId) return resolve(null);
+
+    const lookupQuery = `
+      SELECT mps.salesAgent, po.id as processOrderId, po.invNo, o.fullName AS customerName
+      FROM processorders po
+      JOIN orders o ON po.orderId = o.id
+      JOIN marketplaceusers mps ON o.userId = mps.id
+      WHERE po.id = ? OR po.orderId = ? OR o.id = ?
+      LIMIT 1
+    `;
+
+    db.collectionofficer.query(lookupQuery, [orderId, orderId, orderId], (err, rows) => {
+      if (!err && rows && rows.length > 0) {
+        return resolve(rows[0]);
+      }
+      resolve(null);
+    });
+  });
+};

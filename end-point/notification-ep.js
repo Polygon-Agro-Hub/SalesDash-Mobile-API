@@ -1,4 +1,5 @@
 const notificationDao = require("../dao/notification-dao");
+const notificationCache = require("../services/notification-cache");
 
 // Get All Notification
 exports.getNotifications = async (req, res) => {
@@ -6,6 +7,9 @@ exports.getNotifications = async (req, res) => {
     const salesAgentId = req.user.id;
     const { notifications, unreadCount } =
       await notificationDao.getNotificationsBySalesAgentDAO(salesAgentId);
+
+    // Cache the fresh unread count in memory
+    notificationCache.setUnreadCount(salesAgentId, unreadCount);
 
     res.status(200).json({
       success: true,
@@ -37,6 +41,10 @@ exports.markAsReadByOrderId = async (req, res) => {
 
     const affectedRows =
       await notificationDao.markNotificationsAsReadByOrderIdDAO(id);
+
+    if (affectedRows > 0 && req.user?.id) {
+      notificationCache.decrementUnreadCount(req.user.id);
+    }
 
     res.status(200).json({
       success: true,
@@ -176,6 +184,123 @@ exports.sendNotification = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to send notification",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Universal Trigger / Webhook for external applications
+ * (Admin Panel, Polygon/GoviMart, Govi Transport, Cron Jobs)
+ *
+ * Automatically resolves the assigned Sales Agent ID, increments in-memory cache,
+ * pushes real-time WebSocket event, and dispatches native background Push Notification.
+ */
+exports.triggerNotification = async (req, res) => {
+  try {
+    const { orderId, title, message, eventType, data } = req.body || {};
+    let targetAgentId = req.body.salesAgentId || (req.user && req.user.id);
+
+    // Auto-resolve salesAgentId from orderId if not explicitly provided
+    let resolvedDetails = null;
+    if (!targetAgentId && orderId) {
+      resolvedDetails = await notificationDao.resolveSalesAgentDetailsDAO(orderId);
+      if (resolvedDetails && resolvedDetails.salesAgent) {
+        targetAgentId = resolvedDetails.salesAgent;
+      }
+    }
+
+    if (!targetAgentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Could not resolve salesAgentId. Please provide salesAgentId or a valid orderId.",
+      });
+    }
+
+    const effectiveTitle =
+      title || (eventType ? eventType.replace(/_/g, " ").toUpperCase() : "New Notification");
+    const effectiveOrderId =
+      orderId || (resolvedDetails && resolvedDetails.processOrderId) || null;
+    const invNo =
+      (data && data.invNo) || (resolvedDetails && resolvedDetails.invNo) || "";
+    const customerName =
+      (data && data.customerName) || (resolvedDetails && resolvedDetails.customerName) || "";
+    const effectiveBody =
+      message || (invNo ? `Order #${invNo} for ${customerName || "Customer"}` : effectiveTitle);
+
+    // 1. Insert record into dashnotification DB
+    let notificationId = null;
+    if (effectiveOrderId) {
+      try {
+        notificationId = await notificationDao.insertNotificationDAO(effectiveOrderId, effectiveTitle);
+      } catch (insertErr) {
+        console.warn("⚠️ [NotificationTrigger] DB insert warning:", insertErr.message);
+      }
+    }
+
+    // 2. Update in-memory unread count cache
+    const updatedUnreadCount = notificationCache.incrementUnreadCount(targetAgentId);
+
+    // 3. Emit real-time WebSocket event to active SalesDash app instance
+    const io = req.app.get("io");
+    if (io) {
+      const socketPayload = {
+        id: notificationId || Date.now(),
+        orderId: effectiveOrderId,
+        title: effectiveTitle,
+        message: effectiveBody,
+        invNo,
+        customerName,
+        eventType: eventType || "notification",
+        unreadCount: updatedUnreadCount,
+        createdAt: new Date().toISOString(),
+        data: data || {},
+      };
+      io.to(`salesagent_${targetAgentId}`).emit("newNotification", socketPayload);
+      io.to(`salesagent_${targetAgentId}`).emit("new_notification", socketPayload);
+      console.log(
+        `📢 [NotificationTrigger] Emitted real-time newNotification to salesagent_${targetAgentId}:`,
+        effectiveTitle
+      );
+    }
+
+    // 4. Dispatch Firebase FCM & Expo Push Notification for background / closed apps
+    let pushResult = null;
+    try {
+      pushResult = await pushNotificationService.sendPushToSalesAgent(
+        targetAgentId,
+        {
+          title: effectiveTitle,
+          body: effectiveBody,
+          data: {
+            orderId: effectiveOrderId,
+            notificationId,
+            invNo,
+            eventType: eventType || "notification",
+          },
+        }
+      );
+    } catch (pushErr) {
+      console.warn("⚠️ [NotificationTrigger] Push delivery warning:", pushErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Notification dispatched successfully to Sales Agent ${targetAgentId}`,
+      data: {
+        notificationId,
+        salesAgentId: targetAgentId,
+        orderId: effectiveOrderId,
+        unreadCount: updatedUnreadCount,
+        socketDelivered: !!io,
+        pushResult,
+      },
+    });
+  } catch (error) {
+    console.error("Error triggering notification:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to trigger notification",
       error: error.message,
     });
   }

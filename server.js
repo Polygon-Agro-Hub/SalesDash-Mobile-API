@@ -1,3 +1,4 @@
+const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -10,8 +11,14 @@ const {
   admin,
 } = require("./startup/database");
 const setupSwagger = require("./startup/swagger");
+const { initSocket } = require("./socket/socket");
+
 const app = express();
-app.use(compression());
+const server = http.createServer(app);
+
+// Initialize Socket.IO
+const io = initSocket(server);
+
 const BASE_PATH = "/agro-api/salesdash";
 
 const corsOptions = {
@@ -20,6 +27,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin"],
 };
 
+app.use(compression());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "10mb" }));
@@ -57,6 +65,12 @@ const DatabaseConnection = (db, name) => {
 DatabaseConnection(plantcare, "PlantCare");
 DatabaseConnection(collectionofficer, "CollectionOfficer");
 DatabaseConnection(admin, "Admin");
+
+// Pre-warm package cache in memory
+const packageCache = require("./services/package-cache");
+packageCache.refreshPackageCache().catch((err) => {
+  console.warn("Could not pre-warm package cache:", err.message);
+});
 
 const routes = {
   auth: require("./routes/user.routes"),
@@ -97,7 +111,6 @@ app.use((err, req, res, next) => {
 
 const cron = require("node-cron");
 const notificationDao = require("./dao/notification-dao");
-const orderDao = require("./dao/orders-dao");
 
 // Run every day at midnight
 cron.schedule("00 18 * * *", async () => {
@@ -109,47 +122,6 @@ cron.schedule("00 18 * * *", async () => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-const http = require("http");
-const { Server } = require("socket.io");
-
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
-
-io.on("connection", (socket) => {
-  console.log("⚡ Client connected to Socket.IO:", socket.id);
-
-  socket.on("joinOrder", (orderId) => {
-    socket.join(`order_${orderId}`);
-    console.log(`Socket ${socket.id} joined room order_${orderId}`);
-  });
-
-  socket.on("registerSalesAgent", (salesAgentId) => {
-    socket.join(`salesagent_${salesAgentId}`);
-    console.log(`Socket ${socket.id} joined room salesagent_${salesAgentId}`);
-  });
-
-  // Package real-time broadcast for Admin Panel changes
-  const handlePackageUpdate = (data) => {
-    console.log("📦 Socket packageUpdated received, broadcasting to all clients:", data);
-    io.emit("packagesUpdated", data || {});
-    io.emit("packageUpdated", data || {});
-  };
-
-  socket.on("packageUpdated", handlePackageUpdate);
-  socket.on("package_updated", handlePackageUpdate);
-  socket.on("packagesUpdated", handlePackageUpdate);
-
-  socket.on("disconnect", () => {
-    console.log("🔌 Client disconnected from Socket.IO:", socket.id);
-  });
-});
-
 // Attach io instance to express app
 app.set("io", io);
 
@@ -158,6 +130,7 @@ server.io = io;
 server.app = app;
 
 // Only listen locally, Vercel will export the handler and call listen internally
+const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
   server.listen(PORT, () => {
     console.log(`🚀 Main API server running with Socket.IO on port ${PORT} with base path ${BASE_PATH}`);

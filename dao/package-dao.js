@@ -30,12 +30,12 @@ exports.getAllPackages = async (filters = {}) => {
     }
 
     // Add price range filters
-    if (filters.minPrice !== null) {
+    if (filters.minPrice !== null && filters.minPrice !== undefined) {
       query += ` AND mp.productPrice >= ?`;
       queryParams.push(filters.minPrice);
     }
 
-    if (filters.maxPrice !== null) {
+    if (filters.maxPrice !== null && filters.maxPrice !== undefined) {
       query += ` AND mp.productPrice <= ?`;
       queryParams.push(filters.maxPrice);
     }
