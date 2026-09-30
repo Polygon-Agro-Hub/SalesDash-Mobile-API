@@ -14,8 +14,12 @@ router.delete('/:id', notificationEp.deleteByOrderId);
 
 // Register Device Push Token
 router.post('/register-push-token', auth, notificationEp.registerPushToken);
+router.post('/save-push-token', auth, notificationEp.registerPushToken);
 
 // Send Notification (Triggers Expo Push Notification for background / closed app delivery)
 router.post('/send', auth, notificationEp.sendNotification);
+
+// External Webhook to trigger notifications to Sales Agents from other applications
+router.post('/trigger', notificationEp.triggerNotification);
 
 module.exports = router;
