@@ -18,7 +18,26 @@ const orderValidationSchema = Joi.object({
     fullTotal: Joi.number().required(),
     discount: Joi.number().required(),
     deliveryCharge: Joi.number().required(),
-    sheduleDate: Joi.string().required(),
+    sheduleType: Joi.string()
+      .valid("One Time", "Once a Week", "Twice a Week")
+      .optional(),
+    scheduleType: Joi.string()
+      .valid("One Time", "Once a Week", "Twice a Week")
+      .optional(),
+    sheduleDate: Joi.string().allow(null, "").optional(),
+    validityPeriod: Joi.alternatives()
+      .try(Joi.number().integer(), Joi.string(), Joi.allow(null))
+      .optional(),
+    validityWeeks: Joi.alternatives()
+      .try(Joi.number().integer(), Joi.string(), Joi.allow(null))
+      .optional(),
+    selectedDays: Joi.alternatives()
+      .try(Joi.array().items(Joi.string()), Joi.string(), Joi.allow(null))
+      .optional(),
+    recurringDays: Joi.alternatives()
+      .try(Joi.array().items(Joi.string()), Joi.string(), Joi.allow(null))
+      .optional(),
+    calculatedOrders: Joi.array().optional(),
     sheduleTime: Joi.string().required(),
     paymentMethod: Joi.string().required(),
     isPaid: Joi.number().valid(0, 1).optional(),

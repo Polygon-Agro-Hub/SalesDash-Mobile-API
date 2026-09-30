@@ -35,10 +35,10 @@ ORDER BY dn.createdAt DESC
       WHERE mps.salesAgent = ? AND dn.readStatus = 0
     `;
 
-    db.marketPlace.query(query, [salesAgentId], (err, notifications) => {
+    db.collectionofficer.query(query, [salesAgentId], (err, notifications) => {
       if (err) return reject(err);
 
-      db.marketPlace.query(countQuery, [salesAgentId], (err, countResult) => {
+      db.collectionofficer.query(countQuery, [salesAgentId], (err, countResult) => {
         if (err) return reject(err);
 
         resolve({
@@ -59,7 +59,7 @@ exports.markNotificationsAsReadByOrderIdDAO = (id) => {
       WHERE id = ? AND readStatus = 0
     `;
 
-    db.marketPlace.query(query, [id], (err, result) => {
+    db.collectionofficer.query(query, [id], (err, result) => {
       if (err) return reject(err);
       resolve(result.affectedRows);
     });
@@ -74,9 +74,106 @@ exports.deleteNotificationsByOrderIdDAO = (id) => {
       WHERE id = ?
     `;
 
-    db.marketPlace.query(query, [id], (err, result) => {
+    db.collectionofficer.query(query, [id], (err, result) => {
       if (err) return reject(err);
       resolve(result.affectedRows);
+    });
+  });
+};
+
+// Register / Save Push Token DAO
+exports.savePushTokenDAO = async (salesAgentId, pushToken, platform = "android") => {
+  const pushNotificationService = require("../services/pushNotificationService");
+  return pushNotificationService.saveSalesAgentPushToken(salesAgentId, pushToken, platform);
+};
+
+// Get Push Tokens DAO
+exports.getPushTokensBySalesAgentDAO = (salesAgentId) => {
+  return new Promise((resolve) => {
+    const query = `
+      SELECT pushToken, deviceType 
+      FROM notificationpushtoken 
+      WHERE salesAgentId = ?
+    `;
+
+    db.collectionofficer.query(query, [salesAgentId], (err, results) => {
+      if (err) {
+        return resolve([]);
+      }
+      resolve((results || []).map((r) => r.pushToken));
+    });
+  });
+};
+
+// Insert Notification DAO
+exports.insertNotificationDAO = (orderId, title) => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
+      VALUES (?, ?, 0, NOW())
+    `;
+
+    db.collectionofficer.query(query, [orderId, title], (err, result) => {
+      if (err) return reject(err);
+      const insertedId = result.insertId;
+
+      // Automatically dispatch Firebase / Expo Push Notification for background & closed-app delivery
+      try {
+        const lookupQuery = `
+          SELECT mps.salesAgent, po.invNo, o.fullName AS customerName
+          FROM processorders po
+          JOIN orders o ON po.orderId = o.id
+          JOIN marketplaceusers mps ON o.userId = mps.id
+          WHERE po.id = ?
+        `;
+        db.collectionofficer.query(lookupQuery, [orderId], async (lErr, rows) => {
+          if (!lErr && rows && rows.length > 0) {
+            const { salesAgent, invNo, customerName } = rows[0];
+            const pushNotificationService = require("../services/pushNotificationService");
+            const message = invNo
+              ? `Order #${invNo} for ${customerName || "Customer"}`
+              : title;
+            pushNotificationService
+              .sendPushToSalesAgent(salesAgent, {
+                title,
+                body: message,
+                data: {
+                  orderId,
+                  invNo,
+                  notificationId: insertedId,
+                },
+              })
+              .catch(() => {});
+          }
+        });
+      } catch (_) {
+        // Push notification dispatch is non-blocking
+      }
+
+      resolve(insertedId);
+    });
+  });
+};
+
+// Resolve Sales Agent ID, invoice number, and customer name from order ID
+exports.resolveSalesAgentDetailsDAO = (orderId) => {
+  return new Promise((resolve) => {
+    if (!orderId) return resolve(null);
+
+    const lookupQuery = `
+      SELECT mps.salesAgent, po.id as processOrderId, po.invNo, o.fullName AS customerName
+      FROM processorders po
+      JOIN orders o ON po.orderId = o.id
+      JOIN marketplaceusers mps ON o.userId = mps.id
+      WHERE po.id = ? OR po.orderId = ? OR o.id = ?
+      LIMIT 1
+    `;
+
+    db.collectionofficer.query(lookupQuery, [orderId, orderId, orderId], (err, rows) => {
+      if (!err && rows && rows.length > 0) {
+        return resolve(rows[0]);
+      }
+      resolve(null);
     });
   });
 };

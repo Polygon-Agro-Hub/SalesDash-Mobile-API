@@ -7,7 +7,7 @@ exports.loginUserDAO = (empId, password) => {
     try {
       const sql =
         "SELECT empId, password, status, id, passwordUpdate FROM salesagent WHERE empId = ?";
-      const [results] = await db.marketPlace.promise().query(sql, [empId]);
+      const [results] = await db.collectionofficer.promise().query(sql, [empId]);
 
       if (results.length === 0) {
         return reject(new Error("User not found"));
@@ -84,7 +84,7 @@ exports.getUserProfileDAO = (id) => {
       WHERE id = ?     
     `;
 
-    db.marketPlace.query(sql, [id], (err, results) => {
+    db.collectionofficer.query(sql, [id], (err, results) => {
       if (err) {
         console.error("Database error:", err);
         return reject(new Error("Database error"));
@@ -113,7 +113,7 @@ exports.getPasswordDAO = (id) => {
       WHERE id = ?     
     `;
 
-    db.marketPlace.query(sql, [id], (err, results) => {
+    db.collectionofficer.query(sql, [id], (err, results) => {
       if (err) {
         console.error("Database error:", err);
         return reject(new Error("Database error"));
@@ -132,7 +132,7 @@ exports.getPasswordDAO = (id) => {
 exports.updatePasswordDAO = (id, oldPassword, newPassword) => {
   return new Promise((resolve, reject) => {
     const fetchSql = `SELECT password, passwordUpdate FROM salesagent WHERE id = ?`;
-    db.marketPlace.query(fetchSql, [id], async (err, results) => {
+    db.collectionofficer.query(fetchSql, [id], async (err, results) => {
       if (err) {
         return reject(new Error("Database error"));
       }
@@ -177,7 +177,7 @@ exports.updatePasswordDAO = (id, oldPassword, newPassword) => {
         const passwordUpdateValue =
           user.passwordUpdate === 0 ? 1 : user.passwordUpdate;
 
-        db.marketPlace.query(
+        db.collectionofficer.query(
           updateSql,
           [newPasswordHash, passwordUpdateValue, id],
           (updateErr, updateResults) => {
