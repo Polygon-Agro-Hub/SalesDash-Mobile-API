@@ -946,6 +946,10 @@ exports.getOrderById = async (orderId) => {
                 o.userId,
                 o.title AS orderTitle,
                 o.fullName AS orderFullName,
+                o.phonecode1 AS orderPhoneCode1,  
+o.phone1 AS orderPhone1,           
+o.phonecode2 AS orderPhoneCode2,  
+o.phone2 AS orderPhone2,   
                 o.sheduleType,
                 o.validityPeriod,
                 o.selectedDays,
@@ -1185,7 +1189,10 @@ exports.getOrderById = async (orderId) => {
         fullName: order.orderFullName,
         firstName: order.firstName,
         lastName: order.lastName,
-        phoneNumber: order.phoneNumber,
+        phoneCode: order.orderPhoneCode1 || "+94",
+        phoneNumber: order.orderPhone1 || order.phoneNumber, // account phone only as fallback
+        phoneCode2: order.orderPhoneCode2 || "",
+        phoneNumber2: order.orderPhone2 || "",
         buildingType: buildingType,
       },
       fullAddress: formattedAddress, // single-string address (e.g. for confirm screen)
