@@ -92,7 +92,7 @@ exports.deleteByOrderId = async (req, res) => {
 exports.registerPushToken = async (req, res) => {
   try {
     const salesAgentId = req.user.id;
-    const { pushToken, platform } = req.body;
+    const { pushToken, platform, deviceType } = req.body;
 
     if (!pushToken) {
       return res.status(400).json({
@@ -104,7 +104,7 @@ exports.registerPushToken = async (req, res) => {
     await notificationDao.savePushTokenDAO(
       salesAgentId,
       pushToken,
-      platform || "android"
+      deviceType || platform || "android"
     );
 
     res.status(200).json({
@@ -120,9 +120,9 @@ exports.registerPushToken = async (req, res) => {
   }
 };
 
-const pushSender = require("../services/push-sender");
+const pushNotificationService = require("../services/pushNotificationService");
 
-// Send Notification (Inserts into DB + sends Expo Push Notification to Device even when app is closed)
+// Send Notification (Inserts into DB + sends Firebase FCM / Expo Push Notification to Device even when app is closed)
 exports.sendNotification = async (req, res) => {
   try {
     const { orderId, title, message } = req.body;
@@ -138,24 +138,20 @@ exports.sendNotification = async (req, res) => {
     // 1. Insert into dashnotification
     const notificationId = await notificationDao.insertNotificationDAO(orderId, title);
 
-    // 2. Fetch push tokens for the sales agent
-    const tokens = await notificationDao.getPushTokensBySalesAgentDAO(targetAgentId);
-
-    // 3. Dispatch Expo Push Notification (delivers to phone even when app is closed / cleared / locked)
-    let pushResult = null;
-    if (tokens && tokens.length > 0) {
-      pushResult = await pushSender.sendExpoPushNotification(
-        tokens,
+    // 2. Dispatch Push Notification via pushNotificationService (Firebase FCM + Expo)
+    const pushResult = await pushNotificationService.sendPushToSalesAgent(
+      targetAgentId,
+      {
         title,
-        message || title,
-        {
+        body: message || title,
+        data: {
           orderId,
           notificationId,
-        }
-      );
-    }
+        },
+      }
+    );
 
-    // 4. Emit via Socket.IO if client is open
+    // 3. Emit via Socket.IO if client is open
     const io = req.app.get("io");
     if (io) {
       io.to(`salesagent_${targetAgentId}`).emit("newNotification", {
@@ -172,7 +168,6 @@ exports.sendNotification = async (req, res) => {
       message: "Notification created and push notification sent",
       data: {
         notificationId,
-        pushedToTokensCount: tokens ? tokens.length : 0,
         pushResult,
       },
     });

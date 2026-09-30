@@ -27,6 +27,7 @@
     "expo-screen-capture": "^6.0.1",
     "express": "^4.19.2",
     "express-async-handler": "^1.2.0",
+    "firebase-admin": "^14.5.0",
     "google-auth-library": "^9.15.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",

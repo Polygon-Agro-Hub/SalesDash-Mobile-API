@@ -82,47 +82,17 @@ exports.deleteNotificationsByOrderIdDAO = (id) => {
 };
 
 // Register / Save Push Token DAO
-exports.savePushTokenDAO = (salesAgentId, pushToken, platform = "android") => {
-  return new Promise((resolve, reject) => {
-    const createTableSql = `
-      CREATE TABLE IF NOT EXISTS salesagent_push_tokens (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        salesAgentId INT NOT NULL,
-        pushToken VARCHAR(255) NOT NULL UNIQUE,
-        platform VARCHAR(50) DEFAULT 'android',
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_salesAgentId (salesAgentId)
-      )
-    `;
-
-    db.collectionofficer.query(createTableSql, (tableErr) => {
-      if (tableErr) {
-        console.warn("[NotificationDAO] Error ensuring push tokens table exists:", tableErr.message);
-      }
-
-      const insertSql = `
-        INSERT INTO salesagent_push_tokens (salesAgentId, pushToken, platform)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE 
-          salesAgentId = VALUES(salesAgentId),
-          platform = VALUES(platform),
-          updatedAt = CURRENT_TIMESTAMP
-      `;
-
-      db.collectionofficer.query(insertSql, [salesAgentId, pushToken, platform], (err, result) => {
-        if (err) return reject(err);
-        resolve(result);
-      });
-    });
-  });
+exports.savePushTokenDAO = async (salesAgentId, pushToken, platform = "android") => {
+  const pushNotificationService = require("../services/pushNotificationService");
+  return pushNotificationService.saveSalesAgentPushToken(salesAgentId, pushToken, platform);
 };
 
 // Get Push Tokens DAO
 exports.getPushTokensBySalesAgentDAO = (salesAgentId) => {
   return new Promise((resolve) => {
     const query = `
-      SELECT pushToken 
-      FROM salesagent_push_tokens 
+      SELECT pushToken, deviceType 
+      FROM notificationpushtoken 
       WHERE salesAgentId = ?
     `;
 
@@ -147,7 +117,7 @@ exports.insertNotificationDAO = (orderId, title) => {
       if (err) return reject(err);
       const insertedId = result.insertId;
 
-      // Automatically dispatch Push Notification for closed-app delivery
+      // Automatically dispatch Firebase / Expo Push Notification for background & closed-app delivery
       try {
         const lookupQuery = `
           SELECT mps.salesAgent, po.invNo, o.fullName AS customerName
@@ -159,20 +129,21 @@ exports.insertNotificationDAO = (orderId, title) => {
         db.collectionofficer.query(lookupQuery, [orderId], async (lErr, rows) => {
           if (!lErr && rows && rows.length > 0) {
             const { salesAgent, invNo, customerName } = rows[0];
-            const tokens = await exports.getPushTokensBySalesAgentDAO(salesAgent);
-            if (tokens && tokens.length > 0) {
-              const pushSender = require("../services/push-sender");
-              const message = invNo
-                ? `Order #${invNo} for ${customerName || "Customer"}`
-                : title;
-              pushSender
-                .sendExpoPushNotification(tokens, title, message, {
+            const pushNotificationService = require("../services/pushNotificationService");
+            const message = invNo
+              ? `Order #${invNo} for ${customerName || "Customer"}`
+              : title;
+            pushNotificationService
+              .sendPushToSalesAgent(salesAgent, {
+                title,
+                body: message,
+                data: {
                   orderId,
                   invNo,
                   notificationId: insertedId,
-                })
-                .catch(() => {});
-            }
+                },
+              })
+              .catch(() => {});
           }
         });
       } catch (_) {
