@@ -1,7 +1,9 @@
+const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const compression = require("compression");
+const path = require("path");
 require("dotenv").config();
 const {
   plantcare,
@@ -9,8 +11,14 @@ const {
   admin,
 } = require("./startup/database");
 const setupSwagger = require("./startup/swagger");
+const { initSocket } = require("./socket/socket");
+
 const app = express();
-app.use(compression());
+const server = http.createServer(app);
+
+// Initialize Socket.IO
+const io = initSocket(server);
+
 const BASE_PATH = "/agro-api/salesdash";
 
 const corsOptions = {
@@ -19,6 +27,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin"],
 };
 
+app.use(compression());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "10mb" }));
@@ -57,6 +66,12 @@ DatabaseConnection(plantcare, "PlantCare");
 DatabaseConnection(collectionofficer, "CollectionOfficer");
 DatabaseConnection(admin, "Admin");
 
+// Pre-warm package cache in memory
+const packageCache = require("./services/package-cache");
+packageCache.refreshPackageCache().catch((err) => {
+  console.warn("Could not pre-warm package cache:", err.message);
+});
+
 const routes = {
   auth: require("./routes/user.routes"),
   customer: require("./routes/customer.routes"),
@@ -76,6 +91,18 @@ app.use(`${BASE_PATH}/api/packages`, routes.packages);
 app.use(`${BASE_PATH}/api/orders`, routes.orders);
 app.use(`${BASE_PATH}/api/notifications`, routes.notifications);
 
+// ─── App Version Policy ────────────────────────────────────────────────────────
+// Returns the version policy JSON that controls in-app update prompts in the
+// mobile app. Edit remote-config/app-version.json to trigger or stop prompts
+// without redeploying code.
+app.get(`${BASE_PATH}/api/app-version`, (req, res) => {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.set("Content-Type", "application/json");
+  res.sendFile(path.join(__dirname, "remote-config", "app-version.json"));
+});
+
 // Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -84,7 +111,6 @@ app.use((err, req, res, next) => {
 
 const cron = require("node-cron");
 const notificationDao = require("./dao/notification-dao");
-const orderDao = require("./dao/orders-dao");
 
 // Run every day at midnight
 cron.schedule("00 18 * * *", async () => {
@@ -96,41 +122,6 @@ cron.schedule("00 18 * * *", async () => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-const http = require("http");
-const { Server } = require("socket.io");
-
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
-
-io.on("connection", (socket) => {
-  console.log("⚡ Client connected to Socket.IO:", socket.id);
-
-  socket.on("joinOrder", (orderId) => {
-    socket.join(`order_${orderId}`);
-    console.log(`Socket ${socket.id} joined room order_${orderId}`);
-  });
-
-  socket.on("getPackages", async (filters) => {
-    try {
-      const packageDAO = require("./dao/package-dao");
-      const packages = await packageDAO.getAllPackages(filters || { status: "Enabled" });
-      socket.emit("packagesUpdated", packages || []);
-    } catch (err) {
-      console.error("Error getting packages via socket:", err);
-    }
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔌 Client disconnected from Socket.IO:", socket.id);
-  });
-});
-
 // Attach io instance to express app
 app.set("io", io);
 
@@ -139,6 +130,7 @@ server.io = io;
 server.app = app;
 
 // Only listen locally, Vercel will export the handler and call listen internally
+const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
   server.listen(PORT, () => {
     console.log(`🚀 Main API server running with Socket.IO on port ${PORT} with base path ${BASE_PATH}`);
