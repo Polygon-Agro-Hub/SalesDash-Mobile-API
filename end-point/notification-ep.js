@@ -198,7 +198,19 @@ exports.sendNotification = async (req, res) => {
  */
 exports.triggerNotification = async (req, res) => {
   try {
-    const { orderId, title, message, eventType, data } = req.body || {};
+    const serviceToken =
+      req.headers["x-service-token"] ||
+      req.headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
+      req.body?.serviceToken;
+
+    if (process.env.SALESDASH_TRIGGER_SECRET && serviceToken && serviceToken !== process.env.SALESDASH_TRIGGER_SECRET) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Invalid service token for Sales Dash notification trigger",
+      });
+    }
+
+    const { orderId, title, message, eventType, data, skipDbInsert } = req.body || {};
     let targetAgentId = req.body.salesAgentId || (req.user && req.user.id);
 
     // Auto-resolve salesAgentId from orderId if not explicitly provided
@@ -211,9 +223,10 @@ exports.triggerNotification = async (req, res) => {
     }
 
     if (!targetAgentId) {
-      return res.status(400).json({
-        success: false,
-        message: "Could not resolve salesAgentId. Please provide salesAgentId or a valid orderId.",
+      return res.status(200).json({
+        success: true,
+        message: "Order is not associated with an active Sales Agent. Notification skipped.",
+        skipped: true,
       });
     }
 
@@ -228,9 +241,9 @@ exports.triggerNotification = async (req, res) => {
     const effectiveBody =
       message || (invNo ? `Order #${invNo} for ${customerName || "Customer"}` : effectiveTitle);
 
-    // 1. Insert record into dashnotification DB
+    // 1. Insert record into dashnotification DB only if not already inserted
     let notificationId = null;
-    if (effectiveOrderId) {
+    if (effectiveOrderId && !skipDbInsert) {
       try {
         notificationId = await notificationDao.insertNotificationDAO(effectiveOrderId, effectiveTitle);
       } catch (insertErr) {
