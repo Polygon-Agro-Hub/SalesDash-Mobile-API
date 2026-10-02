@@ -209,34 +209,32 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
     const offset = (page - 1) * limit;
 
     const countQuery = `
-            SELECT COUNT(DISTINCT c.id) as totalCount
-            FROM marketplaceusers c
-            WHERE c.salesAgent = ?
-        `;
+      SELECT COUNT(DISTINCT c.id) AS totalCount
+      FROM marketplaceusers c
+      WHERE c.salesAgent = ?
+        AND c.isActive = 1
+    `;
 
-    // Main query with pagination
     const dataQuery = `
-            SELECT 
-                c.id,
-                c.cusId,
-                c.title,
-                c.firstName,
-                c.lastName,
-                c.phoneCode,
-                c.phoneNumber,
-                c.email,
-               
-              
-                COUNT(o.id) AS orderCount
-            FROM marketplaceusers c
-            LEFT JOIN orders o ON c.id = o.userId
-            WHERE c.salesAgent = ?
-            GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email
-            ORDER BY c.id
-            LIMIT ? OFFSET ?
-        `;
+      SELECT 
+        c.id,
+        c.cusId,
+        c.title,
+        c.firstName,
+        c.lastName,
+        c.phoneCode,
+        c.phoneNumber,
+        c.email,
+        COUNT(o.id) AS orderCount
+      FROM marketplaceusers c
+      LEFT JOIN orders o ON c.id = o.userId
+      WHERE c.salesAgent = ?
+        AND c.isActive = 1
+      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email
+      ORDER BY c.id
+      LIMIT ? OFFSET ?
+    `;
 
-    // Execute count query first
     db.collectionofficer
       .promise()
       .query(countQuery, [salesAgentId])
@@ -245,43 +243,26 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
         const totalPages = Math.ceil(totalCount / limit);
         const hasMore = page < totalPages;
 
-        // Execute data query
         return db.collectionofficer
           .promise()
           .query(dataQuery, [salesAgentId, limit, offset])
           .then(([rows]) => {
-            // Process each row to combine phoneCode and phoneNumber
             const processedRows = rows.map((customer) => {
-              // Combine phoneCode and phoneNumber into a single phoneNumber field
-              if (customer.phoneCode && customer.phoneNumber) {
-                customer.phoneNumber = `${customer.phoneCode}${customer.phoneNumber}`;
-              } else if (customer.phoneNumber && !customer.phoneCode) {
-                // If only phoneNumber exists, keep it as is
-                customer.phoneNumber = customer.phoneNumber;
-              } else if (customer.phoneCode && !customer.phoneNumber) {
-                // If only phoneCode exists, set phoneNumber to just the code
-                customer.phoneNumber = `${customer.phoneCode}`;
-              } else {
-                // If neither exists, set to empty string
-                customer.phoneNumber = "";
-              }
+              // Combine phoneCode and phoneNumber into a single field
+              customer.phoneNumber = `${customer.phoneCode || ""}${customer.phoneNumber || ""}`;
 
-              // Remove the separate phoneCode field since we've combined it
               delete customer.phoneCode;
-
               return customer;
             });
 
-            const result = {
+            resolve({
               customers: processedRows,
               currentPage: page,
-              totalPages: totalPages,
-              totalCount: totalCount,
-              hasMore: hasMore,
-              limit: limit,
-            };
-
-            resolve(result);
+              totalPages,
+              totalCount,
+              hasMore,
+              limit,
+            });
           });
       })
       .catch((error) => {

@@ -124,6 +124,8 @@ exports.processOrder = async (orderData, salesAgentId) => {
 
     await updateSalesAgentStars(connection, salesAgentId);
 
+    await updateUserCreditInfo(connection, orderData.userId);
+
     // STEP 5: Process order based on isPackage flag
     if (orderData.isPackage === 1) {
       // Package order - Insert into orderpackage table for each processOrderId
@@ -576,6 +578,62 @@ async function generateQRCode(text) {
     throw new Error(`QR Code generation failed: ${error.message}`);
   }
 }
+
+const BONUS_PER_TIER = 250;
+const TIER_THRESHOLD = 25000;
+
+async function updateUserCreditInfo(connection, userId) {
+  // Lock the user row so two concurrent requests can't double-apply a bonus
+  const [userRows] = await connection.query(
+    `SELECT creditLimit, creditLimitBonusTier
+       FROM marketplaceusers WHERE id = ? FOR UPDATE`,
+    [userId],
+  );
+  if (!userRows.length) throw new Error(`User not found with ID: ${userId}`);
+
+  const currentCreditLimit = parseFloat(userRows[0].creditLimit || 0);
+  const currentTierCount = Math.floor(
+    parseFloat(userRows[0].creditLimitBonusTier || 0) / TIER_THRESHOLD,
+  );
+
+  // Count each order once, even if it has 2 processorders (Twice a Week)
+  const [rows] = await connection.query(
+    `SELECT COALESCE(SUM(o.fullTotal), 0) AS deliveredTotal
+       FROM orders o
+      WHERE o.userId = ?
+        AND EXISTS (
+          SELECT 1 FROM processorders p
+           WHERE p.orderid = o.id
+             AND p.status IN ('Delivered', 'Picked up')
+        )`,
+    [userId],
+  );
+  const deliveredTotal = parseFloat(rows[0].deliveredTotal || 0);
+
+  const earnedTierCount = Math.floor(deliveredTotal / TIER_THRESHOLD);
+  const finalTierCount = Math.max(currentTierCount, earnedTierCount);
+  const newTiersCrossed = finalTierCount - currentTierCount;
+
+  const finalCreditLimit = currentCreditLimit + newTiersCrossed * BONUS_PER_TIER;
+  const finalTierValue = finalTierCount * TIER_THRESHOLD;
+
+  // Only write when a new tier was crossed
+  if (newTiersCrossed > 0) {
+    await connection.query(
+      `UPDATE marketplaceusers
+          SET creditLimit = ?, creditLimitBonusTier = ?
+        WHERE id = ?`,
+      [finalCreditLimit, finalTierValue, userId],
+    );
+  }
+
+  return {
+    deliveredTotal,
+    creditLimit: finalCreditLimit,
+    creditLimitBonusTier: finalTierValue,
+  };
+}
+
 
 async function insertProcessOrder(
   connection,
