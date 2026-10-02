@@ -3,9 +3,10 @@ const router = express.Router();
 const complainEp = require('../end-point/complain-ep');
 const auth = require('../middleware/auth.middleware');
 const checkProfanity = require('../middleware/profanity.middleware');
+const idempotency = require('../middleware/idempotency.middleware');
 
 // Add Complain
-router.post('/add-complain', auth, checkProfanity(['complain']), complainEp.createComplain);
+router.post('/add-complain', auth, idempotency, checkProfanity(['complain']), complainEp.createComplain);
 
 // Get All Complains
 router.get('/get-complains', auth, complainEp.getComplains);
