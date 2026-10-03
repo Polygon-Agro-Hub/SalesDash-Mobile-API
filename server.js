@@ -33,15 +33,7 @@ app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ limit: "10mb", extended: true }));
 
-app.get([`${BASE_PATH}/health`, `${BASE_PATH}/healthz`], (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    timestamp: new Date(),
-    uptime: process.uptime(),
-    service: "SalesDash Mobile API",
-    environment: process.env.NODE_ENV || "development",
-  });
-});
+
 
 // Database connection check function
 const DatabaseConnection = (db, name) => {
@@ -79,6 +71,7 @@ const routes = {
   packages: require("./routes/package.routes"),
   orders: require("./routes/order.routes"),
   notifications: require("./routes/notification.routes"),
+  health: require("./routes/health.routes"),
 };
 
 setupSwagger(app, BASE_PATH);
@@ -90,6 +83,8 @@ app.use(`${BASE_PATH}/api/complain`, routes.complain);
 app.use(`${BASE_PATH}/api/packages`, routes.packages);
 app.use(`${BASE_PATH}/api/orders`, routes.orders);
 app.use(`${BASE_PATH}/api/notifications`, routes.notifications);
+app.use(`${BASE_PATH}`, routes.health);
+app.use("", routes.health);
 
 // ─── App Version Policy ────────────────────────────────────────────────────────
 // Returns the version policy JSON that controls in-app update prompts in the
