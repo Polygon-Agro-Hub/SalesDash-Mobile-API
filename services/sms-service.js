@@ -11,11 +11,10 @@ exports.sendSMS = async (phoneNumber, message) => {
     }
 
     const apiKey = process.env.SMS_API_KEY;
-    const senderId = process.env.SMS_SENDER_ID || "PolygonAgro";
 
     // Prepare request data
     const requestData = {
-      source: senderId,
+      source: "Polygon",
       destinations: [formattedNumber],
       content: { sms: message },
       transports: ["sms"],
