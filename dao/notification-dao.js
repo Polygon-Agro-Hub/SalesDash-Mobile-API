@@ -166,10 +166,11 @@ exports.resolveSalesAgentDetailsDAO = (orderId) => {
       JOIN orders o ON po.orderId = o.id
       JOIN marketplaceusers mps ON o.userId = mps.id
       WHERE po.id = ? OR po.orderId = ? OR o.id = ?
+      ORDER BY (po.id = ?) DESC
       LIMIT 1
     `;
 
-    db.collectionofficer.query(lookupQuery, [orderId, orderId, orderId], (err, rows) => {
+    db.collectionofficer.query(lookupQuery, [orderId, orderId, orderId, orderId], (err, rows) => {
       if (!err && rows && rows.length > 0) {
         return resolve(rows[0]);
       }
