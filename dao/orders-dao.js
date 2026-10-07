@@ -1671,6 +1671,11 @@ exports.cancelOrder = (orderId) => {
                         connection.commit((commitErr) => {
                           connection.release();
                           if (commitErr) return reject(commitErr);
+
+                          // Trigger real-time Polygon customer notification
+                          const polygonNotificationService = require("../services/polygon-notification-service");
+                          polygonNotificationService.notifyPolygonOrderCancelled(actualId, invoiceNumber).catch(() => {});
+
                           resolve({
                             success: true,
                             message: notifErr
