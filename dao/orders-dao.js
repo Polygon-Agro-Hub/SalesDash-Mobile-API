@@ -614,7 +614,8 @@ async function updateUserCreditInfo(connection, userId) {
   const finalTierCount = Math.max(currentTierCount, earnedTierCount);
   const newTiersCrossed = finalTierCount - currentTierCount;
 
-  const finalCreditLimit = currentCreditLimit + newTiersCrossed * BONUS_PER_TIER;
+  const finalCreditLimit =
+    currentCreditLimit + newTiersCrossed * BONUS_PER_TIER;
   const finalTierValue = finalTierCount * TIER_THRESHOLD;
 
   // Only write when a new tier was crossed
@@ -633,7 +634,6 @@ async function updateUserCreditInfo(connection, userId) {
     creditLimitBonusTier: finalTierValue,
   };
 }
-
 
 async function insertProcessOrder(
   connection,
@@ -970,19 +970,18 @@ exports.getDeliveredOrdersTotal = async (userId) => {
   let connection;
   try {
     connection = await db.collectionofficer.promise().getConnection();
+
     const [rows] = await connection.query(
-      `SELECT COALESCE(SUM(p.amount), 0) AS deliveredTotal
-       FROM processorders p
-       INNER JOIN orders o ON o.id = p.orderId
-       WHERE o.userId = ?
-         AND p.status IN ('Delivered', 'Picked up')`,
+      `SELECT creditLimit
+       FROM marketplaceusers
+       WHERE id = ?`,
       [userId],
     );
-    const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
-    // Base 2000, +250 for every full 25000 in total order value
-    const tiersEarned = Math.floor(deliveredTotal / 25000);
-    const creditBalance = 2000 + tiersEarned * 250;
-    return { deliveredTotal, creditBalance };
+
+    // User not found
+    if (!rows.length) return null;
+
+    return { creditLimit: parseFloat(rows[0].creditLimit || 0) };
   } catch (err) {
     console.error("Error in getDeliveredOrdersTotal:", err);
     throw err;
@@ -1674,7 +1673,12 @@ exports.cancelOrder = (orderId) => {
 
                           // Trigger real-time Polygon customer notification
                           const polygonNotificationService = require("../services/polygon-notification-service");
-                          polygonNotificationService.notifyPolygonOrderCancelled(actualId, invoiceNumber).catch(() => {});
+                          polygonNotificationService
+                            .notifyPolygonOrderCancelled(
+                              actualId,
+                              invoiceNumber,
+                            )
+                            .catch(() => { });
 
                           resolve({
                             success: true,
