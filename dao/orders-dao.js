@@ -1680,6 +1680,15 @@ exports.cancelOrder = (orderId) => {
                             )
                             .catch(() => { });
 
+                          // Trigger background push notification to the assigned Sales Agent
+                          const salesdashNotificationService = require("../services/salesdash-notification-service");
+                          salesdashNotificationService
+                            .notifyDashOrderCancelled(
+                              actualId,
+                              invoiceNumber,
+                            )
+                            .catch(() => { });
+
                           resolve({
                             success: true,
                             message: notifErr
