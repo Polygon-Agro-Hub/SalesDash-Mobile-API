@@ -183,6 +183,25 @@ exports.processOrder = async (orderData, salesAgentId) => {
       // You might want to add this to a retry queue or notification system
     }
 
+    // STEP 7: Notify GoviMart Customer App of real-time packing slots update via Socket.IO webhook
+    try {
+      const polygonNotif = require("../services/polygon-notification-service");
+      let schedDate = orderData?.sheduleDate || null;
+      if (!schedDate && Array.isArray(orderData?.calculatedOrders) && orderData.calculatedOrders.length > 0) {
+        schedDate = orderData.calculatedOrders[0]?.date || orderData.calculatedOrders[0]?.dateStr;
+      }
+      if (schedDate && typeof schedDate === "object" && schedDate.toISOString) {
+        schedDate = schedDate.toISOString().split("T")[0];
+      } else if (schedDate) {
+        schedDate = String(schedDate).split("T")[0];
+      }
+      polygonNotif.notifyPolygonPackingSlotsUpdated(schedDate).catch((e) => {
+        console.warn("[processOrder] Slot sync notice error:", e.message);
+      });
+    } catch (slotErr) {
+      console.warn("Could not notify Polygon of packing slot change:", slotErr.message);
+    }
+
     console.timeEnd("process-order");
     return { orderId, processOrderId, processOrderIds };
   } catch (error) {
@@ -614,7 +633,8 @@ async function updateUserCreditInfo(connection, userId) {
   const finalTierCount = Math.max(currentTierCount, earnedTierCount);
   const newTiersCrossed = finalTierCount - currentTierCount;
 
-  const finalCreditLimit = currentCreditLimit + newTiersCrossed * BONUS_PER_TIER;
+  const finalCreditLimit =
+    currentCreditLimit + newTiersCrossed * BONUS_PER_TIER;
   const finalTierValue = finalTierCount * TIER_THRESHOLD;
 
   // Only write when a new tier was crossed
@@ -633,7 +653,6 @@ async function updateUserCreditInfo(connection, userId) {
     creditLimitBonusTier: finalTierValue,
   };
 }
-
 
 async function insertProcessOrder(
   connection,
@@ -970,19 +989,18 @@ exports.getDeliveredOrdersTotal = async (userId) => {
   let connection;
   try {
     connection = await db.collectionofficer.promise().getConnection();
+
     const [rows] = await connection.query(
-      `SELECT COALESCE(SUM(p.amount), 0) AS deliveredTotal
-       FROM processorders p
-       INNER JOIN orders o ON o.id = p.orderId
-       WHERE o.userId = ?
-         AND p.status IN ('Delivered', 'Picked up')`,
+      `SELECT creditLimit
+       FROM marketplaceusers
+       WHERE id = ?`,
       [userId],
     );
-    const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
-    // Base 2000, +250 for every full 25000 in total order value
-    const tiersEarned = Math.floor(deliveredTotal / 25000);
-    const creditBalance = 2000 + tiersEarned * 250;
-    return { deliveredTotal, creditBalance };
+
+    // User not found
+    if (!rows.length) return null;
+
+    return { creditLimit: parseFloat(rows[0].creditLimit || 0) };
   } catch (err) {
     console.error("Error in getDeliveredOrdersTotal:", err);
     throw err;
@@ -1671,6 +1689,25 @@ exports.cancelOrder = (orderId) => {
                         connection.commit((commitErr) => {
                           connection.release();
                           if (commitErr) return reject(commitErr);
+
+                          // Trigger real-time Polygon customer notification
+                          const polygonNotificationService = require("../services/polygon-notification-service");
+                          polygonNotificationService
+                            .notifyPolygonOrderCancelled(
+                              actualId,
+                              invoiceNumber,
+                            )
+                            .catch(() => { });
+
+                          // Trigger background push notification to the assigned Sales Agent
+                          const salesdashNotificationService = require("../services/salesdash-notification-service");
+                          salesdashNotificationService
+                            .notifyDashOrderCancelled(
+                              actualId,
+                              invoiceNumber,
+                            )
+                            .catch(() => { });
+
                           resolve({
                             success: true,
                             message: notifErr

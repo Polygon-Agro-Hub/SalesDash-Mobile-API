@@ -170,12 +170,10 @@ exports.getOrderByCustomerId = async (req, res) => {
         .json({ success: false, message: "Invalid customer ID" });
     }
     if (page < 1 || limit < 1) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Page and limit must be positive integers",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Page and limit must be positive integers",
+      });
     }
 
     const result = await orderDao.getOrderByCustomerId(
@@ -199,13 +197,11 @@ exports.getOrderByCustomerId = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching orders by customer ID:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch order details",
-        error: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch order details",
+      error: error.message,
+    });
   }
 };
 
@@ -464,17 +460,27 @@ exports.getHold = async (req, res) => {
 
 exports.getDeliveredOrdersTotal = async (req, res) => {
   try {
-    const userId = req.params.userId;
-    if (!userId || isNaN(parseInt(userId))) {
-      return res.status(400).json({ success: false, message: "Invalid user ID" });
+    const userId = parseInt(req.params.userId, 10);
+    if (isNaN(userId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user ID" });
     }
+
     const result = await orderDao.getDeliveredOrdersTotal(userId);
+
+    if (!result) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("Error in getDeliveredOrdersTotal:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch delivered orders total",
+      message: "Failed to fetch credit limit",
       error: error.message,
     });
   }
