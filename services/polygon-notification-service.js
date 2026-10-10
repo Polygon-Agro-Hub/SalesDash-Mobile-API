@@ -71,43 +71,10 @@ const triggerPolygonNotification = async ({
 };
 
 /**
- * Notify GoviMart/Polygon customer API to recalculate and broadcast
- * real-time packing slots to connected mobile clients via Socket.IO.
- */
-const notifyPolygonPackingSlotsUpdated = async (scheduleDate = null) => {
-  const polygonBase = getPolygonBaseUrl();
-  const url = `${polygonBase}/api/order/package/sync-slots`;
-
-  try {
-    const response = await axios.post(
-      url,
-      { scheduleDate },
-      {
-        timeout: 5000,
-        headers: getServiceHeaders(),
-      }
-    );
-    console.log(
-      `📢 [Polygon Socket] Slot sync notified to Polygon API (${response.status}) for date: ${scheduleDate || "all"}`
-    );
-    return true;
-  } catch (err) {
-    console.warn(
-      `⚠️ [Polygon Socket] Could not notify Polygon slot sync (${url}):`,
-      err.response?.data?.message || err.message
-    );
-    return false;
-  }
-};
-
-/**
  * Order cancelled from Sales Dash app by sales agent
  */
 const notifyPolygonOrderCancelled = async (processOrderId, invNo) => {
   const invoiceNumber = invNo || processOrderId;
-  // Also trigger slot sync when order is cancelled
-  notifyPolygonPackingSlotsUpdated().catch(() => {});
-
   return triggerPolygonNotification({
     orderId: processOrderId,
     title: "Order Cancelled",
@@ -121,5 +88,4 @@ const notifyPolygonOrderCancelled = async (processOrderId, invNo) => {
 module.exports = {
   triggerPolygonNotification,
   notifyPolygonOrderCancelled,
-  notifyPolygonPackingSlotsUpdated,
 };
