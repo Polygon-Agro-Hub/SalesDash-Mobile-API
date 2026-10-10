@@ -14,25 +14,8 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
     };
 
-    // 1. Check in-memory cache first
-    const cachedPackages = packageCache.getCachedPackages(filters);
-    if (cachedPackages && cachedPackages.length > 0) {
-      res.setHeader("X-Cache", "HIT");
-      return res.status(200).json({
-        message: "Packages fetched successfully (from cache)",
-        data: cachedPackages,
-        total: cachedPackages.length,
-        filters: filters,
-        cached: true,
-      });
-    }
-
-    // 2. Cache miss: fetch from MySQL database
+    // Always fetch directly from MySQL database without serving stale cached dates
     const packages = await packageDAO.getAllPackages(filters);
-
-    if (packageCache.isDefaultFilter(filters) && Array.isArray(packages)) {
-      packageCache.setCachedPackages(packages);
-    }
 
     if (!packages || packages.length === 0) {
       return res.status(404).json({
@@ -43,6 +26,9 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
     }
 
     res.setHeader("X-Cache", "MISS");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.status(200).json({
       message: "Packages fetched successfully",
       data: packages,
@@ -129,6 +115,9 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
     }
 
     // Send successful response with the marketplace item details
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.status(200).json({
       message: "Marketplace item fetched successfully",
       data: marketplaceIPackage, 

@@ -40,71 +40,98 @@ exports.processOrder = async (orderData, salesAgentId) => {
     let processOrderId;
     let processOrderIds = [];
 
-    if (normScheduleType === "Twice a Week") {
-      let date1 = null;
-      let date2 = null;
+    const isRecurring =
+      normScheduleType === "Once a Week" || normScheduleType === "Twice a Week";
 
-      if (
-        Array.isArray(orderData.calculatedOrders) &&
-        orderData.calculatedOrders.length >= 2
-      ) {
-        date1 = parseDateValue(
-          orderData.calculatedOrders[0]?.date ||
-          orderData.calculatedOrders[0]?.dateStr,
-        );
-        date2 = parseDateValue(
-          orderData.calculatedOrders[1]?.date ||
-          orderData.calculatedOrders[1]?.dateStr,
-        );
-      }
-
-      if (!date1 || !date2) {
-        const daysArr = orderData.selectedDays ||
-          orderData.recurringDays || ["Tu", "Sa"];
-        const computed = getUpcomingDeliveryDates(daysArr, 3);
-        date1 = date1 || computed[0];
-        date2 = date2 || computed[1] || computed[0];
-      }
-
-      const proc1Id = await insertProcessOrder(
-        connection,
-        orderId,
-        orderData,
-        date1,
-      );
-      const proc2Id = await insertProcessOrder(
-        connection,
-        orderId,
-        orderData,
-        date2,
-      );
-      processOrderId = proc1Id;
-      processOrderIds = [proc1Id, proc2Id];
-    } else if (normScheduleType === "Once a Week") {
-      let date1 = null;
+    if (isRecurring) {
+      const targetDates = [];
       if (
         Array.isArray(orderData.calculatedOrders) &&
         orderData.calculatedOrders.length > 0
       ) {
-        date1 = parseDateValue(
-          orderData.calculatedOrders[0]?.date ||
-          orderData.calculatedOrders[0]?.dateStr,
-        );
-      }
-      if (!date1) {
-        const daysArr = orderData.selectedDays ||
-          orderData.recurringDays || ["Tu"];
-        const computed = getUpcomingDeliveryDates(daysArr, 3);
-        date1 = computed[0];
+        for (const o of orderData.calculatedOrders) {
+          const d = parseDateValue(o.date || o.dateStr);
+          if (d) targetDates.push(d);
+        }
       }
 
-      processOrderId = await insertProcessOrder(
-        connection,
-        orderId,
-        orderData,
-        date1,
-      );
-      processOrderIds = [processOrderId];
+      if (targetDates.length === 0) {
+        const daysArr =
+          orderData.selectedDays ||
+          orderData.recurringDays ||
+          (normScheduleType === "Twice a Week" ? ["Tu", "Sa"] : ["Tu"]);
+        const numWeeks =
+          parseInt(orderData.validityPeriod || orderData.validityWeeks, 10) || 4;
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() + 3);
+        minDate.setHours(0, 0, 0, 0);
+
+        const allComputed = [];
+        daysArr.forEach((d) => {
+          const targetDay = DAY_MAP[d] !== undefined ? DAY_MAP[d] : 2;
+          const firstDate = new Date(minDate);
+          while (firstDate.getDay() !== targetDay) {
+            firstDate.setDate(firstDate.getDate() + 1);
+          }
+          for (let w = 0; w < numWeeks; w++) {
+            const nextDate = new Date(firstDate);
+            nextDate.setDate(firstDate.getDate() + w * 7);
+            allComputed.push(nextDate);
+          }
+        });
+        allComputed.sort((a, b) => a.getTime() - b.getTime());
+        targetDates.push(...allComputed);
+      }
+
+      for (let i = 0; i < targetDates.length; i++) {
+        const sDate = targetDates[i];
+        const isFirstOrder = i === 0;
+
+        const isFreeDelivery = Boolean(
+          orderData.isCoupon &&
+          orderData.couponType &&
+          (String(orderData.couponType).toLowerCase().includes("free") ||
+            String(orderData.couponType).toLowerCase().includes("delivery"))
+        );
+        const originalDeliveryCharge = parseFloat(
+          orderData.initialDeliveryCharge ||
+          orderData.normalDeliveryCharge ||
+          (isFreeDelivery ? 350 : orderData.deliveryCharge) ||
+          0
+        );
+        const couponVal = isFreeDelivery ? 0 : (parseFloat(orderData.couponValue) || 0);
+
+        const currentOrderData = isFirstOrder
+          ? orderData
+          : {
+              ...orderData,
+              isCoupon: 0,
+              couponType: null,
+              couponValue: 0.0,
+              deliveryCharge: originalDeliveryCharge,
+              fullTotal:
+                parseFloat(orderData.normalGrandTotal) ||
+                Math.max(
+                  0,
+                  (parseFloat(orderData.fullTotal) || 0) +
+                    couponVal +
+                    (isFreeDelivery ? originalDeliveryCharge : 0)
+                ),
+              total:
+                parseFloat(orderData.normalTotal) ||
+                parseFloat(orderData.total) ||
+                null,
+            };
+
+        const pId = await insertProcessOrder(
+          connection,
+          orderId,
+          currentOrderData,
+          sDate,
+        );
+        processOrderIds.push(pId);
+      }
+      processOrderId = processOrderIds[0];
     } else {
       // One Time
       const date1 = parseDateValue(orderData.sheduleDate);
@@ -554,10 +581,9 @@ async function insertMainOrder(
     `INSERT INTO orders (
           userId,  orderApp, delivaryMethod, centerId, buildingType,
           title, fullName, phonecode1, phone1, phonecode2, phone2,
-          isCoupon, couponValue, total, fullTotal, discount,
           sheduleType, validityPeriod, selectedDays, sheduleTime, isPackage, 
-          longitude, latitude, deliveryCharge, isFinalizeImdt, isPaySMS, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          longitude, latitude, isFinalizeImdt, isPaySMS, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -570,11 +596,6 @@ async function insertMainOrder(
       orderPhone1,
       orderPhonecode2,
       orderPhone2,
-      isCoupon,
-      couponValue,
-      total,
-      fullTotal,
-      discount,
       normScheduleType,
       parsedValidityPeriod,
       parsedSelectedDays,
@@ -582,7 +603,6 @@ async function insertMainOrder(
       isPackage,
       longitude,
       latitude,
-      deliveryCharge,
       isFinalizeImdt ? 1 : 0,
       isPaySMS ? 1 : 0,
     ],
@@ -636,16 +656,13 @@ async function updateUserCreditInfo(connection, userId) {
     parseFloat(userRows[0].creditLimitBonusTier || 0) / TIER_THRESHOLD,
   );
 
-  // Count each order once, even if it has 2 processorders (Twice a Week)
+  // Count total delivered amount from processorders
   const [rows] = await connection.query(
-    `SELECT COALESCE(SUM(o.fullTotal), 0) AS deliveredTotal
-       FROM orders o
+    `SELECT COALESCE(SUM(p.fullTotal), 0) AS deliveredTotal
+       FROM processorders p
+       JOIN orders o ON p.orderid = o.id
       WHERE o.userId = ?
-        AND EXISTS (
-          SELECT 1 FROM processorders p
-           WHERE p.orderid = o.id
-             AND p.status IN ('Delivered', 'Picked up')
-        )`,
+        AND p.status IN ('Delivered', 'Picked up')`,
     [userId],
   );
   const deliveredTotal = parseFloat(rows[0].deliveredTotal || 0);
@@ -699,11 +716,20 @@ async function insertProcessOrder(
     const isPaidValue = 0;
     const amountValue = 0.0;
 
+    const isCouponVal = orderData.isCoupon ? 1 : 0;
+    const couponTypeVal = orderData.couponType || null;
+    const couponValueVal = parseFloat(orderData.couponValue) || 0.0;
+    const totalVal = orderData.total !== undefined && orderData.total !== null ? parseFloat(orderData.total) : null;
+    const fullTotalVal = orderData.fullTotal !== undefined && orderData.fullTotal !== null ? parseFloat(orderData.fullTotal) : null;
+    const discountVal = orderData.discount !== undefined && orderData.discount !== null ? parseFloat(orderData.discount) : 0.0;
+    const deliveryChargeVal = orderData.deliveryCharge !== undefined && orderData.deliveryCharge !== null ? parseFloat(orderData.deliveryCharge) : 0.0;
+
     // Insert process order record WITH QR CODE and sheduleDate
     const [result] = await connection.query(
       `INSERT INTO processorders (
-          orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, sheduleDate, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, sheduleDate,
+          isCoupon, couponType, couponValue, total, fullTotal, discount, deliveryCharge, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         orderId,
         invNo,
@@ -716,6 +742,13 @@ async function insertProcessOrder(
         "Ordered",
         qrCodeDataURL,
         targetScheduleDate ? new Date(targetScheduleDate) : null,
+        isCouponVal,
+        couponTypeVal,
+        couponValueVal,
+        totalVal,
+        fullTotalVal,
+        discountVal,
+        deliveryChargeVal,
       ],
     );
 
@@ -829,9 +862,8 @@ async function insertAdditionalItems(
     const normalPrice = price + discount;
 
     await connection.query(
-      "INSERT INTO orderadditionalitems (orderid, proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+      "INSERT INTO orderadditionalitems (proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
       [
-        orderId,
         proOrderId,
         item.productId || item.id,
         item.qty || item.quantity,
@@ -1052,10 +1084,10 @@ o.phone2 AS orderPhone2,
                 o.selectedDays,
                 o.sheduleTime,
                 o.createdAt,
-                o.total,
-                o.discount,
-                o.deliveryCharge,
-                o.fullTotal,
+                p.total,
+                p.discount,
+                p.deliveryCharge,
+                p.fullTotal,
                 o.isPackage,
                 o.delivaryMethod,
                 c.title,
@@ -1084,7 +1116,7 @@ o.phone2 AS orderPhone2,
             FROM orders o
             JOIN marketplaceusers c ON o.userId = c.id
             LEFT JOIN processorders p ON o.id = p.orderId
-            LEFT JOIN orderadditionalitems oai ON (oai.proOrderId = p.id OR (oai.proOrderId IS NULL AND oai.orderId = o.id))
+            LEFT JOIN orderadditionalitems oai ON oai.proOrderId = p.id
             LEFT JOIN orderpackage op ON op.orderId = p.id
             LEFT JOIN marketplacepackages mpp ON mpp.id = op.packageId
             WHERE o.id = ?
@@ -1377,9 +1409,9 @@ exports.getOrderByCustomerId = (
     o.selectedDays,
     o.sheduleTime,
     o.createdAt,
-    o.total,
-    o.discount,
-    o.fullTotal,
+    p.total,
+    p.discount,
+    p.fullTotal,
     p.invNo AS InvNo,
     p.isPaid,
     p.reportStatus AS reportStatus,
@@ -1446,10 +1478,10 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
                 o.selectedDays,
                 o.sheduleTime,
                 o.createdAt,
-                o.total,
-                o.discount,
-                o.fullTotal,
-                o.deliveryCharge,
+                p.total,
+                p.discount,
+                p.fullTotal,
+                p.deliveryCharge,
                 m.salesAgent,
                 o.buildingType,
                 p.id AS processId,
