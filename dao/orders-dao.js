@@ -183,6 +183,46 @@ exports.processOrder = async (orderData, salesAgentId) => {
       // You might want to add this to a retry queue or notification system
     }
 
+    // STEP 7: Trigger Polygon Customer Notification if payment method is Card
+    const isCardPayment =
+      orderData.paymentMethod &&
+      String(orderData.paymentMethod).toLowerCase().includes("card");
+
+    if (isCardPayment && processOrderIds && processOrderIds.length > 0) {
+      try {
+        const polygonNotificationService = require("../services/polygon-notification-service");
+        if (
+          typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
+            "function"
+        ) {
+          const [procRows] = await db.collectionofficer.promise().query(
+            "SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)",
+            [processOrderIds],
+          );
+          for (const row of procRows || []) {
+            polygonNotificationService
+              .notifyPolygonPaymentReminder({
+                processOrderId: row.id,
+                invNo: row.invNo,
+                scheduledDate: row.sheduleDate,
+                userId: orderData.userId,
+              })
+              .catch((err) => {
+                console.warn(
+                  `⚠️ [Payment Reminder] Error notifying Polygon for processOrder ${row.id}:`,
+                  err?.message,
+                );
+              });
+          }
+        }
+      } catch (notifErr) {
+        console.warn(
+          "⚠️ [Payment Reminder] Failed to dispatch Polygon card payment reminder:",
+          notifErr?.message,
+        );
+      }
+    }
+
     console.timeEnd("process-order");
     return { orderId, processOrderId, processOrderIds };
   } catch (error) {
