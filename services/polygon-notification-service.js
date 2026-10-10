@@ -71,43 +71,10 @@ const triggerPolygonNotification = async ({
 };
 
 /**
- * Notify GoviMart/Polygon customer API to recalculate and broadcast
- * real-time packing slots to connected mobile clients via Socket.IO.
- */
-const notifyPolygonPackingSlotsUpdated = async (scheduleDate = null) => {
-  const polygonBase = getPolygonBaseUrl();
-  const url = `${polygonBase}/api/order/package/sync-slots`;
-
-  try {
-    const response = await axios.post(
-      url,
-      { scheduleDate },
-      {
-        timeout: 5000,
-        headers: getServiceHeaders(),
-      }
-    );
-    console.log(
-      `📢 [Polygon Socket] Slot sync notified to Polygon API (${response.status}) for date: ${scheduleDate || "all"}`
-    );
-    return true;
-  } catch (err) {
-    console.warn(
-      `⚠️ [Polygon Socket] Could not notify Polygon slot sync (${url}):`,
-      err.response?.data?.message || err.message
-    );
-    return false;
-  }
-};
-
-/**
  * Order cancelled from Sales Dash app by sales agent
  */
 const notifyPolygonOrderCancelled = async (processOrderId, invNo) => {
   const invoiceNumber = invNo || processOrderId;
-  // Also trigger slot sync when order is cancelled
-  notifyPolygonPackingSlotsUpdated().catch(() => {});
-
   return triggerPolygonNotification({
     orderId: processOrderId,
     title: "Order Cancelled",
@@ -118,8 +85,79 @@ const notifyPolygonOrderCancelled = async (processOrderId, invNo) => {
   });
 };
 
+/**
+ * Format a Date object to "Month Day", e.g. "September 3"
+ */
+const formatDateToMonthDay = (date) => {
+  if (!date) return "";
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  return `${monthNames[d.getMonth()]} ${d.getDate()}`;
+};
+
+/**
+ * Calculate payment deadline date: 2 days before scheduled date, e.g. "September 1"
+ */
+const getPaymentDeadlineDate = (scheduledDate) => {
+  const d =
+    scheduledDate instanceof Date
+      ? new Date(scheduledDate.getTime())
+      : new Date(scheduledDate);
+  if (isNaN(d.getTime())) {
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + 1);
+    return formatDateToMonthDay(fallback);
+  }
+  // 2 days before scheduled date
+  d.setDate(d.getDate() - 2);
+  return formatDateToMonthDay(d);
+};
+
+/**
+ * Payment Reminder notification for card orders placed via Sales Dash.
+ * Saves to ordernotfication table, dispatches FCM/Expo push and Socket.IO.
+ */
+const notifyPolygonPaymentReminder = async ({
+  processOrderId,
+  invNo,
+  scheduledDate,
+  userId,
+}) => {
+  const invoiceNumber = invNo || processOrderId;
+  const schedDateObj = scheduledDate
+    ? (scheduledDate instanceof Date ? scheduledDate : new Date(scheduledDate))
+    : new Date();
+  const scheduledDateStr = formatDateToMonthDay(schedDateObj);
+  const deadlineDateStr = getPaymentDeadlineDate(schedDateObj);
+
+  const title = "Payment Reminder !!!";
+  const message = `Order #${invoiceNumber} scheduled for ${scheduledDateStr}. Please pay via online banking before ${deadlineDateStr} at 6:00 PM to avoid cancellation.`;
+
+  return triggerPolygonNotification({
+    orderId: processOrderId,
+    title,
+    message,
+    eventType: "payment_reminder",
+    data: {
+      processOrderId,
+      invNo: invoiceNumber,
+      userId,
+      scheduledDate: scheduledDateStr,
+      deadlineDate: deadlineDateStr,
+      type: "payment_reminder",
+    },
+    skipDbInsert: false, // Save to ordernotfication table
+  });
+};
+
 module.exports = {
   triggerPolygonNotification,
   notifyPolygonOrderCancelled,
-  notifyPolygonPackingSlotsUpdated,
+  notifyPolygonPaymentReminder,
+  formatDateToMonthDay,
+  getPaymentDeadlineDate,
 };

@@ -183,23 +183,44 @@ exports.processOrder = async (orderData, salesAgentId) => {
       // You might want to add this to a retry queue or notification system
     }
 
-    // STEP 7: Notify GoviMart Customer App of real-time packing slots update via Socket.IO webhook
-    try {
-      const polygonNotif = require("../services/polygon-notification-service");
-      let schedDate = orderData?.sheduleDate || null;
-      if (!schedDate && Array.isArray(orderData?.calculatedOrders) && orderData.calculatedOrders.length > 0) {
-        schedDate = orderData.calculatedOrders[0]?.date || orderData.calculatedOrders[0]?.dateStr;
+    // STEP 7: Trigger Polygon Customer Notification if payment method is Card
+    const isCardPayment =
+      orderData.paymentMethod &&
+      String(orderData.paymentMethod).toLowerCase().includes("card");
+
+    if (isCardPayment && processOrderIds && processOrderIds.length > 0) {
+      try {
+        const polygonNotificationService = require("../services/polygon-notification-service");
+        if (
+          typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
+            "function"
+        ) {
+          const [procRows] = await db.collectionofficer.promise().query(
+            "SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)",
+            [processOrderIds],
+          );
+          for (const row of procRows || []) {
+            polygonNotificationService
+              .notifyPolygonPaymentReminder({
+                processOrderId: row.id,
+                invNo: row.invNo,
+                scheduledDate: row.sheduleDate,
+                userId: orderData.userId,
+              })
+              .catch((err) => {
+                console.warn(
+                  `⚠️ [Payment Reminder] Error notifying Polygon for processOrder ${row.id}:`,
+                  err?.message,
+                );
+              });
+          }
+        }
+      } catch (notifErr) {
+        console.warn(
+          "⚠️ [Payment Reminder] Failed to dispatch Polygon card payment reminder:",
+          notifErr?.message,
+        );
       }
-      if (schedDate && typeof schedDate === "object" && schedDate.toISOString) {
-        schedDate = schedDate.toISOString().split("T")[0];
-      } else if (schedDate) {
-        schedDate = String(schedDate).split("T")[0];
-      }
-      polygonNotif.notifyPolygonPackingSlotsUpdated(schedDate).catch((e) => {
-        console.warn("[processOrder] Slot sync notice error:", e.message);
-      });
-    } catch (slotErr) {
-      console.warn("Could not notify Polygon of packing slot change:", slotErr.message);
     }
 
     console.timeEnd("process-order");
