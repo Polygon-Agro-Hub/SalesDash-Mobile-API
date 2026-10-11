@@ -20,12 +20,7 @@ function isDefaultFilter(filters = {}) {
  * Retrieve cached packages if available for default filters.
  */
 function getCachedPackages(filters = {}) {
-  if (isDefaultFilter(filters)) {
-    const data = cache.get(DEFAULT_PACKAGES_CACHE_KEY);
-    if (Array.isArray(data) && data.length > 0) {
-      return data;
-    }
-  }
+  // Always return null so package dates and data are always fetched fresh from the DB
   return null;
 }
 
