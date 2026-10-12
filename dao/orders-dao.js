@@ -1503,7 +1503,7 @@ exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
     }
 
     // Add ORDER BY and LIMIT/OFFSET using string interpolation
-    sql += ` ORDER BY o.createdAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    sql += ` ORDER BY COALESCE(p.sheduleDate, o.createdAt) DESC, p.id DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [orderResults] = await connection.execute(sql, params);
 
