@@ -421,8 +421,11 @@ exports.updateCustomerData = async (cusId, customerData) => {
       ? customerData.nic.toString().trim().toUpperCase()
       : null;
 
-    // Check if customer exists (now also fetching nic)
-    const getCustomerIdQuery = `SELECT id, cusId, phoneCode, phoneNumber, email, nic FROM marketplaceusers WHERE id = ?`;
+    // Check if customer exists (also fetch nic + isPswUpdateed)
+    const getCustomerIdQuery = `
+      SELECT id, cusId, phoneCode, phoneNumber, email, nic, isPswUpdateed
+      FROM marketplaceusers
+      WHERE id = ?`;
     const [customerResult] = await connection.query(getCustomerIdQuery, [
       cusId,
     ]);
@@ -440,7 +443,11 @@ exports.updateCustomerData = async (cusId, customerData) => {
       ? customerResult[0].nic.toString().trim().toUpperCase()
       : null;
 
-    // Track whether phone number actually changed (used for duplicate check + SMS trigger)
+    // 1 = customer already changed their own password, 0/NULL = still NIC password
+    const isPasswordUpdatedByCustomer =
+      Number(customerResult[0].isPswUpdateed) === 1;
+
+    // Track whether phone number actually changed
     const isPhoneChanged =
       phoneCode !== existingPhoneCode || phoneNumber !== existingPhoneNumber;
 
@@ -492,15 +499,20 @@ exports.updateCustomerData = async (cusId, customerData) => {
       }
     }
 
-    const isNicChanged = nic && nic !== existingNic;
+    const isNicChanged = !!nic && nic !== existingNic;
+
+    // Password is re-hashed from the NIC ONLY when:
+    //   - NIC changed, and
+    //   - the customer has NOT set their own password yet (isPswUpdateed = 0)
+    const shouldResetPassword = isNicChanged && !isPasswordUpdatedByCustomer;
 
     let updateCustomerQuery;
     let customerParams;
 
-    if (isNicChanged) {
+    if (shouldResetPassword) {
       const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
       updateCustomerQuery = `
-        UPDATE marketplaceusers 
+        UPDATE marketplaceusers
         SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, nic = ?, password = ?
         WHERE id = ?`;
       customerParams = [
@@ -515,8 +527,9 @@ exports.updateCustomerData = async (cusId, customerData) => {
         cusId,
       ];
     } else {
+      // NIC (if changed) is saved, but the password is left untouched
       updateCustomerQuery = `
-        UPDATE marketplaceusers 
+        UPDATE marketplaceusers
         SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, nic = ?
         WHERE id = ?`;
       customerParams = [
@@ -535,10 +548,10 @@ exports.updateCustomerData = async (cusId, customerData) => {
 
     await connection.commit();
 
-    // Send updated credentials SMS if NIC changed OR phone number changed —
-    // the SMS shows username (phone) + password (NIC), so either change
-    // means the customer needs to see it again.
-    if (isNicChanged || isPhoneChanged) {
+    // Credentials SMS (username = phone, password = NIC):
+    // only meaningful while the customer is still on the NIC password
+    // (isPswUpdateed = 0). Once they set their own password, never send it.
+    if (!isPasswordUpdatedByCustomer && (isNicChanged || isPhoneChanged)) {
       try {
         await sendCustomerWelcomeSMS(
           phoneCode || existingPhoneCode,

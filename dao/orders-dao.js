@@ -61,7 +61,8 @@ exports.processOrder = async (orderData, salesAgentId) => {
           orderData.recurringDays ||
           (normScheduleType === "Twice a Week" ? ["Tu", "Sa"] : ["Tu"]);
         const numWeeks =
-          parseInt(orderData.validityPeriod || orderData.validityWeeks, 10) || 4;
+          parseInt(orderData.validityPeriod || orderData.validityWeeks, 10) ||
+          4;
         const minDate = new Date();
         minDate.setDate(minDate.getDate() + 3);
         minDate.setHours(0, 0, 0, 0);
@@ -91,37 +92,39 @@ exports.processOrder = async (orderData, salesAgentId) => {
           orderData.isCoupon &&
           orderData.couponType &&
           (String(orderData.couponType).toLowerCase().includes("free") ||
-            String(orderData.couponType).toLowerCase().includes("delivery"))
+            String(orderData.couponType).toLowerCase().includes("delivery")),
         );
         const originalDeliveryCharge = parseFloat(
           orderData.initialDeliveryCharge ||
           orderData.normalDeliveryCharge ||
           (isFreeDelivery ? 350 : orderData.deliveryCharge) ||
-          0
+          0,
         );
-        const couponVal = isFreeDelivery ? 0 : (parseFloat(orderData.couponValue) || 0);
+        const couponVal = isFreeDelivery
+          ? 0
+          : parseFloat(orderData.couponValue) || 0;
 
         const currentOrderData = isFirstOrder
           ? orderData
           : {
-              ...orderData,
-              isCoupon: 0,
-              couponType: null,
-              couponValue: 0.0,
-              deliveryCharge: originalDeliveryCharge,
-              fullTotal:
-                parseFloat(orderData.normalGrandTotal) ||
-                Math.max(
-                  0,
-                  (parseFloat(orderData.fullTotal) || 0) +
-                    couponVal +
-                    (isFreeDelivery ? originalDeliveryCharge : 0)
-                ),
-              total:
-                parseFloat(orderData.normalTotal) ||
-                parseFloat(orderData.total) ||
-                null,
-            };
+            ...orderData,
+            isCoupon: 0,
+            couponType: null,
+            couponValue: 0.0,
+            deliveryCharge: originalDeliveryCharge,
+            fullTotal:
+              parseFloat(orderData.normalGrandTotal) ||
+              Math.max(
+                0,
+                (parseFloat(orderData.fullTotal) || 0) +
+                couponVal +
+                (isFreeDelivery ? originalDeliveryCharge : 0),
+              ),
+            total:
+              parseFloat(orderData.normalTotal) ||
+              parseFloat(orderData.total) ||
+              null,
+          };
 
         const pId = await insertProcessOrder(
           connection,
@@ -223,12 +226,14 @@ exports.processOrder = async (orderData, salesAgentId) => {
         const polygonNotificationService = require("../services/polygon-notification-service");
         if (
           typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
-            "function"
+          "function"
         ) {
-          const [procRows] = await db.collectionofficer.promise().query(
-            "SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)",
-            [processOrderIds],
-          );
+          const [procRows] = await db.collectionofficer
+            .promise()
+            .query(
+              "SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)",
+              [processOrderIds],
+            );
           for (const row of procRows || []) {
             polygonNotificationService
               .notifyPolygonPaymentReminder({
@@ -719,20 +724,49 @@ async function insertProcessOrder(
     const isPaidValue = 0;
     const amountValue = 0.0;
 
+    // isConfirmed = 1 only when schedule date is the earliest possible date (today + 3 days)
+    const earliestDate = new Date();
+    earliestDate.setDate(earliestDate.getDate() + 3);
+    earliestDate.setHours(0, 0, 0, 0);
+
+    const schedDate = targetScheduleDate ? new Date(targetScheduleDate) : null;
+    const isConfirmedValue =
+      schedDate &&
+        !isNaN(schedDate.getTime()) &&
+        schedDate.getFullYear() === earliestDate.getFullYear() &&
+        schedDate.getMonth() === earliestDate.getMonth() &&
+        schedDate.getDate() === earliestDate.getDate()
+        ? 1
+        : 0;
+
     const isCouponVal = orderData.isCoupon ? 1 : 0;
     const couponTypeVal = orderData.couponType || null;
     const couponValueVal = parseFloat(orderData.couponValue) || 0.0;
-    const totalVal = orderData.total !== undefined && orderData.total !== null ? parseFloat(orderData.total) : null;
-    const fullTotalVal = orderData.fullTotal !== undefined && orderData.fullTotal !== null ? parseFloat(orderData.fullTotal) : null;
-    const discountVal = orderData.discount !== undefined && orderData.discount !== null ? parseFloat(orderData.discount) : 0.0;
-    const deliveryChargeVal = orderData.deliveryCharge !== undefined && orderData.deliveryCharge !== null ? parseFloat(orderData.deliveryCharge) : 0.0;
+    const totalVal =
+      orderData.total !== undefined && orderData.total !== null
+        ? parseFloat(orderData.total)
+        : null;
+    const fullTotalVal =
+      orderData.fullTotal !== undefined && orderData.fullTotal !== null
+        ? parseFloat(orderData.fullTotal)
+        : null;
+    const discountVal =
+      orderData.discount !== undefined && orderData.discount !== null
+        ? parseFloat(orderData.discount)
+        : 0.0;
+    const deliveryChargeVal =
+      orderData.deliveryCharge !== undefined &&
+        orderData.deliveryCharge !== null
+        ? parseFloat(orderData.deliveryCharge)
+        : 0.0;
 
     // Insert process order record WITH QR CODE and sheduleDate
     const [result] = await connection.query(
       `INSERT INTO processorders (
-          orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, sheduleDate,
-          isCoupon, couponType, couponValue, total, fullTotal, discount, deliveryCharge, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, sheduleDate,
+    isConfirmed,
+    isCoupon, couponType, couponValue, total, fullTotal, discount, deliveryCharge, createdAt
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         orderId,
         invNo,
@@ -745,6 +779,7 @@ async function insertProcessOrder(
         "Ordered",
         qrCodeDataURL,
         targetScheduleDate ? new Date(targetScheduleDate) : null,
+        isConfirmedValue,
         isCouponVal,
         couponTypeVal,
         couponValueVal,
@@ -1449,160 +1484,177 @@ exports.getOrderByCustomerId = (
   });
 };
 
-exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
+// Replace your existing exports.getAllOrderDetails in the order DAO with this.
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const placeholders = (arr) => arr.map(() => "?").join(",");
+
+exports.getAllOrderDetails = async (
+  salesAgentId,
+  page = 1,
+  limit = 10,
+  filters = {},
+) => {
   let connection;
 
   try {
-    // Get connection from pool
     connection = await db.collectionofficer.promise().getConnection();
 
-    // Ensure page and limit are integers
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
 
-    // First, get the total count
-    let countSql = `
-            SELECT COUNT(*) as totalCount
-            FROM orders o
-            LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
-            LEFT JOIN collection_officer.marketplaceusers m ON o.userId = m.id
-        `;
+    const { search = "", dateFrom = "", dateTo = "" } = filters;
 
-    const countParams = [];
-    if (salesAgentId) {
-      countSql += ` WHERE m.salesAgent = ?`;
-      countParams.push(salesAgentId);
-    }
-
-    const [countResult] = await connection.execute(countSql, countParams);
-    const totalCount = countResult[0].totalCount;
-
-    // Main query with pagination - using string interpolation for LIMIT and OFFSET
-    let sql = `
-            SELECT 
-                o.id AS orderId,
-                o.userId,
-                o.sheduleType,
-                p.sheduleDate AS sheduleDate,
-                p.sheduleDate AS processSheduleDate,
-                o.validityPeriod,
-                o.selectedDays,
-                o.sheduleTime,
-                o.createdAt,
-                p.total,
-                p.discount,
-                p.fullTotal,
-                p.deliveryCharge,
-                m.salesAgent,
-                o.buildingType,
-                p.id AS processId,
-                p.invNo AS InvNo,
-                p.isPaid,
-                p.reportStatus AS reportStatus,
-                p.paymentMethod AS paymentMethod,
-                p.status As status
-            FROM orders o
-            LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
-            LEFT JOIN collection_officer.marketplaceusers m ON o.userId = m.id
-        `;
-
-    // Add WHERE clause if salesAgentId is provided
+    // ---------- shared WHERE clause (used by BOTH count and data query) ----------
+    const where = [];
     const params = [];
+
     if (salesAgentId) {
-      sql += ` WHERE m.salesAgent = ?`;
+      where.push("m.salesAgent = ?");
       params.push(salesAgentId);
     }
 
-    // Add ORDER BY and LIMIT/OFFSET using string interpolation
-    sql += ` ORDER BY COALESCE(p.sheduleDate, o.createdAt) DESC, p.id DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    if (search) {
+      // escape LIKE wildcards so "%" / "_" in the input are treated literally
+      const escaped = search.replace(/[\\%_]/g, "\\$&");
+      where.push("p.invNo LIKE ?");
+      params.push(`%${escaped}%`);
+    }
+
+    if (DATE_RE.test(dateFrom) && DATE_RE.test(dateTo)) {
+      where.push("DATE(p.sheduleDate) BETWEEN ? AND ?");
+      params.push(dateFrom, dateTo);
+    }
+
+    const whereSql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+
+    const fromSql = `
+      FROM orders o
+      LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
+      LEFT JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+    `;
+
+    // ---------- total count (matches the active search/filter) ----------
+    const [countResult] = await connection.execute(
+      `SELECT COUNT(*) AS totalCount ${fromSql} ${whereSql}`,
+      params,
+    );
+    const totalCount = countResult[0].totalCount;
+
+    // ---------- page of orders ----------
+    const sql = `
+      SELECT
+        o.id AS orderId,
+        o.userId,
+        o.sheduleType,
+        p.sheduleDate AS sheduleDate,
+        p.sheduleDate AS processSheduleDate,
+        o.validityPeriod,
+        o.selectedDays,
+        o.sheduleTime,
+        o.createdAt,
+        p.total,
+        p.discount,
+        p.fullTotal,
+        p.deliveryCharge,
+        m.salesAgent,
+        o.buildingType,
+        p.id AS processId,
+        p.invNo AS InvNo,
+        p.isPaid,
+        p.reportStatus AS reportStatus,
+        p.paymentMethod AS paymentMethod,
+        p.status AS status
+      ${fromSql}
+      ${whereSql}
+      ORDER BY COALESCE(p.sheduleDate, o.createdAt) DESC, p.id DESC, o.id DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `;
 
     const [orderResults] = await connection.execute(sql, params);
 
     if (orderResults.length === 0) {
-      return {
-        orders: [],
-        totalCount: totalCount,
-      };
+      return { orders: [], totalCount };
     }
 
-    // Process each order to get corresponding address details
-    const processedOrders = [];
+    // ---------- addresses: 2 batched queries instead of 1-2 per order ----------
+    const houseIds = [
+      ...new Set(
+        orderResults
+          .filter((o) => o.buildingType === "House")
+          .map((o) => o.userId),
+      ),
+    ];
+    const apartmentIds = [
+      ...new Set(
+        orderResults
+          .filter((o) => o.buildingType === "Apartment")
+          .map((o) => o.userId),
+      ),
+    ];
 
-    for (const order of orderResults) {
-      const customerId = order.userId; // Using userId as customerId
-      const buildingType = order.buildingType;
+    const houseMap = new Map();
+    if (houseIds.length) {
+      const [rows] = await connection.execute(
+        `SELECT customerId, houseNo, streetName, city
+         FROM house
+         WHERE customerId IN (${placeholders(houseIds)})`,
+        houseIds,
+      );
+      for (const r of rows) {
+        if (!houseMap.has(r.customerId)) houseMap.set(r.customerId, r);
+      }
+    }
+
+    const apartmentMap = new Map();
+    if (apartmentIds.length) {
+      const [rows] = await connection.execute(
+        `SELECT customerId, buildingNo, buildingName, unitNo, floorNo,
+                houseNo, streetName, city
+         FROM apartment
+         WHERE customerId IN (${placeholders(apartmentIds)})`,
+        apartmentIds,
+      );
+      for (const r of rows) {
+        if (!apartmentMap.has(r.customerId)) apartmentMap.set(r.customerId, r);
+      }
+    }
+
+    const processedOrders = orderResults.map((order) => {
       let formattedAddress = "";
 
-      if (buildingType === "House") {
-        const addressSql = `
-                    SELECT 
-                        houseNo,
-                        streetName,
-                        city
-                    FROM house
-                    WHERE customerId = ?
-                `;
-
-        const [addressResults] = await connection.execute(addressSql, [
-          customerId,
-        ]);
-
-        if (addressResults[0]) {
-          const addr = addressResults[0];
+      if (order.buildingType === "House") {
+        const addr = houseMap.get(order.userId);
+        if (addr) {
           formattedAddress =
-            `${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-          formattedAddress = formattedAddress.replace(/\s+/g, " ").trim();
+            `${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`
+              .replace(/\s+/g, " ")
+              .trim();
         }
-      } else if (buildingType === "Apartment") {
-        const addressSql = `
-                    SELECT 
-                        buildingNo,
-                        buildingName,
-                        unitNo,
-                        floorNo,
-                        houseNo,
-                        streetName,
-                        city
-                    FROM apartment
-                    WHERE customerId = ?
-                `;
-
-        const [addressResults] = await connection.execute(addressSql, [
-          customerId,
-        ]);
-
-        if (addressResults[0]) {
-          const addr = addressResults[0];
+      } else if (order.buildingType === "Apartment") {
+        const addr = apartmentMap.get(order.userId);
+        if (addr) {
           formattedAddress =
-            `${addr.buildingName || ""} ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-          formattedAddress = formattedAddress
-            .replace(/\s+/g, " ")
-            .replace(/, Unit ,/, ",")
-            .replace(/, Floor ,/, ",")
-            .trim();
-          formattedAddress = formattedAddress.replace(/,\s*$/, "");
+            `${addr.buildingName || ""} ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`
+              .replace(/\s+/g, " ")
+              .replace(/, Unit ,/, ",")
+              .replace(/, Floor ,/, ",")
+              .trim()
+              .replace(/,\s*$/, "");
         }
       }
 
-      processedOrders.push({
-        ...order,
-        fullAddress: formattedAddress,
-      });
-    }
+      return { ...order, fullAddress: formattedAddress };
+    });
 
-    return {
-      orders: processedOrders,
-      totalCount: totalCount,
-    };
+    return { orders: processedOrders, totalCount };
   } catch (err) {
     console.error("Database error:", err);
     throw err;
   } finally {
-    // Always release the connection back to the pool
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 };
 
@@ -1767,10 +1819,7 @@ exports.cancelOrder = (orderId) => {
                           // Trigger background push notification to the assigned Sales Agent
                           const salesdashNotificationService = require("../services/salesdash-notification-service");
                           salesdashNotificationService
-                            .notifyDashOrderCancelled(
-                              actualId,
-                              invoiceNumber,
-                            )
+                            .notifyDashOrderCancelled(actualId, invoiceNumber)
                             .catch(() => { });
 
                           resolve({
