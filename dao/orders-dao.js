@@ -1,5 +1,6 @@
 const db = require("../startup/database");
 const smsService = require("../services/sms-service");
+const orderSmsHelper = require("../services/order-sms-helper");
 const QRCode = require("qrcode");
 const uploadFileToS3 = require("../middleware/s3upload");
 
@@ -914,7 +915,7 @@ async function insertAdditionalItems(
   }
 }
 
-// Enhanced helper function to send order confirmation SMS with total price, schedule date, and invoice number
+// Enhanced helper function to send order confirmation SMS with dedicated orderSmsHelper
 async function sendOrderConfirmationSMS(
   orderId,
   processOrderId,
@@ -927,10 +928,6 @@ async function sendOrderConfirmationSMS(
     // Format phone number
     const phoneNumber = `${userDetails.phoneCode}${userDetails.phoneNumber}`;
 
-    // Create SMS message
-    const customerName =
-      `${userDetails.firstName} ${userDetails.lastName}`.trim();
-
     // Get the invoice number from processorders table using processOrderId
     const [invoiceResult] = await connection.query(
       "SELECT invNo FROM processorders WHERE id = ?",
@@ -942,61 +939,28 @@ async function sendOrderConfirmationSMS(
         ? invoiceResult[0].invNo
         : processOrderId;
 
-    // Format total price (assuming it's in LKR)
-    const totalPrice = parseFloat(orderData.fullTotal);
-    const formattedPrice = `Rs. ${totalPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    // Format schedule date for SMS
-    let formattedScheduleDate = "";
-    const rawSmsDate =
+    // Delivery date (One Time or first recurring order date)
+    const rawDeliveryDate =
       orderData.sheduleDate ||
       (Array.isArray(orderData.calculatedOrders) &&
         (orderData.calculatedOrders[0]?.date ||
           orderData.calculatedOrders[0]?.dateStr));
 
-    if (rawSmsDate) {
-      try {
-        const d = new Date(rawSmsDate);
-        if (!isNaN(d.getTime())) {
-          formattedScheduleDate = d.toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          });
-        } else {
-          formattedScheduleDate = String(rawSmsDate);
-        }
-      } catch (dateError) {
-        formattedScheduleDate = String(rawSmsDate);
-      }
-    }
+    const isFinalizeImdt =
+      orderData.isFinalizeImdt !== undefined &&
+      orderData.isFinalizeImdt !== null
+        ? Number(orderData.isFinalizeImdt)
+        : 1;
 
-    const orderScheduleType =
-      orderData.sheduleType || orderData.scheduleType || "One Time";
-    const isRecurringOrder =
-      orderScheduleType === "Once a Week" ||
-      orderScheduleType === "Twice a Week";
-
-    // Format schedule time
-    const scheduleTime = orderData.sheduleTime || "";
-
-    // Build enhanced SMS message (keeping it concise for SMS limits)
-    let smsMessage = `Dear ${customerName}, your order has been successfully placed!\n\n`;
-    smsMessage += `Invoice: #${invoiceNo}\n`;
-    smsMessage += `Total: ${formattedPrice}\n`;
-
-    if (isRecurringOrder) {
-      smsMessage += `Delivery Schedule: ${orderScheduleType}\n`;
-    }
-
-    if (formattedScheduleDate) {
-      smsMessage += `${isRecurringOrder ? "First Delivery Date" : "Delivery Date"}: ${formattedScheduleDate}\n`;
-    }
-
-    smsMessage += `\nThank you for choosing Polygon Holdings!\nSupport: +94 114313433`;
-
-    // Actually call the SMS service
-    const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
+    // Call the dedicated SMS helper function
+    const smsResult = await orderSmsHelper.sendOrderConfirmationSMSHelper({
+      phoneNumber,
+      invoiceNo,
+      deliveryDate: rawDeliveryDate,
+      paymentMethod: orderData.paymentMethod,
+      isFinalizeImdt,
+      orderPlacedTime: new Date(),
+    });
 
     if (smsResult && smsResult.success) {
       return smsResult;
@@ -1005,7 +969,7 @@ async function sendOrderConfirmationSMS(
       throw new Error("SMS sending failed");
     }
   } catch (error) {
-    console.error("Error sending enhanced order confirmation SMS:", error);
+    console.error("Error sending order confirmation SMS:", error);
     // Re-throw the error so the calling function can decide how to handle it
     throw error;
   }
