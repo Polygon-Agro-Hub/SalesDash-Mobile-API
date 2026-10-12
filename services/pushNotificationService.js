@@ -279,8 +279,26 @@ async function sendPushToSalesAgent(salesAgentId, { title, body, data = {} }) {
         return resolve({ success: true, count: 0, results: [] });
       }
 
-      console.log(`📢 [PushService] Found ${rows.length} token(s) for salesAgentId: ${salesAgentId}. Sending push...`);
-      const result = await sendPushToTokens(rows, { title, body, data });
+      const rawRows = rows || [];
+      const hasExpoToken = rawRows.some((r) => {
+        const token = typeof r === "string" ? r : r.pushToken;
+        return token && (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken"));
+      });
+
+      const uniqueTokens = [];
+      for (const row of rawRows) {
+        const token = typeof row === "string" ? row : row.pushToken;
+        if (!token) continue;
+        if (hasExpoToken && !token.startsWith("ExponentPushToken") && !token.startsWith("ExpoPushToken")) {
+          continue;
+        }
+        if (!uniqueTokens.some((u) => (typeof u === "string" ? u : u.pushToken) === token)) {
+          uniqueTokens.push(row);
+        }
+      }
+
+      console.log(`📢 [PushService] Dispatching to ${uniqueTokens.length} unique push destination(s) for salesAgentId: ${salesAgentId}...`);
+      const result = await sendPushToTokens(uniqueTokens, { title, body, data });
       resolve(result);
     });
   });
@@ -310,8 +328,26 @@ async function sendPushToOfficer(officerId, { title, body, data = {} }) {
         return resolve({ success: true, count: 0, results: [] });
       }
 
-      console.log(`📢 [PushService] Found ${rows.length} token(s) for officerId: ${officerId}. Sending push...`);
-      const result = await sendPushToTokens(rows, { title, body, data });
+      const rawRows = rows || [];
+      const hasExpoToken = rawRows.some((r) => {
+        const token = typeof r === "string" ? r : r.pushToken;
+        return token && (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken"));
+      });
+
+      const uniqueTokens = [];
+      for (const row of rawRows) {
+        const token = typeof row === "string" ? row : row.pushToken;
+        if (!token) continue;
+        if (hasExpoToken && !token.startsWith("ExponentPushToken") && !token.startsWith("ExpoPushToken")) {
+          continue;
+        }
+        if (!uniqueTokens.some((u) => (typeof u === "string" ? u : u.pushToken) === token)) {
+          uniqueTokens.push(row);
+        }
+      }
+
+      console.log(`📢 [PushService] Dispatching to ${uniqueTokens.length} unique push destination(s) for officerId: ${officerId}...`);
+      const result = await sendPushToTokens(uniqueTokens, { title, body, data });
       resolve(result);
     });
   });

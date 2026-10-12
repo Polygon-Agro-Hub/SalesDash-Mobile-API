@@ -902,13 +902,13 @@ exports.getCustomerDataLocation = async (customerId) => {
                 email,
                 password,
                 image,
-                
                 created_at
             FROM marketplaceusers 
-            WHERE cusId = ?
+            WHERE cusId = ? OR id = ?
+            LIMIT 1
         `;
 
-    db.collectionofficer.query(query, [customerId], (error, results) => {
+    db.collectionofficer.query(query, [customerId, customerId], (error, results) => {
       if (error) {
         console.error("Error fetching customer data:", error);
         reject(error);

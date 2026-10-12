@@ -958,7 +958,7 @@ async function sendOrderConfirmationSMS(
       smsMessage += `${isRecurringOrder ? "First Delivery Date" : "Delivery Date"}: ${formattedScheduleDate}\n`;
     }
 
-    smsMessage += `\nThank you for choosing Polygon Holdings! Our team will contact you shortly.\nSupport: +94 770111999`;
+    smsMessage += `\nThank you for choosing Polygon Holdings!\nSupport: +94 114313433`;
 
     // Actually call the SMS service
     const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
