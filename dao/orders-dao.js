@@ -160,33 +160,36 @@ exports.processOrder = async (orderData, salesAgentId) => {
         await insertOrderPackage(connection, pId, orderData);
       }
 
-      // Process items array for package orders for each process order
-      if (orderData.items && orderData.items.length > 0) {
-        for (const pId of processOrderIds) {
+      // Insert additional items only ONCE for the primary process order (order-level items, not per-delivery)
+      if (processOrderIds.length > 0) {
+        const primaryProcessOrderId = processOrderIds[0];
+        if (orderData.items && orderData.items.length > 0) {
           await insertAdditionalItems(
             connection,
             orderId,
             orderData.items,
-            pId,
+            primaryProcessOrderId,
           );
         }
-      }
 
-      // Process additional items if present for package orders for each process order
-      if (orderData.additionalItems && orderData.additionalItems.length > 0) {
-        for (const pId of processOrderIds) {
+        if (orderData.additionalItems && orderData.additionalItems.length > 0) {
           await insertAdditionalItems(
             connection,
             orderId,
             orderData.additionalItems,
-            pId,
+            primaryProcessOrderId,
           );
         }
       }
     } else {
-      // Regular order (isPackage = 0) - Items go to orderadditionalitems table for each process order
-      for (const pId of processOrderIds) {
-        await processRegularOrderItems(connection, orderId, orderData, pId);
+      // Regular order (isPackage = 0) - Insert items only ONCE for the primary process order
+      if (processOrderIds.length > 0) {
+        await processRegularOrderItems(
+          connection,
+          orderId,
+          orderData,
+          processOrderIds[0],
+        );
       }
     }
 
@@ -1134,16 +1137,25 @@ o.phone2 AS orderPhone2,
     let buildingType = "";
     let buildingDetails = {};
 
-    // Filter out null/undefined items and create additional items array
-    const additionalItems = orderResults
-      .filter((item) => item.productId !== null && item.productId !== undefined)
-      .map((item) => ({
-        productId: item.productId,
-        qty: parseFloat(item.qty) || 0,
-        unit: item.unit || "",
-        price: parseFloat(item.price) || 0,
-        discount: parseFloat(item.itemDiscount) || 0,
-      }));
+    // Filter out null/undefined items and create unique additional items array (deduplicate by productId)
+    const seenProductIds = new Set();
+    const additionalItems = [];
+    for (const item of orderResults) {
+      if (
+        item.productId !== null &&
+        item.productId !== undefined &&
+        !seenProductIds.has(item.productId)
+      ) {
+        seenProductIds.add(item.productId);
+        additionalItems.push({
+          productId: item.productId,
+          qty: parseFloat(item.qty) || 0,
+          unit: item.unit || "",
+          price: parseFloat(item.price) || 0,
+          discount: parseFloat(item.itemDiscount) || 0,
+        });
+      }
+    }
 
     // Determine building type + address from orderhouse / orderapartment tables (by orderId)
     const [houseRows] = await connection.execute(
