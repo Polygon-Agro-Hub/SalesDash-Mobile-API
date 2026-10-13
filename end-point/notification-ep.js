@@ -273,7 +273,6 @@ exports.triggerNotification = async (req, res) => {
         data: data || {},
       };
       io.to(`salesagent_${targetAgentId}`).emit("newNotification", socketPayload);
-      io.to(`salesagent_${targetAgentId}`).emit("new_notification", socketPayload);
       console.log(
         `📢 [NotificationTrigger] Emitted real-time newNotification to salesagent_${targetAgentId}:`,
         effectiveTitle

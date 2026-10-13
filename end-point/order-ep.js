@@ -98,18 +98,29 @@ exports.createOrder = async (req, res) => {
 exports.getAllOrderDetails = async (req, res) => {
   try {
     const salesAgentId = req.user.id;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
 
-    const result = await orderDao.getAllOrderDetails(salesAgentId, page, limit);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const search = String(req.query.search || "").trim();
+    const dateFrom = String(req.query.dateFrom || "").trim();
+    const dateTo = String(req.query.dateTo || "").trim();
+
+    const result = await orderDao.getAllOrderDetails(salesAgentId, page, limit, {
+      search,
+      dateFrom,
+      dateTo,
+    });
+
+    const totalPages = Math.ceil(result.totalCount / limit);
 
     res.status(200).json({
       success: true,
       count: result.orders.length,
       totalCount: result.totalCount,
       currentPage: page,
-      totalPages: Math.ceil(result.totalCount / limit),
-      hasMore: page < Math.ceil(result.totalCount / limit),
+      totalPages,
+      hasMore: page < totalPages,
       data: result.orders,
     });
   } catch (error) {
