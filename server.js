@@ -126,6 +126,11 @@ app.set("io", io);
 server.io = io;
 server.app = app;
 
+// Configure server timeouts (2 minutes for long-running order creation/invoicing)
+server.setTimeout(120000);
+server.keepAliveTimeout = 125000;
+server.headersTimeout = 130000;
+
 // Only listen locally, Vercel will export the handler and call listen internally
 const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
