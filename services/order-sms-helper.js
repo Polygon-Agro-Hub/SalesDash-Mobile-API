@@ -58,8 +58,8 @@ function parseDeliveryDate(rawDate) {
 
 /**
  * Calculate Earliest Possible Schedule Date (E.P.S.D.)
- * - If order is placed before 6:00 PM: today + 3 days
- * - If order is placed at or after 6:00 PM: today + 4 days
+ * - If order is placed before 6:00 PM: today + 3 days (13 Oct -> 16 Oct)
+ * - If order is placed at or after 6:00 PM: today + 4 days (13 Oct -> 17 Oct)
  */
 function getEarliestPossibleScheduleDate(orderPlacedTime = new Date()) {
   const now =
@@ -104,23 +104,17 @@ function generateOrderConfirmationSMS({
 
   const baseDeliveryDate = schedDate || epsd;
 
-  // Check if Delivery Date equals EPSD
-  const isAtEPSD =
-    schedDate &&
-    schedDate.getFullYear() === epsd.getFullYear() &&
-    schedDate.getMonth() === epsd.getMonth() &&
-    schedDate.getDate() === epsd.getDate();
-
-  // Processing Date is 2 days before Delivery Date (Delivery Date - 2)
+  // Processing Date is 3 days before Delivery Date (Delivery Date - 3)
+  // e.g. Delivery 23 Oct 2026 -> Processing Date 20 Oct 2026
   const processingDate = new Date(baseDeliveryDate.getTime());
-  processingDate.setDate(processingDate.getDate() - 2);
+  processingDate.setDate(processingDate.getDate() - 3);
+
+  // "At EPSD" = Delivery Date is the earliest possible date (or earlier)
+  const isAtEPSD = !!schedDate && schedDate.getTime() <= epsd.getTime();
 
   // ── SCENARIO 5: Review and confirm before delivery ───────────────────────
   if (!isImmediateFinalize) {
-    // Processing Date + 1 (i.e. Delivery Date - 2 + 1 = Delivery Date - 1)
-    const processingDatePlusOne = new Date(processingDate.getTime());
-    processingDatePlusOne.setDate(processingDatePlusOne.getDate() + 1);
-    const formattedDate = formatSmsDate(processingDatePlusOne);
+    const formattedDate = formatSmsDate(processingDate); // no +1
 
     return {
       type: 5,
@@ -165,7 +159,7 @@ function generateOrderConfirmationSMS({
       message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be canceled.`,
     };
   } else {
-    // Scenario 4: Card (In-app, Customer has to pay on the Processing changing date)
+    // Scenario 4: Card (In-app, Customer has to pay on the Processing Date)
     return {
       type: 4,
       scenario: "Finalize Immediately - Delivery Date > EPSD - Card",
