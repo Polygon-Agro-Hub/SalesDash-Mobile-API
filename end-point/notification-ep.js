@@ -203,7 +203,10 @@ exports.triggerNotification = async (req, res) => {
       req.headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
       req.body?.serviceToken;
 
-    if (process.env.SALESDASH_TRIGGER_SECRET && serviceToken && serviceToken !== process.env.SALESDASH_TRIGGER_SECRET) {
+    const { SALESDASH_TRIGGER_SECRET } = require("../constants/notification-secrets");
+    const expectedSecret = SALESDASH_TRIGGER_SECRET;
+
+    if (expectedSecret && serviceToken !== expectedSecret) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized: Invalid service token for Sales Dash notification trigger",
@@ -270,7 +273,6 @@ exports.triggerNotification = async (req, res) => {
         data: data || {},
       };
       io.to(`salesagent_${targetAgentId}`).emit("newNotification", socketPayload);
-      io.to(`salesagent_${targetAgentId}`).emit("new_notification", socketPayload);
       console.log(
         `📢 [NotificationTrigger] Emitted real-time newNotification to salesagent_${targetAgentId}:`,
         effectiveTitle

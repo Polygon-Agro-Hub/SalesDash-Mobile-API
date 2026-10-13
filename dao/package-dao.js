@@ -14,6 +14,9 @@ exports.getAllPackages = async (filters = {}) => {
             mp.packingFee, 
             mp.serviceFee,
             mp.isValid,
+            mp.packageType,
+            DATE_FORMAT(mp.startDate, '%Y-%m-%d') AS startDate,
+            DATE_FORMAT(mp.endDate, '%Y-%m-%d') AS endDate,
             COUNT(dpi.id) as itemCount
         FROM marketplacepackages mp
         INNER JOIN definepackage dp ON mp.id = dp.packageId
@@ -48,7 +51,7 @@ exports.getAllPackages = async (filters = {}) => {
     }
 
     // Group by to handle DISTINCT with COUNT
-    query += ` GROUP BY mp.id, mp.displayName, mp.image, mp.status, mp.created_at, mp.description, mp.productPrice, mp.packingFee, mp.serviceFee, mp.isValid`;
+    query += ` GROUP BY mp.id, mp.displayName, mp.image, mp.status, mp.created_at, mp.description, mp.productPrice, mp.packingFee, mp.serviceFee, mp.isValid, mp.packageType, mp.startDate, mp.endDate`;
 
     // Add ordering
     query += ` ORDER BY mp.displayName ASC`;
@@ -126,8 +129,10 @@ exports.getMarketplacePackage = async (packageId) => {
         SELECT 
           id,
           displayName,
-        
-          description
+          description,
+          packageType,
+          DATE_FORMAT(startDate, '%Y-%m-%d') AS startDate,
+          DATE_FORMAT(endDate, '%Y-%m-%d') AS endDate
         FROM marketplacepackages
         WHERE id = ?;
         `;

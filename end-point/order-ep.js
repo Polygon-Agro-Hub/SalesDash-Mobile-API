@@ -98,18 +98,29 @@ exports.createOrder = async (req, res) => {
 exports.getAllOrderDetails = async (req, res) => {
   try {
     const salesAgentId = req.user.id;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
 
-    const result = await orderDao.getAllOrderDetails(salesAgentId, page, limit);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const search = String(req.query.search || "").trim();
+    const dateFrom = String(req.query.dateFrom || "").trim();
+    const dateTo = String(req.query.dateTo || "").trim();
+
+    const result = await orderDao.getAllOrderDetails(salesAgentId, page, limit, {
+      search,
+      dateFrom,
+      dateTo,
+    });
+
+    const totalPages = Math.ceil(result.totalCount / limit);
 
     res.status(200).json({
       success: true,
       count: result.orders.length,
       totalCount: result.totalCount,
       currentPage: page,
-      totalPages: Math.ceil(result.totalCount / limit),
-      hasMore: page < Math.ceil(result.totalCount / limit),
+      totalPages,
+      hasMore: page < totalPages,
       data: result.orders,
     });
   } catch (error) {
@@ -170,12 +181,10 @@ exports.getOrderByCustomerId = async (req, res) => {
         .json({ success: false, message: "Invalid customer ID" });
     }
     if (page < 1 || limit < 1) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Page and limit must be positive integers",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Page and limit must be positive integers",
+      });
     }
 
     const result = await orderDao.getOrderByCustomerId(
@@ -199,13 +208,11 @@ exports.getOrderByCustomerId = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching orders by customer ID:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch order details",
-        error: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch order details",
+      error: error.message,
+    });
   }
 };
 
@@ -464,17 +471,27 @@ exports.getHold = async (req, res) => {
 
 exports.getDeliveredOrdersTotal = async (req, res) => {
   try {
-    const userId = req.params.userId;
-    if (!userId || isNaN(parseInt(userId))) {
-      return res.status(400).json({ success: false, message: "Invalid user ID" });
+    const userId = parseInt(req.params.userId, 10);
+    if (isNaN(userId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user ID" });
     }
+
     const result = await orderDao.getDeliveredOrdersTotal(userId);
+
+    if (!result) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("Error in getDeliveredOrdersTotal:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch delivered orders total",
+      message: "Failed to fetch credit limit",
       error: error.message,
     });
   }
