@@ -1071,6 +1071,15 @@ exports.getOrderById = async (orderId) => {
     // Get connection from pool
     connection = await db.collectionofficer.promise().getConnection();
 
+    // Check if orderId matches a processorders.id
+    const [procRows] = await connection.execute(
+      `SELECT id, orderId FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+    );
+
+    const isProcessId = procRows.length > 0;
+    const whereClause = isProcessId ? `WHERE p.id = ?` : `WHERE o.id = ?`;
+
     const sql = `
              SELECT
                 o.id AS orderId,
@@ -1096,6 +1105,7 @@ o.phone2 AS orderPhone2,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
+                p.id AS processId,
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
@@ -1121,7 +1131,7 @@ o.phone2 AS orderPhone2,
             LEFT JOIN orderadditionalitems oai ON oai.proOrderId = p.id
             LEFT JOIN orderpackage op ON op.orderId = p.id
             LEFT JOIN marketplacepackages mpp ON mpp.id = op.packageId
-            WHERE o.id = ?
+            ${whereClause}
         `;
 
     const [orderResults] = await connection.execute(sql, [orderId]);
@@ -1131,6 +1141,7 @@ o.phone2 AS orderPhone2,
     }
 
     const order = orderResults[0];
+    const parentOrderId = order.orderId;
 
     let formattedAddress = "";
     let buildingType = "";
@@ -1156,10 +1167,10 @@ o.phone2 AS orderPhone2,
       }
     }
 
-    // Determine building type + address from orderhouse / orderapartment tables (by orderId)
+    // Determine building type + address from orderhouse / orderapartment tables (by parentOrderId)
     const [houseRows] = await connection.execute(
       `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
-      [orderId],
+      [parentOrderId],
     );
 
     if (houseRows.length > 0) {
@@ -1182,7 +1193,7 @@ o.phone2 AS orderPhone2,
     } else {
       const [apartmentRows] = await connection.execute(
         `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
-        [orderId],
+        [parentOrderId],
       );
 
       if (apartmentRows.length > 0) {
@@ -1310,6 +1321,7 @@ o.phone2 AS orderPhone2,
     // Return order data
     const result = {
       orderId: order.orderId,
+      processId: order.processId,
       userId: order.userId,
       scheduleType: order.sheduleType,
       scheduleDate: order.processSheduleDate,
@@ -1378,21 +1390,10 @@ exports.getOrderByCustomerId = (
     const statusClause = status ? `AND p.status = ?` : "";
     const countParams = status ? [customerId, status] : [customerId];
 
-    // De-duplicated processorders: only the latest row per orderId
-    const latestProcessOrdersSubquery = `
-      SELECT p1.*
-      FROM collection_officer.processorders p1
-      INNER JOIN (
-        SELECT orderId, MAX(id) AS maxId
-        FROM collection_officer.processorders
-        GROUP BY orderId
-      ) p2 ON p1.orderId = p2.orderId AND p1.id = p2.maxId
-    `;
-
     const countSql = `
       SELECT COUNT(*) as totalCount
       FROM orders o
-      LEFT JOIN (${latestProcessOrdersSubquery}) p ON o.id = p.orderId
+      LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
       WHERE o.userId = ?
       ${statusClause}
     `;
@@ -1411,7 +1412,7 @@ exports.getOrderByCustomerId = (
       const ordersSql = `
   SELECT 
     o.id AS orderId,
-    p.id AS processId,   -- ← add this
+    p.id AS processId,
     o.userId,
     o.sheduleType,
     p.sheduleDate AS sheduleDate,
@@ -1432,7 +1433,7 @@ exports.getOrderByCustomerId = (
   LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
   WHERE o.userId = ?
   ${statusClause}
-  ORDER BY o.createdAt DESC
+  ORDER BY COALESCE(p.sheduleDate, o.createdAt) DESC, p.id DESC
   LIMIT ? OFFSET ?
 `;
 
@@ -1624,34 +1625,41 @@ exports.getAllOrderDetails = async (
 
 exports.reportOrder = (orderId, reportStatus) => {
   return new Promise((resolve, reject) => {
-    const updateSql = `
-      UPDATE collection_officer.processorders 
-      SET reportStatus = ?
-      WHERE orderId = ?
-    `;
-
     db.collectionofficer.query(
-      updateSql,
-      [reportStatus, orderId],
-      (err, result) => {
-        if (err) {
-          return reject(err);
-        }
+      `SELECT id FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+      (checkErr, checkResult) => {
+        if (checkErr) return reject(checkErr);
 
-        // Check if any row was affected
-        if (result.affectedRows === 0) {
-          return resolve({
-            message: "Order not found or could not be updated",
-          });
-        }
+        const isProcessId = checkResult && checkResult.length > 0;
+        const updateSql = isProcessId
+          ? `UPDATE collection_officer.processorders SET reportStatus = ? WHERE id = ?`
+          : `UPDATE collection_officer.processorders SET reportStatus = ? WHERE orderId = ?`;
 
-        // Return success
-        resolve({
-          success: true,
-          message: "Order report status updated successfully",
-          orderId: orderId,
-          reportStatus: reportStatus,
-        });
+        db.collectionofficer.query(
+          updateSql,
+          [reportStatus, orderId],
+          (err, result) => {
+            if (err) {
+              return reject(err);
+            }
+
+            // Check if any row was affected
+            if (result.affectedRows === 0) {
+              return resolve({
+                message: "Order not found or could not be updated",
+              });
+            }
+
+            // Return success
+            resolve({
+              success: true,
+              message: "Order report status updated successfully",
+              orderId: orderId,
+              reportStatus: reportStatus,
+            });
+          },
+        );
       },
     );
   });
@@ -1669,13 +1677,15 @@ exports.cancelOrder = (orderId) => {
         }
 
         const selectSql = `
-          SELECT id, status, paymentMethod, isPaid, amount, invNo
+          SELECT id, orderId AS parentOrderId, status, paymentMethod, isPaid, amount, invNo
           FROM collection_officer.processorders
-          WHERE orderId = ?
+          WHERE id = ? OR orderId = ?
+          ORDER BY (id = ?) DESC
+          LIMIT 1
           FOR UPDATE
         `;
 
-        connection.query(selectSql, [orderId], (selectErr, selectResult) => {
+        connection.query(selectSql, [orderId, orderId, orderId], (selectErr, selectResult) => {
           if (selectErr) {
             return connection.rollback(() => {
               connection.release();
@@ -1692,6 +1702,7 @@ exports.cancelOrder = (orderId) => {
 
           const orderRow = selectResult[0];
           const actualId = orderRow.id;
+          const parentOrderId = orderRow.parentOrderId;
 
           if (orderRow.status === "Cancelled") {
             return connection.rollback(() => {
@@ -1709,14 +1720,14 @@ exports.cancelOrder = (orderId) => {
           const updateOrderSql = shouldRefund
             ? `UPDATE collection_officer.processorders
                SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
-               WHERE orderId = ?`
+               WHERE id = ?`
             : `UPDATE collection_officer.processorders
                SET status = 'Cancelled'
-               WHERE orderId = ?`;
+               WHERE id = ?`;
 
           connection.query(
             updateOrderSql,
-            [orderId],
+            [actualId],
             (updateErr, updateResult) => {
               if (updateErr) {
                 return connection.rollback(() => {
@@ -1734,6 +1745,13 @@ exports.cancelOrder = (orderId) => {
                   });
                 });
               }
+
+              // Best-effort: update driver order status if assigned
+              connection.query(
+                `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
+                [actualId],
+                () => {},
+              );
 
               const finishWithNotification = (refundErr) => {
                 if (refundErr) {
@@ -1818,7 +1836,7 @@ exports.cancelOrder = (orderId) => {
               // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
               // so we must look it up by `id` here.
               const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
-              connection.query(userIdSql, [orderId], (userErr, userResult) => {
+              connection.query(userIdSql, [parentOrderId], (userErr, userResult) => {
                 if (userErr) return finishWithNotification(userErr);
                 if (userResult.length === 0 || !userResult[0].userId) {
                   return finishWithNotification(
@@ -2106,6 +2124,14 @@ exports.getReturnReason = async (orderId) => {
     // Get connection from pool
     connection = await db.collectionofficer.promise().getConnection();
 
+    // Check if orderId matches processorders.id
+    const [procRows] = await connection.query(
+      `SELECT id FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+    );
+
+    const filterField = procRows && procRows.length > 0 ? "po.id" : "po.orderId";
+
     // Single query with joins to get return reason directly
     const returnReasonSql = `
             SELECT rr.rsnEnglish as returnReason , dro.note as otherReason
@@ -2113,7 +2139,8 @@ exports.getReturnReason = async (orderId) => {
             INNER JOIN collection_officer.driverorders do ON do.orderId = po.id
             INNER JOIN collection_officer.driverreturnorders dro ON dro.drvOrderId = do.id
             INNER JOIN collection_officer.returnreason rr ON rr.id = dro.returnReasonId
-            WHERE po.orderId = ?
+            WHERE ${filterField} = ?
+            ORDER BY dro.createdAt DESC
             LIMIT 1
         `;
 
@@ -2143,6 +2170,14 @@ exports.getHold = async (orderId) => {
   try {
     connection = await db.collectionofficer.promise().getConnection();
 
+    // Check if orderId matches processorders.id
+    const [procRows] = await connection.query(
+      `SELECT id FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+    );
+
+    const filterField = procRows && procRows.length > 0 ? "po.id" : "po.orderId";
+
     const holdCheckSql = `
       SELECT 
         po.orderId        AS businessOrderId,
@@ -2155,7 +2190,7 @@ exports.getHold = async (orderId) => {
       LEFT JOIN collection_officer.driverorders  do  ON po.id      = do.orderId
       LEFT JOIN collection_officer.driverholdorders dho ON do.id   = dho.drvOrderId
       LEFT JOIN collection_officer.holdreason     hr  ON dho.holdReasonId = hr.id
-      WHERE po.orderId = ?
+      WHERE ${filterField} = ?
         AND dho.id IS NOT NULL
       ORDER BY dho.createdAt ASC
     `;
