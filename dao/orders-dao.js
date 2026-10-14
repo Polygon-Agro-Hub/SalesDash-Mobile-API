@@ -259,8 +259,24 @@ exports.processOrder = async (orderData, salesAgentId) => {
       }
     }
 
+    let primaryInvoiceNumber = null;
+    if (processOrderId) {
+      const [invRows] = await connection.execute(
+        `SELECT invNo FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+        [processOrderId],
+      );
+      if (invRows.length > 0) {
+        primaryInvoiceNumber = invRows[0].invNo;
+      }
+    }
+
     console.timeEnd("process-order");
-    return { orderId, processOrderId, processOrderIds };
+    return {
+      orderId,
+      processOrderId,
+      processOrderIds,
+      invoiceNumber: primaryInvoiceNumber,
+    };
   } catch (error) {
     console.error("Error in processOrder:", error);
 
@@ -1077,8 +1093,23 @@ exports.getOrderById = async (orderId) => {
       [orderId],
     );
 
-    const isProcessId = procRows.length > 0;
-    const whereClause = isProcessId ? `WHERE p.id = ?` : `WHERE o.id = ?`;
+    let targetProcessId = null;
+
+    if (procRows.length > 0) {
+      targetProcessId = procRows[0].id;
+    } else {
+      // If orderId is a parent orders.id, resolve the FIRST scheduled process order
+      const [firstProcRows] = await connection.execute(
+        `SELECT id FROM collection_officer.processorders WHERE orderId = ? ORDER BY sheduleDate ASC, id ASC LIMIT 1`,
+        [orderId],
+      );
+      if (firstProcRows.length > 0) {
+        targetProcessId = firstProcRows[0].id;
+      }
+    }
+
+    const whereClause = targetProcessId ? `WHERE p.id = ?` : `WHERE o.id = ?`;
+    const queryParam = targetProcessId ? targetProcessId : orderId;
 
     const sql = `
              SELECT
@@ -1132,9 +1163,10 @@ o.phone2 AS orderPhone2,
             LEFT JOIN orderpackage op ON op.orderId = p.id
             LEFT JOIN marketplacepackages mpp ON mpp.id = op.packageId
             ${whereClause}
+            ORDER BY p.sheduleDate ASC, p.id ASC
         `;
 
-    const [orderResults] = await connection.execute(sql, [orderId]);
+    const [orderResults] = await connection.execute(sql, [queryParam]);
 
     if (orderResults.length === 0) {
       return { message: "No order found with the given ID" };
