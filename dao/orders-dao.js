@@ -164,15 +164,14 @@ exports.processOrder = async (orderData, salesAgentId) => {
         await insertOrderPackage(connection, pId, orderData);
       }
 
-      // Insert additional items only ONCE for the primary process order (order-level items, not per-delivery)
-      if (processOrderIds.length > 0) {
-        const primaryProcessOrderId = processOrderIds[0];
+      // Insert additional items for each process order (Delivery 1 = Delivery 2 = Delivery 3...)
+      for (const pId of processOrderIds) {
         if (orderData.items && orderData.items.length > 0) {
           await insertAdditionalItems(
             connection,
             orderId,
             orderData.items,
-            primaryProcessOrderId,
+            pId,
           );
         }
 
@@ -181,18 +180,18 @@ exports.processOrder = async (orderData, salesAgentId) => {
             connection,
             orderId,
             orderData.additionalItems,
-            primaryProcessOrderId,
+            pId,
           );
         }
       }
     } else {
-      // Regular order (isPackage = 0) - Insert items only ONCE for the primary process order
-      if (processOrderIds.length > 0) {
+      // Regular order (isPackage = 0) - Insert items for each process order (Delivery 1 = Delivery 2 = Delivery 3...)
+      for (const pId of processOrderIds) {
         await processRegularOrderItems(
           connection,
           orderId,
           orderData,
-          processOrderIds[0],
+          pId,
         );
       }
     }
@@ -891,14 +890,21 @@ async function processRegularOrderItems(
   orderData,
   processOrderId = null,
 ) {
-  if (!orderData.items || orderData.items.length === 0) {
+  const items =
+    orderData.items && orderData.items.length > 0
+      ? orderData.items
+      : orderData.additionalItems && orderData.additionalItems.length > 0
+        ? orderData.additionalItems
+        : null;
+
+  if (!items || items.length === 0) {
     return;
   }
 
   await insertAdditionalItems(
     connection,
     orderId,
-    orderData.items,
+    items,
     processOrderId,
   );
 }
@@ -917,8 +923,9 @@ async function insertAdditionalItems(
     const normalPrice = price + discount;
 
     await connection.query(
-      "INSERT INTO orderadditionalitems (proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+      "INSERT INTO orderadditionalitems (orderId, proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
       [
+        orderId,
         proOrderId,
         item.productId || item.id,
         item.qty || item.quantity,
