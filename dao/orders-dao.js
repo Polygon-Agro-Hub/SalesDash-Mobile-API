@@ -923,9 +923,9 @@ async function insertAdditionalItems(
     const normalPrice = price + discount;
 
     await connection.query(
-      "INSERT INTO orderadditionalitems (orderId, proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+      "INSERT INTO orderadditionalitems ( proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES ( ?, ?, ?, ?, ?, ?, ?, NOW())",
       [
-        orderId,
+
         proOrderId,
         item.productId || item.id,
         item.qty || item.quantity,
@@ -971,7 +971,7 @@ async function sendOrderConfirmationSMS(
 
     const isFinalizeImdt =
       orderData.isFinalizeImdt !== undefined &&
-      orderData.isFinalizeImdt !== null
+        orderData.isFinalizeImdt !== null
         ? Number(orderData.isFinalizeImdt)
         : 1;
 
@@ -1789,7 +1789,7 @@ exports.cancelOrder = (orderId) => {
               connection.query(
                 `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
                 [actualId],
-                () => {},
+                () => { },
               );
 
               const finishWithNotification = (refundErr) => {
