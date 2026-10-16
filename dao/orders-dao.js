@@ -185,14 +185,9 @@ exports.processOrder = async (orderData, salesAgentId) => {
         }
       }
     } else {
-      // Regular order (isPackage = 0) - Insert items for each process order (Delivery 1 = Delivery 2 = Delivery 3...)
+      // Regular order (isPackage = 0) - Insert items for each process order
       for (const pId of processOrderIds) {
-        await processRegularOrderItems(
-          connection,
-          orderId,
-          orderData,
-          pId,
-        );
+        await processRegularOrderItems(connection, orderId, orderData, pId);
       }
     }
 
@@ -213,10 +208,12 @@ exports.processOrder = async (orderData, salesAgentId) => {
     } catch (smsError) {
       // Log SMS error but don't fail the entire order since it's already committed
       console.error("Failed to send order confirmation SMS:", smsError);
-      // You might want to add this to a retry queue or notification system
     }
 
-    // STEP 7: Trigger Polygon Customer Notification if payment method is Card
+    // STEP 7: Payment Reminder (push + socket + ordernotfication insert)
+    // ONLY for CARD orders whose schedule date is the earliest possible date (today + 3).
+    // Example: placed on the 16th -> only the order scheduled for the 19th gets it.
+    // isConfirmed = 1 is set in insertProcessOrder exactly for that date.
     const isCardPayment =
       orderData.paymentMethod &&
       String(orderData.paymentMethod).toLowerCase().includes("card");
@@ -224,16 +221,19 @@ exports.processOrder = async (orderData, salesAgentId) => {
     if (isCardPayment && processOrderIds && processOrderIds.length > 0) {
       try {
         const polygonNotificationService = require("../services/polygon-notification-service");
+
         if (
           typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
           "function"
         ) {
-          const [procRows] = await db.collectionofficer
-            .promise()
-            .query(
-              "SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)",
-              [processOrderIds],
-            );
+          const [procRows] = await db.collectionofficer.promise().query(
+            `SELECT id, invNo, sheduleDate
+               FROM processorders
+              WHERE id IN (?) AND isConfirmed = 1`,
+            [processOrderIds],
+          );
+
+          // Other dates (23rd, 26th, ...) are skipped: no notification, no DB insert
           for (const row of procRows || []) {
             polygonNotificationService
               .notifyPolygonPaymentReminder({
