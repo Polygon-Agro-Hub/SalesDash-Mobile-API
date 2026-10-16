@@ -216,11 +216,11 @@ exports.triggerNotification = async (req, res) => {
     const { orderId, title, message, eventType, data, skipDbInsert } = req.body || {};
     let targetAgentId = req.body.salesAgentId || (req.user && req.user.id);
 
-    // Auto-resolve salesAgentId from orderId if not explicitly provided
+    // Auto-resolve salesAgentId, processOrderId, invNo, and customerName from orderId
     let resolvedDetails = null;
-    if (!targetAgentId && orderId) {
+    if (orderId) {
       resolvedDetails = await notificationDao.resolveSalesAgentDetailsDAO(orderId);
-      if (resolvedDetails && resolvedDetails.salesAgent) {
+      if (!targetAgentId && resolvedDetails && resolvedDetails.salesAgent) {
         targetAgentId = resolvedDetails.salesAgent;
       }
     }
@@ -236,7 +236,10 @@ exports.triggerNotification = async (req, res) => {
     const effectiveTitle =
       title || (eventType ? eventType.replace(/_/g, " ").toUpperCase() : "New Notification");
     const effectiveOrderId =
-      orderId || (resolvedDetails && resolvedDetails.processOrderId) || null;
+      (data && (data.processOrderId || data.processId)) ||
+      (resolvedDetails && resolvedDetails.processOrderId) ||
+      orderId ||
+      null;
     const invNo =
       (data && data.invNo) || (resolvedDetails && resolvedDetails.invNo) || "";
     const customerName =
