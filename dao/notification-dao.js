@@ -7,6 +7,8 @@ exports.getNotificationsBySalesAgentDAO = (salesAgentId) => {
     SELECT 
   dn.id,
   dn.orderId,
+  po.id AS processOrderId,
+  po.id AS processId,
   dn.title,
   dn.readStatus,
   dn.createdAt,
@@ -14,6 +16,8 @@ exports.getNotificationsBySalesAgentDAO = (salesAgentId) => {
   po.status,
   po.reportStatus,
   o.id as orderid,
+  o.id as parentOrderId,
+  o.userId,
   o.userId AS cusId,
   mps.cusId As customerId,
   o.fullName AS customerName,
