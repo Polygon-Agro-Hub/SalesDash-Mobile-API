@@ -6,6 +6,7 @@ const uploadFileToS3 = require("../middleware/s3upload");
 
 exports.processOrder = async (orderData, salesAgentId) => {
   console.time("process-order");
+  const orderPlacedDate = new Date();
   let connection;
   let transactionStarted = false;
 
@@ -240,6 +241,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
                 processOrderId: row.id,
                 invNo: row.invNo,
                 scheduledDate: row.sheduleDate,
+                orderPlacedDate,
                 userId: orderData.userId,
               })
               .catch((err) => {
@@ -901,12 +903,7 @@ async function processRegularOrderItems(
     return;
   }
 
-  await insertAdditionalItems(
-    connection,
-    orderId,
-    items,
-    processOrderId,
-  );
+  await insertAdditionalItems(connection, orderId, items, processOrderId);
 }
 
 async function insertAdditionalItems(
@@ -925,7 +922,6 @@ async function insertAdditionalItems(
     await connection.query(
       "INSERT INTO orderadditionalitems ( proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES ( ?, ?, ?, ?, ?, ?, ?, NOW())",
       [
-
         proOrderId,
         item.productId || item.id,
         item.qty || item.quantity,
@@ -1724,182 +1720,190 @@ exports.cancelOrder = (orderId) => {
           FOR UPDATE
         `;
 
-        connection.query(selectSql, [orderId, orderId, orderId], (selectErr, selectResult) => {
-          if (selectErr) {
-            return connection.rollback(() => {
-              connection.release();
-              reject(selectErr);
-            });
-          }
+        connection.query(
+          selectSql,
+          [orderId, orderId, orderId],
+          (selectErr, selectResult) => {
+            if (selectErr) {
+              return connection.rollback(() => {
+                connection.release();
+                reject(selectErr);
+              });
+            }
 
-          if (selectResult.length === 0) {
-            return connection.rollback(() => {
-              connection.release();
-              resolve({ success: false, message: "Order not found" });
-            });
-          }
+            if (selectResult.length === 0) {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order not found" });
+              });
+            }
 
-          const orderRow = selectResult[0];
-          const actualId = orderRow.id;
-          const parentOrderId = orderRow.parentOrderId;
+            const orderRow = selectResult[0];
+            const actualId = orderRow.id;
+            const parentOrderId = orderRow.parentOrderId;
 
-          if (orderRow.status === "Cancelled") {
-            return connection.rollback(() => {
-              connection.release();
-              resolve({ success: false, message: "Order already cancelled" });
-            });
-          }
+            if (orderRow.status === "Cancelled") {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order already cancelled" });
+              });
+            }
 
-          const shouldRefund =
-            orderRow.paymentMethod === "Card" &&
-            (orderRow.isPaid === 1 || orderRow.isPaid === true);
+            const shouldRefund =
+              orderRow.paymentMethod === "Card" &&
+              (orderRow.isPaid === 1 || orderRow.isPaid === true);
 
-          const refundAmount = parseFloat(orderRow.amount) || 0;
+            const refundAmount = parseFloat(orderRow.amount) || 0;
 
-          const updateOrderSql = shouldRefund
-            ? `UPDATE collection_officer.processorders
+            const updateOrderSql = shouldRefund
+              ? `UPDATE collection_officer.processorders
                SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
                WHERE id = ?`
-            : `UPDATE collection_officer.processorders
+              : `UPDATE collection_officer.processorders
                SET status = 'Cancelled'
                WHERE id = ?`;
 
-          connection.query(
-            updateOrderSql,
-            [actualId],
-            (updateErr, updateResult) => {
-              if (updateErr) {
-                return connection.rollback(() => {
-                  connection.release();
-                  reject(updateErr);
-                });
-              }
-
-              if (updateResult.affectedRows === 0) {
-                return connection.rollback(() => {
-                  connection.release();
-                  resolve({
-                    success: false,
-                    message: "Order not found or already cancelled",
-                  });
-                });
-              }
-
-              // Best-effort: update driver order status if assigned
-              connection.query(
-                `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
-                [actualId],
-                () => { },
-              );
-
-              const finishWithNotification = (refundErr) => {
-                if (refundErr) {
+            connection.query(
+              updateOrderSql,
+              [actualId],
+              (updateErr, updateResult) => {
+                if (updateErr) {
                   return connection.rollback(() => {
                     connection.release();
-                    reject(refundErr);
+                    reject(updateErr);
                   });
                 }
 
-                const dashNotificationSql = `
+                if (updateResult.affectedRows === 0) {
+                  return connection.rollback(() => {
+                    connection.release();
+                    resolve({
+                      success: false,
+                      message: "Order not found or already cancelled",
+                    });
+                  });
+                }
+
+                // Best-effort: update driver order status if assigned
+                connection.query(
+                  `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
+                  [actualId],
+                  () => { },
+                );
+
+                const finishWithNotification = (refundErr) => {
+                  if (refundErr) {
+                    return connection.rollback(() => {
+                      connection.release();
+                      reject(refundErr);
+                    });
+                  }
+
+                  const dashNotificationSql = `
     INSERT INTO collection_officer.dashnotification (orderId, title, readStatus, createdAt)
     VALUES (?, ?, ?, NOW())
   `;
 
-                const orderNotificationSql = `
+                  const orderNotificationSql = `
     INSERT INTO collection_officer.ordernotfication (orderId, Title, message, isRead, createdAt)
     VALUES (?, ?, ?, ?, NOW())
   `;
 
-                const invoiceNumber = orderRow.invNo || orderId;
-                const notificationMessage = `Your order #${invoiceNumber} has been cancelled successfully.`;
+                  const invoiceNumber = orderRow.invNo || orderId;
+                  const notificationMessage = `Your order #${invoiceNumber} has been cancelled successfully.`;
 
-                connection.query(
-                  dashNotificationSql,
-                  [actualId, "Order is Cancelled", 0],
-                  (dashNotifErr) => {
-                    connection.query(
-                      orderNotificationSql,
-                      [actualId, "Order Cancelled", notificationMessage, 0],
-                      (orderNotifErr) => {
-                        // Match existing behavior: notification failure doesn't roll back
-                        // the cancellation/refund, it's just reported.
-                        const notifErr = dashNotifErr || orderNotifErr;
-                        connection.commit((commitErr) => {
-                          connection.release();
-                          if (commitErr) return reject(commitErr);
+                  connection.query(
+                    dashNotificationSql,
+                    [actualId, "Order is Cancelled", 0],
+                    (dashNotifErr) => {
+                      connection.query(
+                        orderNotificationSql,
+                        [actualId, "Order Cancelled", notificationMessage, 0],
+                        (orderNotifErr) => {
+                          // Match existing behavior: notification failure doesn't roll back
+                          // the cancellation/refund, it's just reported.
+                          const notifErr = dashNotifErr || orderNotifErr;
+                          connection.commit((commitErr) => {
+                            connection.release();
+                            if (commitErr) return reject(commitErr);
 
-                          // Trigger real-time Polygon customer notification
-                          const polygonNotificationService = require("../services/polygon-notification-service");
-                          polygonNotificationService
-                            .notifyPolygonOrderCancelled(
-                              actualId,
-                              invoiceNumber,
-                            )
-                            .catch(() => { });
+                            // Trigger real-time Polygon customer notification
+                            const polygonNotificationService = require("../services/polygon-notification-service");
+                            polygonNotificationService
+                              .notifyPolygonOrderCancelled(
+                                actualId,
+                                invoiceNumber,
+                              )
+                              .catch(() => { });
 
-                          // Trigger background push notification to the assigned Sales Agent
-                          const salesdashNotificationService = require("../services/salesdash-notification-service");
-                          salesdashNotificationService
-                            .notifyDashOrderCancelled(actualId, invoiceNumber)
-                            .catch(() => { });
+                            // Trigger background push notification to the assigned Sales Agent
+                            const salesdashNotificationService = require("../services/salesdash-notification-service");
+                            salesdashNotificationService
+                              .notifyDashOrderCancelled(actualId, invoiceNumber)
+                              .catch(() => { });
 
-                          resolve({
-                            success: true,
-                            message: notifErr
-                              ? "Order cancelled successfully but notification failed"
-                              : "Order cancelled successfully",
-                            orderId,
-                            refunded: shouldRefund,
-                            refundAmount: shouldRefund ? refundAmount : 0,
-                            notificationInserted: !notifErr,
-                            ...(notifErr
-                              ? {
-                                error:
-                                  (dashNotifErr && dashNotifErr.message) ||
-                                  (orderNotifErr && orderNotifErr.message),
-                              }
-                              : {}),
+                            resolve({
+                              success: true,
+                              message: notifErr
+                                ? "Order cancelled successfully but notification failed"
+                                : "Order cancelled successfully",
+                              orderId,
+                              refunded: shouldRefund,
+                              refundAmount: shouldRefund ? refundAmount : 0,
+                              notificationInserted: !notifErr,
+                              ...(notifErr
+                                ? {
+                                  error:
+                                    (dashNotifErr && dashNotifErr.message) ||
+                                    (orderNotifErr && orderNotifErr.message),
+                                }
+                                : {}),
+                            });
                           });
-                        });
-                      },
-                    );
-                  },
-                );
-              };
-
-              if (!shouldRefund) {
-                return finishWithNotification(null);
-              }
-
-              // Resolve userId via orders table.
-              // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
-              // so we must look it up by `id` here.
-              const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
-              connection.query(userIdSql, [parentOrderId], (userErr, userResult) => {
-                if (userErr) return finishWithNotification(userErr);
-                if (userResult.length === 0 || !userResult[0].userId) {
-                  return finishWithNotification(
-                    new Error("Could not resolve userId for refund"),
+                        },
+                      );
+                    },
                   );
-                }
-                const userId = userResult[0].userId;
+                };
 
-                const refundSql = `
+                if (!shouldRefund) {
+                  return finishWithNotification(null);
+                }
+
+                // Resolve userId via orders table.
+                // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
+                // so we must look it up by `id` here.
+                const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
+                connection.query(
+                  userIdSql,
+                  [parentOrderId],
+                  (userErr, userResult) => {
+                    if (userErr) return finishWithNotification(userErr);
+                    if (userResult.length === 0 || !userResult[0].userId) {
+                      return finishWithNotification(
+                        new Error("Could not resolve userId for refund"),
+                      );
+                    }
+                    const userId = userResult[0].userId;
+
+                    const refundSql = `
                 UPDATE collection_officer.marketplaceusers
                 SET creditBalance = creditBalance + ?
                 WHERE id = ?
               `;
-                connection.query(
-                  refundSql,
-                  [refundAmount, userId],
-                  (creditErr) => {
-                    finishWithNotification(creditErr || null);
+                    connection.query(
+                      refundSql,
+                      [refundAmount, userId],
+                      (creditErr) => {
+                        finishWithNotification(creditErr || null);
+                      },
+                    );
                   },
                 );
-              });
-            },
-          );
-        });
+              },
+            );
+          },
+        );
       });
     });
   });
@@ -2169,7 +2173,8 @@ exports.getReturnReason = async (orderId) => {
       [orderId],
     );
 
-    const filterField = procRows && procRows.length > 0 ? "po.id" : "po.orderId";
+    const filterField =
+      procRows && procRows.length > 0 ? "po.id" : "po.orderId";
 
     // Single query with joins to get return reason directly
     const returnReasonSql = `
@@ -2215,7 +2220,8 @@ exports.getHold = async (orderId) => {
       [orderId],
     );
 
-    const filterField = procRows && procRows.length > 0 ? "po.id" : "po.orderId";
+    const filterField =
+      procRows && procRows.length > 0 ? "po.id" : "po.orderId";
 
     const holdCheckSql = `
       SELECT 
