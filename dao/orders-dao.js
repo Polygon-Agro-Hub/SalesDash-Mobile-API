@@ -742,20 +742,39 @@ async function insertProcessOrder(
     const isPaidValue = 0;
     const amountValue = 0.0;
 
-    // isConfirmed = 1 only when schedule date is the earliest possible date (today + 3 days)
-    const earliestDate = new Date();
-    earliestDate.setDate(earliestDate.getDate() + 3);
-    earliestDate.setHours(0, 0, 0, 0);
+    // isConfirmed = 1 only when:
+    // 1. Order type qualifies:
+    //    - Only alacarte items (isPackage === 0)
+    //    - Only packages OR packages + alacarte items (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
+    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff)
+    const now = new Date();
+    const isAfterCutoff = now.getHours() >= 18;
+    const extraDays = isAfterCutoff ? 4 : 3;
+    const epsd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + extraDays,
+    );
+    epsd.setHours(0, 0, 0, 0);
 
     const schedDate = targetScheduleDate ? new Date(targetScheduleDate) : null;
-    const isConfirmedValue =
+    const isEpsdDate =
       schedDate &&
-        !isNaN(schedDate.getTime()) &&
-        schedDate.getFullYear() === earliestDate.getFullYear() &&
-        schedDate.getMonth() === earliestDate.getMonth() &&
-        schedDate.getDate() === earliestDate.getDate()
-        ? 1
-        : 0;
+      !isNaN(schedDate.getTime()) &&
+      schedDate.getFullYear() === epsd.getFullYear() &&
+      schedDate.getMonth() === epsd.getMonth() &&
+      schedDate.getDate() === epsd.getDate();
+
+    const isPackageOrder = Number(orderData.isPackage) === 1;
+    const isFinalizeImmediate =
+      orderData.isFinalizeImdt !== undefined &&
+      orderData.isFinalizeImdt !== null
+        ? Number(orderData.isFinalizeImdt) === 1
+        : !isPackageOrder;
+
+    const isAutoConfirmType = !isPackageOrder || isFinalizeImmediate;
+
+    const isConfirmedValue = isAutoConfirmType && isEpsdDate ? 1 : 0;
 
     const isCouponVal = orderData.isCoupon ? 1 : 0;
     const couponTypeVal = orderData.couponType || null;

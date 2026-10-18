@@ -114,7 +114,10 @@ function generateOrderConfirmationSMS({
 
   // ── SCENARIO 5: Review and confirm before delivery ───────────────────────
   if (!isImmediateFinalize) {
-    const formattedDate = formatSmsDate(processingDate); // no +1
+    // Date is Processing Date + 1 (i.e. Delivery Date - 2)
+    const reviewDate = new Date(processingDate.getTime());
+    reviewDate.setDate(reviewDate.getDate() + 1);
+    const formattedDate = formatSmsDate(reviewDate);
 
     return {
       type: 5,
