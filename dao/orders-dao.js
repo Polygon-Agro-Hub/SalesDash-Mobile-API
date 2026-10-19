@@ -984,9 +984,11 @@ async function sendOrderConfirmationSMS(
         (orderData.calculatedOrders[0]?.date ||
           orderData.calculatedOrders[0]?.dateStr));
 
-    const isFinalizeImdt =
-      orderData.isFinalizeImdt !== undefined &&
-        orderData.isFinalizeImdt !== null
+    const isPackageOrder = Number(orderData.isPackage) === 1;
+    const isFinalizeImdt = !isPackageOrder
+      ? 1
+      : orderData.isFinalizeImdt !== undefined &&
+          orderData.isFinalizeImdt !== null
         ? Number(orderData.isFinalizeImdt)
         : 1;
 
