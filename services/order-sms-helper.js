@@ -91,6 +91,7 @@ function generateOrderConfirmationSMS({
   invoiceNo,
   deliveryDate,
   paymentMethod,
+  isPackage = 0,
   isFinalizeImdt = 1,
   orderPlacedTime = new Date(),
 }) {
@@ -101,6 +102,8 @@ function generateOrderConfirmationSMS({
     paymentMethod && String(paymentMethod).toLowerCase().includes("card");
   const isImmediateFinalize =
     isFinalizeImdt === 1 || isFinalizeImdt === true || isFinalizeImdt === "1";
+  const isPackageOrder =
+    isPackage === 1 || isPackage === true || isPackage === "1";
 
   const baseDeliveryDate = schedDate || epsd;
 
@@ -113,7 +116,8 @@ function generateOrderConfirmationSMS({
   const isAtEPSD = !!schedDate && schedDate.getTime() <= epsd.getTime();
 
   // ── SCENARIO 5: Review and confirm before delivery ───────────────────────
-  if (!isImmediateFinalize) {
+  // Strictly for Package orders (isPackage = 1) where review before delivery was chosen
+  if (isPackageOrder && !isImmediateFinalize) {
     // Date is Processing Date + 1 (i.e. Delivery Date - 2)
     const reviewDate = new Date(processingDate.getTime());
     reviewDate.setDate(reviewDate.getDate() + 1);
@@ -179,6 +183,7 @@ async function sendOrderConfirmationSMSHelper({
   invoiceNo,
   deliveryDate,
   paymentMethod,
+  isPackage,
   isFinalizeImdt,
   orderPlacedTime,
 }) {
@@ -186,6 +191,7 @@ async function sendOrderConfirmationSMSHelper({
     invoiceNo,
     deliveryDate,
     paymentMethod,
+    isPackage,
     isFinalizeImdt,
     orderPlacedTime,
   });

@@ -984,11 +984,12 @@ async function sendOrderConfirmationSMS(
         (orderData.calculatedOrders[0]?.date ||
           orderData.calculatedOrders[0]?.dateStr));
 
+    const isPackageOrder = Number(orderData.isPackage) === 1 ? 1 : 0;
     const isFinalizeImdt =
       orderData.isFinalizeImdt !== undefined &&
-        orderData.isFinalizeImdt !== null
+      orderData.isFinalizeImdt !== null
         ? Number(orderData.isFinalizeImdt)
-        : 1;
+        : 0;
 
     // Call the dedicated SMS helper function
     const smsResult = await orderSmsHelper.sendOrderConfirmationSMSHelper({
@@ -996,6 +997,7 @@ async function sendOrderConfirmationSMS(
       invoiceNo,
       deliveryDate: rawDeliveryDate,
       paymentMethod: orderData.paymentMethod,
+      isPackage: isPackageOrder,
       isFinalizeImdt,
       orderPlacedTime: new Date(),
     });
