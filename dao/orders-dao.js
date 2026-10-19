@@ -629,7 +629,7 @@ async function insertMainOrder(
       isPackage,
       longitude,
       latitude,
-      isFinalizeImdt ? 1 : 0,
+      !Number(isPackage) ? 1 : isFinalizeImdt ? 1 : 0,
       isPaySMS ? 1 : 0,
     ],
   );
