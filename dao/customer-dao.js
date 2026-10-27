@@ -225,12 +225,13 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
         c.phoneCode,
         c.phoneNumber,
         c.email,
+        c.buyerType,
         COUNT(o.id) AS orderCount
       FROM marketplaceusers c
       LEFT JOIN orders o ON c.id = o.userId
       WHERE c.salesAgent = ?
         AND c.isActive = 1
-      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email
+      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType
       ORDER BY c.id
       LIMIT ? OFFSET ?
     `;
