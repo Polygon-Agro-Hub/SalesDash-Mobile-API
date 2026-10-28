@@ -19,6 +19,7 @@ router.post('/report-order/:orderId', auth, orderEp.reportOrder);
 
 router.get('/sales-agent', auth, orderEp.getAgentStats);
 router.get('/delivered-existing-total', auth, orderEp.getExistingCustomersDeliveredTotal);
+router.get('/customers-total-value', auth, orderEp.getCustomersTotalValueSummary);
 
 router.get('/get-All-Start', auth, orderEp.getAgentAllStars);
 

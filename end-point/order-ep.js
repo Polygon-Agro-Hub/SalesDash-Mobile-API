@@ -567,3 +567,18 @@ exports.getDailyTargets = async (req, res) => {
     });
   }
 };
+
+exports.getCustomersTotalValueSummary = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+    if (!salesAgentId) {
+      return res.status(400).json({ success: false, message: "Sales agent ID is required" });
+    }
+    const { page, limit, filter } = req.query;
+    const result = await orderDao.getCustomersTotalValueSummary(salesAgentId, { page, limit, filter });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("Error in getCustomersTotalValueSummary:", error);
+    return res.status(500).json({ success: false, message: "Failed to get customers total value summary", error: error.message });
+  }
+};

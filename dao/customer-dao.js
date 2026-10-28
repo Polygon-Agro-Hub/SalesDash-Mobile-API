@@ -41,11 +41,38 @@ exports.addCustomer = (customerData, salesAgent) => {
         return reject(new Error("NIC is required to create a customer"));
       }
 
-      // hash the NIC and store it as the initial login password
+      // hash the NIC / Passport and store it as the initial login password
       const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
 
-      const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nic, password, nearesCity, salesAgent, isDashUser)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+      const docType = customerData.docType === "PASS" ? "PASS" : "NIC";
+      const buyerType = customerData.buyerType === "Wholesale" ? "Wholesale" : "Retail";
+      const companyName = customerData.companyName ? customerData.companyName.trim() : null;
+
+      let companyPhoneCode = null;
+      let companyPhone = null;
+      if (customerData.companyPhone) {
+        const fullCPhone = customerData.companyPhone.toString();
+        if (fullCPhone.startsWith("+94")) {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone.substring(3);
+        } else if (fullCPhone.startsWith("94") && fullCPhone.length > 9) {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone.substring(2);
+        } else if (fullCPhone.startsWith("0")) {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone.substring(1);
+        } else {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone;
+        }
+        companyPhone = companyPhone.replace(/[\s\-\(\)]/g, "");
+      }
+
+      const sqlCustomer = `INSERT INTO marketplaceusers (
+            cusId, firstName, lastName, phoneCode, phoneNumber, email, title,
+            docType, nic, buyerType, companyPhoneCode, companyPhone, companyName,
+            password, nearesCity, salesAgent, isDashUser
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
 
       db.collectionofficer.query(
         sqlCustomer,
@@ -57,18 +84,47 @@ exports.addCustomer = (customerData, salesAgent) => {
           phoneNumber,
           customerData.email,
           customerData.title,
+          docType,
           nic,
+          buyerType,
+          companyPhoneCode,
+          companyPhone,
+          companyName,
           hashedPassword,
           customerData.city,
           salesAgent,
           1,
         ],
-        (err, customerResult) => {
+        async (err, customerResult) => {
           if (err) {
             return reject(err);
           }
 
           const insertId = customerResult.insertId;
+
+          // If Wholesale customer, insert record into pendingwholesaleusers
+          if (buyerType === "Wholesale") {
+            try {
+              let brImg = customerData.brImg || null;
+              if (brImg && brImg.startsWith("data:")) {
+                try {
+                  const matches = brImg.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                  if (matches && matches.length === 3) {
+                    const buffer = Buffer.from(matches[2], "base64");
+                    const ext = matches[1].split("/")[1] || "png";
+                    const uploadFileToS3 = require("../middleware/s3upload");
+                    brImg = await uploadFileToS3(buffer, `br_${Date.now()}.${ext}`, "wholesale_br");
+                  }
+                } catch (upErr) {
+                  console.error("Failed to upload BR to R2/S3, storing original payload:", upErr);
+                }
+              }
+              const sqlPending = `INSERT INTO pendingwholesaleusers (userId, approveStatus, brImg) VALUES (?, 'To Review', ?)`;
+              await db.collectionofficer.promise().query(sqlPending, [insertId, brImg]);
+            } catch (pendingErr) {
+              console.error("Error creating pendingwholesaleusers record:", pendingErr);
+            }
+          }
 
           insertBuildingData(insertId, customerData, {
             phoneCode,
@@ -78,9 +134,7 @@ exports.addCustomer = (customerData, salesAgent) => {
             .then(() => {
               resolve({
                 success: true,
-
                 customerId: newCustomerId,
-
                 id: insertId,
               });
             })
@@ -234,6 +288,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customer
         c.phoneNumber,
         c.email,
         c.buyerType,
+        c.companyName,
         c.created_at AS createdAt,
         COUNT(o.id) AS orderCount
       FROM marketplaceusers c
@@ -241,7 +296,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customer
       WHERE c.salesAgent = ?
         AND c.isActive = 1
         ${typeFilter}
-      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType, c.created_at
+      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType, c.companyName, c.created_at
       ORDER BY c.id
       LIMIT ? OFFSET ?
     `;

@@ -2423,3 +2423,136 @@ exports.getDailyTargets = async (
     if (connection) connection.release();
   }
 };
+
+
+exports.getCustomersTotalValueSummary = async (salesAgentId, { page = 1, limit = 5, filter = "all" } = {}) => {
+  let connection;
+  try {
+    connection = await db.collectionofficer.promise().getConnection();
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.max(parseInt(limit, 10) || 5, 1);
+    const offset = (pageNum - 1) * limitNum;
+
+    // 1. Grand total of delivered / picked up orders for all customers of this sales agent
+    const [totalRows] = await connection.query(
+      `SELECT COALESCE(SUM(p.fullTotal), 0) AS grandTotal
+       FROM collection_officer.processorders p
+       JOIN collection_officer.orders o ON p.orderid = o.id
+       JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         AND p.status IN ('Delivered', 'Picked up')`,
+      [salesAgentId]
+    );
+    const grandTotalValue = parseFloat(totalRows[0]?.grandTotal || 0);
+
+    // 2. Customer counts by category
+    const [countsRows] = await connection.query(
+      `SELECT
+         COUNT(*) AS allCount,
+         COALESCE(SUM(CASE WHEN m.buyerType = 'Wholesale' THEN 0 ELSE 1 END), 0) AS retailCount,
+         COALESCE(SUM(CASE WHEN m.buyerType = 'Wholesale' THEN 1 ELSE 0 END), 0) AS wholesaleCount
+       FROM collection_officer.marketplaceusers m
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1`,
+      [salesAgentId]
+    );
+
+    const allCount = parseInt(countsRows[0]?.allCount || 0, 10);
+    const retailCount = parseInt(countsRows[0]?.retailCount || 0, 10);
+    const wholesaleCount = parseInt(countsRows[0]?.wholesaleCount || 0, 10);
+
+    // 3. Filter condition
+    let filterSql = "";
+    if (filter === "retail") {
+      filterSql = " AND (m.buyerType = 'Retail' OR m.buyerType IS NULL)";
+    } else if (filter === "wholesale") {
+      filterSql = " AND m.buyerType = 'Wholesale'";
+    }
+
+    // 4. Total filtered count
+    const [filterCountRows] = await connection.query(
+      `SELECT COUNT(*) AS total
+       FROM collection_officer.marketplaceusers m
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         ${filterSql}`,
+      [salesAgentId]
+    );
+    const totalRecords = parseInt(filterCountRows[0]?.total || 0, 10);
+    const totalPages = Math.ceil(totalRecords / limitNum) || 1;
+
+    // 5. Paginated customers with completed sales sum and count
+    const [customerRows] = await connection.query(
+      `SELECT
+         m.id,
+         m.cusId,
+         m.title,
+         m.firstName,
+         m.lastName,
+         m.phoneCode,
+         m.phoneNumber,
+         m.buyerType,
+         m.companyName,
+         m.created_at AS createdAt,
+         COALESCE(sales.totalCompletedSales, 0) AS totalCompletedSales,
+         COALESCE(sales.completedOrdersCount, 0) AS completedOrdersCount
+       FROM collection_officer.marketplaceusers m
+       LEFT JOIN (
+         SELECT
+           o.userId,
+           SUM(p.fullTotal) AS totalCompletedSales,
+           COUNT(p.id) AS completedOrdersCount
+         FROM collection_officer.processorders p
+         JOIN collection_officer.orders o ON p.orderid = o.id
+         WHERE p.status IN ('Delivered', 'Picked up')
+         GROUP BY o.userId
+       ) sales ON sales.userId = m.id
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         ${filterSql}
+       ORDER BY m.firstName ASC, m.lastName ASC, m.id ASC
+       LIMIT ? OFFSET ?`,
+      [salesAgentId, limitNum, offset]
+    );
+
+    const customers = customerRows.map((c) => {
+      const fullPhone = `${c.phoneCode || ""}${c.phoneNumber || ""}`;
+      return {
+        id: c.id,
+        cusId: c.cusId,
+        title: c.title,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phoneNumber: fullPhone,
+        buyerType: c.buyerType || "Retail",
+        companyName: c.companyName || null,
+        createdAt: c.createdAt,
+        totalCompletedSales: parseFloat(c.totalCompletedSales || 0),
+        completedOrdersCount: parseInt(c.completedOrdersCount || 0, 10),
+      };
+    });
+
+    return {
+      grandTotalValue,
+      counts: {
+        all: allCount,
+        retail: retailCount,
+        wholesale: wholesaleCount,
+      },
+      customers,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalRecords,
+        limit: limitNum,
+      },
+    };
+  } catch (err) {
+    console.error("Error in getCustomersTotalValueSummary:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
+  }
+};

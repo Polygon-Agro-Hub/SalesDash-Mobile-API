@@ -46,4 +46,6 @@ router.get('/get-saved-address/:addressId', customerEp.getSavedAddress);
 router.post('/add-saved-address', customerEp.addSavedAddress);
 router.put('/update-saved-address/:addressId', customerEp.updateSavedAddress);
 
+router.post('/upload-br', customerEp.uploadBrImage);
+
 module.exports = router;
