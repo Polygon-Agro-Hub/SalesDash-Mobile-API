@@ -14,7 +14,7 @@ exports.createComplainDAO = (
     const datePrefix = today.toISOString().slice(2, 10).replace(/-/g, "");
 
     const checkSql = `SELECT refNo FROM dashcomplain WHERE refNo LIKE ? ORDER BY refNo DESC LIMIT 1`;
-    db.marketPlace.query(checkSql, [`SA${datePrefix}%`], (err, results) => {
+    db.collectionofficer.query(checkSql, [`SA${datePrefix}%`], (err, results) => {
       if (err) {
         return reject(err);
       }
@@ -31,7 +31,7 @@ exports.createComplainDAO = (
 
       // Insert the complaint with the generated refNo
       const insertSql = `INSERT INTO dashcomplain (saId, language, complain, complainCategory, status, refNo, adminStatus ) VALUES (?, ?, ?, ?, ?, ?, 'Assigned')`;
-      db.marketPlace.query(
+      db.collectionofficer.query(
         insertSql,
         [saId, language, complain, category, status, refNo],
         (err, result) => {
@@ -55,7 +55,7 @@ exports.getAllComplaintsByUserIdDAO = async (userId) => {
         WHERE saId = ?
         ORDER BY createdAt DESC
       `;
-    db.marketPlace.query(query, [userId], (error, results) => {
+    db.collectionofficer.query(query, [userId], (error, results) => {
       if (error) {
         console.error("Error fetching complaints:", error);
         reject(error);

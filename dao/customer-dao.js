@@ -1,4 +1,8 @@
 const db = require("../startup/database");
+const bcrypt = require("bcryptjs");
+const smsService = require("../services/sms-service");
+
+const SALT_ROUNDS = 10;
 
 exports.addCustomer = (customerData, salesAgent) => {
   return new Promise(async (resolve, reject) => {
@@ -28,10 +32,49 @@ exports.addCustomer = (customerData, salesAgent) => {
         phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
       }
 
-      const sqlCustomer = `INSERT INTO marketplaceusers (cusId, firstName, lastName, phoneCode, phoneNumber, email, title, nearesCity, salesAgent, isDashUser)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+      // normalize NIC to uppercase (old-format NICs end in V/X)
+      const nic = customerData.nic
+        ? customerData.nic.toString().trim().toUpperCase()
+        : null;
 
-      db.marketPlace.query(
+      if (!nic) {
+        return reject(new Error("NIC is required to create a customer"));
+      }
+
+      // hash the NIC / Passport and store it as the initial login password
+      const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
+
+      const docType = customerData.docType === "PASS" ? "PASS" : "NIC";
+      const buyerType = customerData.buyerType === "Wholesale" ? "Wholesale" : "Retail";
+      const companyName = customerData.companyName ? customerData.companyName.trim() : null;
+
+      let companyPhoneCode = null;
+      let companyPhone = null;
+      if (customerData.companyPhone) {
+        const fullCPhone = customerData.companyPhone.toString();
+        if (fullCPhone.startsWith("+94")) {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone.substring(3);
+        } else if (fullCPhone.startsWith("94") && fullCPhone.length > 9) {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone.substring(2);
+        } else if (fullCPhone.startsWith("0")) {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone.substring(1);
+        } else {
+          companyPhoneCode = "+94";
+          companyPhone = fullCPhone;
+        }
+        companyPhone = companyPhone.replace(/[\s\-\(\)]/g, "");
+      }
+
+      const sqlCustomer = `INSERT INTO marketplaceusers (
+            cusId, firstName, lastName, phoneCode, phoneNumber, email, title,
+            docType, nic, buyerType, companyPhoneCode, companyPhone, companyName,
+            password, nearesCity, salesAgent, isDashUser
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+
+      db.collectionofficer.query(
         sqlCustomer,
         [
           newCustomerId,
@@ -41,24 +84,57 @@ exports.addCustomer = (customerData, salesAgent) => {
           phoneNumber,
           customerData.email,
           customerData.title,
+          docType,
+          nic,
+          buyerType,
+          companyPhoneCode,
+          companyPhone,
+          companyName,
+          hashedPassword,
           customerData.city,
           salesAgent,
           1,
         ],
-        (err, customerResult) => {
+        async (err, customerResult) => {
           if (err) {
             return reject(err);
           }
 
           const insertId = customerResult.insertId;
 
-          insertBuildingData(insertId, customerData)
+          // If Wholesale customer, insert record into pendingwholesaleusers
+          if (buyerType === "Wholesale") {
+            try {
+              let brImg = customerData.brImg || null;
+              if (brImg && brImg.startsWith("data:")) {
+                try {
+                  const matches = brImg.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                  if (matches && matches.length === 3) {
+                    const buffer = Buffer.from(matches[2], "base64");
+                    const ext = matches[1].split("/")[1] || "png";
+                    const uploadFileToS3 = require("../middleware/s3upload");
+                    brImg = await uploadFileToS3(buffer, `br_${Date.now()}.${ext}`, "wholesale_br");
+                  }
+                } catch (upErr) {
+                  console.error("Failed to upload BR to R2/S3, storing original payload:", upErr);
+                }
+              }
+              const sqlPending = `INSERT INTO pendingwholesaleusers (userId, approveStatus, brImg) VALUES (?, 'To Review', ?)`;
+              await db.collectionofficer.promise().query(sqlPending, [insertId, brImg]);
+            } catch (pendingErr) {
+              console.error("Error creating pendingwholesaleusers record:", pendingErr);
+            }
+          }
+
+          insertBuildingData(insertId, customerData, {
+            phoneCode,
+            phoneNumber,
+            nic,
+          })
             .then(() => {
               resolve({
                 success: true,
-
                 customerId: newCustomerId,
-
                 id: insertId,
               });
             })
@@ -82,7 +158,7 @@ const generateCustomerId = async () => {
         LIMIT 1
     `;
 
-  const [result] = await db.marketPlace.promise().query(sqlGetLastCustomerId);
+  const [result] = await db.collectionofficer.promise().query(sqlGetLastCustomerId);
 
   let newCustomerId = "CUS-00001";
 
@@ -97,7 +173,37 @@ const generateCustomerId = async () => {
   return newCustomerId;
 };
 
-const insertBuildingData = async (customerId, customerData) => {
+async function sendCustomerWelcomeSMS(phoneCode, phoneNumber, nic) {
+  try {
+    const fullPhoneNumber = `${phoneCode}${phoneNumber}`;
+
+    const smsMessage =
+      `Welcome to Polygon! Your Polygon Mobile App login details are:\n` +
+      `Username: ${phoneNumber}\n` +
+      `Password: ${nic} (Your NIC)\n` +
+      `Please keep your login details confidential.`;
+
+    const smsResult = await smsService.sendSMS(fullPhoneNumber, smsMessage);
+
+    if (!smsResult || !smsResult.success) {
+      console.error(
+        `❌ Failed to send welcome SMS to ${fullPhoneNumber}:`,
+        smsResult,
+      );
+      throw new Error("Welcome SMS sending failed");
+    }
+
+    return smsResult;
+  } catch (error) {
+    console.error("Error sending customer welcome SMS:", error);
+    // Re-throw so the caller decides how to handle it (matches
+    // sendOrderConfirmationSMS behaviour) - the caller wraps this in a
+    // try/catch that logs but never fails customer creation.
+    throw error;
+  }
+}
+
+const insertBuildingData = async (customerId, customerData, contactInfo) => {
   let insertQuery;
   let queryParams;
 
@@ -128,43 +234,74 @@ const insertBuildingData = async (customerId, customerData) => {
   } else {
     throw new Error("Invalid building type");
   }
-  await db.marketPlace.promise().query(insertQuery, queryParams);
+
+  await db.collectionofficer.promise().query(insertQuery, queryParams);
+
+  // Address saved successfully - send the welcome SMS with login
+  // credentials (username = phone number, password = NIC). Best effort:
+  // logged on failure but never throws, so a bad SMS gateway response
+  // can't roll back or fail customer creation, which has already
+  // succeeded at this point.
+  if (contactInfo) {
+    try {
+      await sendCustomerWelcomeSMS(
+        contactInfo.phoneCode,
+        contactInfo.phoneNumber,
+        contactInfo.nic,
+      );
+    } catch (smsError) {
+      console.error(
+        "Failed to send welcome SMS to new customer:",
+        smsError,
+      );
+    }
+  }
 };
 
-exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
+exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customerType = null) => {
   return new Promise((resolve, reject) => {
     const offset = (page - 1) * limit;
 
+    let typeFilter = "";
+    if (customerType === "new") {
+      typeFilter = " AND c.created_at >= DATE_SUB(NOW(), INTERVAL 84 DAY)";
+    } else if (customerType === "existing") {
+      typeFilter = " AND (c.created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR c.created_at IS NULL)";
+    }
+
     const countQuery = `
-            SELECT COUNT(DISTINCT c.id) as totalCount
-            FROM marketplaceusers c
-            WHERE c.salesAgent = ?
-        `;
+      SELECT COUNT(DISTINCT c.id) AS totalCount
+      FROM marketplaceusers c
+      WHERE c.salesAgent = ?
+        AND c.isActive = 1
+        ${typeFilter}
+    `;
 
-    // Main query with pagination
     const dataQuery = `
-            SELECT 
-                c.id,
-                c.cusId,
-                c.title,
-                c.firstName,
-                c.lastName,
-                c.phoneCode,
-                c.phoneNumber,
-                c.email,
-               
-              
-                COUNT(o.id) AS orderCount
-            FROM marketplaceusers c
-            LEFT JOIN orders o ON c.id = o.userId
-            WHERE c.salesAgent = ?
-            GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email
-            ORDER BY c.id
-            LIMIT ? OFFSET ?
-        `;
+      SELECT 
+        c.id,
+        c.cusId,
+        c.title,
+        c.firstName,
+        c.lastName,
+        c.phoneCode,
+        c.phoneNumber,
+        c.email,
+        c.buyerType,
+        c.companyName,
+        c.created_at AS createdAt,
+        COUNT(o.id) AS orderCount
+      FROM marketplaceusers c
+      LEFT JOIN orders o ON c.id = o.userId
+      WHERE c.salesAgent = ?
+        AND c.isActive = 1
+        ${typeFilter}
+      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType, c.companyName, c.created_at
+      ORDER BY c.id
+      LIMIT ? OFFSET ?
+    `;
 
-    // Execute count query first
-    db.marketPlace
+    db.collectionofficer
       .promise()
       .query(countQuery, [salesAgentId])
       .then(([countResult]) => {
@@ -172,43 +309,26 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
         const totalPages = Math.ceil(totalCount / limit);
         const hasMore = page < totalPages;
 
-        // Execute data query
-        return db.marketPlace
+        return db.collectionofficer
           .promise()
           .query(dataQuery, [salesAgentId, limit, offset])
           .then(([rows]) => {
-            // Process each row to combine phoneCode and phoneNumber
             const processedRows = rows.map((customer) => {
-              // Combine phoneCode and phoneNumber into a single phoneNumber field
-              if (customer.phoneCode && customer.phoneNumber) {
-                customer.phoneNumber = `${customer.phoneCode}${customer.phoneNumber}`;
-              } else if (customer.phoneNumber && !customer.phoneCode) {
-                // If only phoneNumber exists, keep it as is
-                customer.phoneNumber = customer.phoneNumber;
-              } else if (customer.phoneCode && !customer.phoneNumber) {
-                // If only phoneCode exists, set phoneNumber to just the code
-                customer.phoneNumber = `${customer.phoneCode}`;
-              } else {
-                // If neither exists, set to empty string
-                customer.phoneNumber = "";
-              }
+              // Combine phoneCode and phoneNumber into a single field
+              customer.phoneNumber = `${customer.phoneCode || ""}${customer.phoneNumber || ""}`;
 
-              // Remove the separate phoneCode field since we've combined it
               delete customer.phoneCode;
-
               return customer;
             });
 
-            const result = {
+            resolve({
               customers: processedRows,
               currentPage: page,
-              totalPages: totalPages,
-              totalCount: totalCount,
-              hasMore: hasMore,
-              limit: limit,
-            };
-
-            resolve(result);
+              totalPages,
+              totalCount,
+              hasMore,
+              limit,
+            });
           });
       })
       .catch((error) => {
@@ -221,7 +341,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
 exports.getCustomerData = async (cusId) => {
   const sqlCustomerQuery = `SELECT * FROM marketplaceusers WHERE id = ?`;
 
-  const [customerRows] = await db.marketPlace
+  const [customerRows] = await db.collectionofficer
     .promise()
     .query(sqlCustomerQuery, [cusId]);
 
@@ -243,7 +363,7 @@ exports.getCustomerData = async (cusId) => {
   }
   delete customerData.phoneCode;
 
-  const [houseRows] = await db.marketPlace
+  const [houseRows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM dashuserhouse WHERE customerId = ?`, [
       customerData.id,
@@ -255,7 +375,7 @@ exports.getCustomerData = async (cusId) => {
     buildingData = houseRows[0];
     customerData.buildingType = "House";
   } else {
-    const [apartmentRows] = await db.marketPlace
+    const [apartmentRows] = await db.collectionofficer
       .promise()
       .query(`SELECT * FROM dashuserapartment WHERE customerId = ?`, [
         customerData.id,
@@ -269,13 +389,13 @@ exports.getCustomerData = async (cusId) => {
     }
   }
 
-  const [houseCountRows] = await db.marketPlace
+  const [houseCountRows] = await db.collectionofficer
     .promise()
     .query(`SELECT COUNT(*) AS count FROM house WHERE customerId = ?`, [
       customerData.id,
     ]);
 
-  const [apartmentCountRows] = await db.marketPlace
+  const [apartmentCountRows] = await db.collectionofficer
     .promise()
     .query(`SELECT COUNT(*) AS count FROM apartment WHERE customerId = ?`, [
       customerData.id,
@@ -294,7 +414,7 @@ exports.getCustomerData = async (cusId) => {
 
 exports.getCusDataExc = async (customerId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
     try {
       // First try the most likely case
       const [results] = await connection.query(
@@ -335,7 +455,7 @@ exports.updateCustomerData = async (cusId, customerData) => {
   let connection;
 
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
     await connection.beginTransaction();
 
     // Parse phone number to extract phone code and number
@@ -362,8 +482,16 @@ exports.updateCustomerData = async (cusId, customerData) => {
       phoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, "");
     }
 
-    // Check if customer exists (now also fetching cusId)
-    const getCustomerIdQuery = `SELECT id, cusId, phoneCode, phoneNumber, email FROM marketplaceusers WHERE id = ?`;
+    // normalize NIC to uppercase (old-format NICs end in V/X)
+    const nic = customerData.nic
+      ? customerData.nic.toString().trim().toUpperCase()
+      : null;
+
+    // Check if customer exists (also fetch nic + isPswUpdateed)
+    const getCustomerIdQuery = `
+      SELECT id, cusId, phoneCode, phoneNumber, email, nic, isPswUpdateed
+      FROM marketplaceusers
+      WHERE id = ?`;
     const [customerResult] = await connection.query(getCustomerIdQuery, [
       cusId,
     ]);
@@ -373,16 +501,24 @@ exports.updateCustomerData = async (cusId, customerData) => {
     }
 
     const customerId = customerResult[0].id;
-    const customerCusId = customerResult[0].cusId; // <-- NEW
+    const customerCusId = customerResult[0].cusId;
     const existingPhoneCode = customerResult[0].phoneCode;
     const existingPhoneNumber = customerResult[0].phoneNumber;
     const existingEmail = customerResult[0].email;
+    const existingNic = customerResult[0].nic
+      ? customerResult[0].nic.toString().trim().toUpperCase()
+      : null;
+
+    // 1 = customer already changed their own password, 0/NULL = still NIC password
+    const isPasswordUpdatedByCustomer =
+      Number(customerResult[0].isPswUpdateed) === 1;
+
+    // Track whether phone number actually changed
+    const isPhoneChanged =
+      phoneCode !== existingPhoneCode || phoneNumber !== existingPhoneNumber;
 
     // Check for duplicate phone number (only if changed)
-    if (
-      phoneCode !== existingPhoneCode ||
-      phoneNumber !== existingPhoneNumber
-    ) {
+    if (isPhoneChanged) {
       const checkPhoneQuery = `SELECT id FROM marketplaceusers WHERE phoneCode = ? AND phoneNumber = ? AND id != ?`;
       const [phoneResult] = await connection.query(checkPhoneQuery, [
         phoneCode,
@@ -393,10 +529,6 @@ exports.updateCustomerData = async (cusId, customerData) => {
       if (phoneResult.length > 0) {
         throw new Error("Phone number already exists.");
       }
-    } else {
-      console.log(
-        "ℹ️ Phone number not changed, skipping phone duplicate check",
-      );
     }
 
     // Handle email validation and duplicate check
@@ -415,34 +547,91 @@ exports.updateCustomerData = async (cusId, customerData) => {
         if (emailResult.length > 0) {
           throw new Error("Email already exists.");
         }
-      } else {
-        console.log("ℹ️ Email not changed, skipping email duplicate check");
       }
     } else {
       finalEmail = null;
     }
 
-    // Update only the 4 relevant fields (+ phone, since it's parsed here)
-    const updateCustomerQuery = `
-      UPDATE marketplaceusers 
-      SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?
-      WHERE id = ?`;
+    // Handle NIC duplicate check (only if changed)
+    if (nic && nic !== existingNic) {
+      const checkNicQuery = `SELECT id FROM marketplaceusers WHERE UPPER(nic) = ? AND id != ?`;
+      const [nicResult] = await connection.query(checkNicQuery, [
+        nic,
+        customerId,
+      ]);
 
-    const customerParams = [
-      customerData.title,
-      customerData.firstName,
-      customerData.lastName,
-      phoneCode,
-      phoneNumber,
-      finalEmail,
-      cusId,
-    ];
+      if (nicResult.length > 0) {
+        throw new Error("NIC already exists.");
+      }
+    }
+
+    const isNicChanged = !!nic && nic !== existingNic;
+
+    // Password is re-hashed from the NIC ONLY when:
+    //   - NIC changed, and
+    //   - the customer has NOT set their own password yet (isPswUpdateed = 0)
+    const shouldResetPassword = isNicChanged && !isPasswordUpdatedByCustomer;
+
+    let updateCustomerQuery;
+    let customerParams;
+
+    if (shouldResetPassword) {
+      const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
+      updateCustomerQuery = `
+        UPDATE marketplaceusers
+        SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, nic = ?, password = ?
+        WHERE id = ?`;
+      customerParams = [
+        customerData.title,
+        customerData.firstName,
+        customerData.lastName,
+        phoneCode,
+        phoneNumber,
+        finalEmail,
+        nic,
+        hashedPassword,
+        cusId,
+      ];
+    } else {
+      // NIC (if changed) is saved, but the password is left untouched
+      updateCustomerQuery = `
+        UPDATE marketplaceusers
+        SET title = ?, firstName = ?, lastName = ?, phoneCode = ?, phoneNumber = ?, email = ?, nic = ?
+        WHERE id = ?`;
+      customerParams = [
+        customerData.title,
+        customerData.firstName,
+        customerData.lastName,
+        phoneCode,
+        phoneNumber,
+        finalEmail,
+        nic || existingNic,
+        cusId,
+      ];
+    }
 
     await connection.query(updateCustomerQuery, customerParams);
 
     await connection.commit();
 
-    // Return an object now, including cusId, instead of a plain string
+    // Credentials SMS (username = phone, password = NIC):
+    // only meaningful while the customer is still on the NIC password
+    // (isPswUpdateed = 0). Once they set their own password, never send it.
+    if (!isPasswordUpdatedByCustomer && (isNicChanged || isPhoneChanged)) {
+      try {
+        await sendCustomerWelcomeSMS(
+          phoneCode || existingPhoneCode,
+          phoneNumber || existingPhoneNumber,
+          nic || existingNic,
+        );
+      } catch (smsError) {
+        console.error(
+          "Failed to send welcome SMS to updated customer:",
+          smsError,
+        );
+      }
+    }
+
     return {
       message: "Customer data updated successfully.",
       id: customerId,
@@ -464,18 +653,19 @@ exports.updateCustomerData = async (cusId, customerData) => {
 exports.findCustomerByPhoneOrEmail = async (
   phoneNumber,
   email,
+  nic = null,
   excludeId = null,
 ) => {
   try {
     let phoneExists = false;
     let emailExists = false;
+    let nicExists = false;
 
     // Check phone number if provided
     if (phoneNumber) {
       // Parse the incoming phone number (your existing code)
       let phoneCodeToCheck = "";
       let phoneNumberToCheck = "";
-
       const fullPhone = phoneNumber.toString();
       if (fullPhone.startsWith("+94")) {
         phoneCodeToCheck = "+94";
@@ -484,13 +674,11 @@ exports.findCustomerByPhoneOrEmail = async (
       // Modify the query to exclude current user if excludeId is provided
       let phoneQuery = `SELECT id FROM marketplaceusers WHERE phoneCode = ? AND phoneNumber = ?`;
       const phoneParams = [phoneCodeToCheck, phoneNumberToCheck];
-
       if (excludeId) {
         phoneQuery += ` AND id != ?`;
         phoneParams.push(excludeId);
       }
-
-      const [phoneRows] = await db.marketPlace
+      const [phoneRows] = await db.collectionofficer
         .promise()
         .query(phoneQuery, phoneParams);
       phoneExists = phoneRows.length > 0;
@@ -500,22 +688,36 @@ exports.findCustomerByPhoneOrEmail = async (
     if (email) {
       let emailQuery = `SELECT id FROM marketplaceusers WHERE email = ?`;
       const emailParams = [email];
-
       if (excludeId) {
         emailQuery += ` AND id != ?`;
         emailParams.push(excludeId);
       }
-
-      const [emailRows] = await db.marketPlace
+      const [emailRows] = await db.collectionofficer
         .promise()
         .query(emailQuery, emailParams);
       emailExists = emailRows.length > 0;
     }
 
+    // Check NIC if provided
+    if (nic) {
+      const nicToCheck = nic.toString().trim().toUpperCase();
+      let nicQuery = `SELECT id FROM marketplaceusers WHERE UPPER(nic) = ?`;
+      const nicParams = [nicToCheck];
+      if (excludeId) {
+        nicQuery += ` AND id != ?`;
+        nicParams.push(excludeId);
+      }
+      const [nicRows] = await db.collectionofficer
+        .promise()
+        .query(nicQuery, nicParams);
+      nicExists = nicRows.length > 0;
+    }
+
     return {
       phoneExists,
       emailExists,
-      hasConflict: phoneExists || emailExists,
+      nicExists,
+      hasConflict: phoneExists || emailExists || nicExists,
     };
   } catch (error) {
     console.error("Error finding customer:", error);
@@ -525,13 +727,18 @@ exports.findCustomerByPhoneOrEmail = async (
 
 exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
     try {
       const [rows] = await connection.query(
         `
-        SELECT salesAgent, COUNT(*) AS customerCount
+        SELECT 
+          salesAgent, 
+          COUNT(*) AS customerCount,
+          COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 84 DAY) THEN 1 END) AS newCustomerCount,
+          COUNT(CASE WHEN created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR created_at IS NULL THEN 1 END) AS existingCustomerCount
         FROM marketplaceusers
         WHERE salesAgent = ?
+          AND isActive = 1
         GROUP BY salesAgent
       `,
         [salesAgentId],
@@ -540,7 +747,7 @@ exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
       // Return the count for the specific agent, or default object if no customers found
       return rows.length > 0
         ? rows[0]
-        : { salesAgent: parseInt(salesAgentId), customerCount: 0 };
+        : { salesAgent: parseInt(salesAgentId), customerCount: 0, newCustomerCount: 0, existingCustomerCount: 0 };
     } finally {
       connection.release();
     }
@@ -593,7 +800,7 @@ exports.getAllCrops = async (cusId) => {
         ORDER BY mpi.displayName ASC;
         `;
 
-    const [results] = await db.marketPlace.promise().query(query);
+    const [results] = await db.collectionofficer.promise().query(query);
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
@@ -603,7 +810,7 @@ exports.getAllCrops = async (cusId) => {
 
 exports.addExcludeList = async (customerId, selectedCrops) => {
   try {
-    const [existingRows] = await db.marketPlace
+    const [existingRows] = await db.collectionofficer
       .promise()
       .query(`SELECT mpItemId FROM excludelist WHERE userId = ?`, [customerId]);
     const existingIds = existingRows.map((row) => row.mpItemId);
@@ -615,13 +822,13 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
 
     if (toInsert.length > 0) {
       const values = toInsert.map((cropId) => [customerId, cropId]);
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`INSERT INTO excludelist (userId, mpItemId) VALUES ?`, [values]);
     }
 
     if (toRemove.length > 0) {
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`DELETE FROM excludelist WHERE userId = ? AND mpItemId IN (?)`, [
           customerId,
@@ -638,7 +845,7 @@ exports.addExcludeList = async (customerId, selectedCrops) => {
 
 exports.addPreList = async (customerId, selectedCrops) => {
   try {
-    const [existingRows] = await db.marketPlace
+    const [existingRows] = await db.collectionofficer
       .promise()
       .query(`SELECT mpItemId FROM preferlist WHERE userId = ?`, [customerId]);
     const existingIds = existingRows.map((row) => row.mpItemId);
@@ -648,13 +855,13 @@ exports.addPreList = async (customerId, selectedCrops) => {
 
     if (toInsert.length > 0) {
       const values = toInsert.map((cropId) => [customerId, cropId]);
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`INSERT INTO preferlist (userId, mpItemId) VALUES ?`, [values]);
     }
 
     if (toRemove.length > 0) {
-      await db.marketPlace
+      await db.collectionofficer
         .promise()
         .query(`DELETE FROM preferlist WHERE userId = ? AND mpItemId IN (?)`, [
           customerId,
@@ -690,7 +897,7 @@ exports.getExcludeList = async (customerId) => {
       WHERE mps.id = ?  -- Filter by customerId
       ORDER BY mpi.displayName ASC; 
     `;
-    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    const [results] = await db.collectionofficer.promise().query(query, [customerId]);
 
     return results;
     ta;
@@ -721,7 +928,7 @@ exports.getCustomerPreferlist = async (customerId) => {
       WHERE mps.id = ?
       ORDER BY mpi.displayName ASC; 
     `;
-    const [results] = await db.marketPlace.promise().query(query, [customerId]);
+    const [results] = await db.collectionofficer.promise().query(query, [customerId]);
     return results;
   } catch (error) {
     console.error("Error fetching prefer list:", error);
@@ -735,7 +942,7 @@ exports.deleteExcludeItem = async (excludeId) => {
       DELETE FROM excludelist 
       WHERE Id = ?
     `;
-    await db.marketPlace.promise().query(query, [excludeId]);
+    await db.collectionofficer.promise().query(query, [excludeId]);
 
     return { message: "Exclude list updated successfully" };
   } catch (error) {
@@ -750,7 +957,7 @@ exports.deletePreferItem = async (preferId) => {
       DELETE FROM preferlist 
       WHERE Id = ?
     `;
-    await db.marketPlace.promise().query(query, [preferId]);
+    await db.collectionofficer.promise().query(query, [preferId]);
 
     return { message: "Exclude list updated successfully" };
   } catch (error) {
@@ -763,29 +970,39 @@ exports.getCustomerDataLocation = async (customerId) => {
   return new Promise((resolve, reject) => {
     const query = `
             SELECT 
-                id,
-                salesAgent,
-                googleId,
-                cusId,
-                title,
-                firstName,
-                lastName,
-                phoneCode,
-                phoneCode2,
-                phoneNumber,
-                phoneNumber2,
-                buyerType,
-                creditBalance,
-                email,
-                password,
-                image,
-                
-                created_at
-            FROM marketplaceusers 
-            WHERE cusId = ?
+                m.id,
+                m.salesAgent,
+                m.googleId,
+                m.cusId,
+                m.title,
+                m.firstName,
+                m.lastName,
+                m.phoneCode,
+                m.phoneCode2,
+                m.phoneNumber,
+                m.phoneNumber2,
+                m.buyerType,
+                m.companyName,
+                m.companyPhone,
+                m.companyPhoneCode,
+                m.creditBalance,
+                m.email,
+                m.password,
+                m.image,
+                m.created_at,
+                pw.id AS wholesaleApplicationId,
+                pw.approveStatus AS wholesaleApproveStatus,
+                pw.brImg AS wholesaleBrImg,
+                pw.createdAt AS wholesaleCreatedAt
+            FROM marketplaceusers m
+            LEFT JOIN pendingwholesaleusers pw ON pw.id = (
+                SELECT MAX(id) FROM pendingwholesaleusers WHERE userId = m.id
+            )
+            WHERE m.cusId = ? OR m.id = ?
+            LIMIT 1
         `;
 
-    db.marketPlace.query(query, [customerId], (error, results) => {
+    db.collectionofficer.query(query, [customerId, customerId], (error, results) => {
       if (error) {
         console.error("Error fetching customer data:", error);
         reject(error);
@@ -806,7 +1023,7 @@ exports.checkDeliveredOrder = async (customerId) => {
       WHERE o.userId = ? AND po.status = 'Delivered'
       LIMIT 1
     `;
-    db.marketPlace
+    db.collectionofficer
       .promise()
       .query(sql, [customerId])
       .then(([rows]) => {
@@ -833,7 +1050,7 @@ exports.updateResidentialAddress = async (cusId, data) => {
       if (!nearestCity || !nearestCity.trim()) {
         return Promise.resolve();
       }
-      return db.marketPlace
+      return db.collectionofficer
         .promise()
         .query(`UPDATE marketplaceusers SET nearesCity = ? WHERE id = ?`, [
           nearestCity.trim(),
@@ -844,27 +1061,27 @@ exports.updateResidentialAddress = async (cusId, data) => {
     updateNearestCity()
       .then(async () => {
         if (buildingType === "House") {
-          await db.marketPlace
+          await db.collectionofficer
             .promise()
             .query(`DELETE FROM dashuserapartment WHERE customerId = ?`, [
               cusId,
             ]);
 
-          const [existingHouseRows] = await db.marketPlace
+          const [existingHouseRows] = await db.collectionofficer
             .promise()
             .query(`SELECT id FROM dashuserhouse WHERE customerId = ?`, [
               cusId,
             ]);
 
           if (existingHouseRows.length > 0) {
-            await db.marketPlace
+            await db.collectionofficer
               .promise()
               .query(
                 `UPDATE dashuserhouse SET houseNo = ?, streetName = ? WHERE customerId = ?`,
                 [houseNo.trim(), streetName.trim(), cusId],
               );
           } else {
-            await db.marketPlace
+            await db.collectionofficer
               .promise()
               .query(
                 `INSERT INTO dashuserhouse (customerId, houseNo, streetName) VALUES (?, ?, ?)`,
@@ -872,18 +1089,18 @@ exports.updateResidentialAddress = async (cusId, data) => {
               );
           }
         } else if (buildingType === "Apartment") {
-          await db.marketPlace
+          await db.collectionofficer
             .promise()
             .query(`DELETE FROM dashuserhouse WHERE customerId = ?`, [cusId]);
 
-          const [existingAptRows] = await db.marketPlace
+          const [existingAptRows] = await db.collectionofficer
             .promise()
             .query(`SELECT id FROM dashuserapartment WHERE customerId = ?`, [
               cusId,
             ]);
 
           if (existingAptRows.length > 0) {
-            await db.marketPlace.promise().query(
+            await db.collectionofficer.promise().query(
               `UPDATE dashuserapartment
                    SET buildingNo = ?, buildingName = ?, unitNo = ?, floorNo = ?, houseNo = ?, streetName = ?
                  WHERE customerId = ?`,
@@ -898,7 +1115,7 @@ exports.updateResidentialAddress = async (cusId, data) => {
               ],
             );
           } else {
-            await db.marketPlace.promise().query(
+            await db.collectionofficer.promise().query(
               `INSERT INTO dashuserapartment
                    (customerId, buildingNo, buildingName, unitNo, floorNo, houseNo, streetName)
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -924,13 +1141,13 @@ exports.updateResidentialAddress = async (cusId, data) => {
 };
 
 exports.getAddressBook = async (customerId) => {
-  const [houseRows] = await db.marketPlace
+  const [houseRows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM house WHERE customerId = ? ORDER BY id DESC`, [
       customerId,
     ]);
 
-  const [apartmentRows] = await db.marketPlace
+  const [apartmentRows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM apartment WHERE customerId = ? ORDER BY id DESC`, [
       customerId,
@@ -993,7 +1210,7 @@ const parsePhone = (phone) => {
 
 exports.getSavedAddress = async (addressId, type) => {
   const table = type === "Apartment" ? "apartment" : "house";
-  const [rows] = await db.marketPlace
+  const [rows] = await db.collectionofficer
     .promise()
     .query(`SELECT * FROM ${table} WHERE id = ? LIMIT 1`, [addressId]);
   if (!rows.length) return null;
@@ -1033,11 +1250,13 @@ exports.addSavedAddress = async ({
   unitNo,
   floorNo,
 }) => {
-  const conn = await db.marketPlace.promise().getConnection();
+  const conn = await db.collectionofficer.promise().getConnection();
   try {
     await conn.beginTransaction();
 
     // ── 1. Check for duplicate saveAs across both tables for this customer ──
+    // This is the ONLY uniqueness constraint — address location and
+    // phone numbers are intentionally allowed to repeat.
     const [[hDup]] = await conn.query(
       `SELECT id FROM house WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) LIMIT 1`,
       [customerId, saveAs],
@@ -1055,112 +1274,10 @@ exports.addSavedAddress = async ({
       throw err;
     }
 
-    // ── 2. Check for duplicate physical address location ──
-    if (buildingType === "Apartment") {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND LOWER(TRIM(buildingNo))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(buildingName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(unitNo))       = LOWER(TRIM(?))
-           AND LOWER(TRIM(floorNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(houseNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))         = LOWER(TRIM(?))
-         LIMIT 1`,
-        [
-          customerId,
-          buildingNo,
-          buildingName,
-          unitNo,
-          floorNo,
-          houseNo,
-          streetName,
-          nearestCity || "",
-        ],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This apartment address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    } else {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND LOWER(TRIM(houseNo))    = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))       = LOWER(TRIM(?))
-         LIMIT 1`,
-        [customerId, houseNo, streetName, nearestCity || ""],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This house address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    }
-
     const phone1Parsed = parsePhone(billingPhone1);
     const phone2Parsed = billingPhone2
       ? parsePhone(billingPhone2)
       : { code: null, number: null };
-
-    // ── 3. Check for duplicate phone number across both tables for this customer ──
-    const targetPhone1 = phone1Parsed.number;
-    const targetPhone2 = phone2Parsed.number;
-
-    if (targetPhone1) {
-      const [[hPhoneDup]] = await conn.query(
-        `SELECT id FROM house 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone1, targetPhone1],
-      );
-      const [[aPhoneDup]] = await conn.query(
-        `SELECT id FROM apartment 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone1, targetPhone1],
-      );
-      if (hPhoneDup || aPhoneDup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 1 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
-        throw err;
-      }
-    }
-
-    if (targetPhone2) {
-      const [[hPhone2Dup]] = await conn.query(
-        `SELECT id FROM house 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone2, targetPhone2],
-      );
-      const [[aPhone2Dup]] = await conn.query(
-        `SELECT id FROM apartment 
-         WHERE customerId = ? 
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?)) LIMIT 1`,
-        [customerId, targetPhone2, targetPhone2],
-      );
-      if (hPhone2Dup || aPhone2Dup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 2 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
-        throw err;
-      }
-    }
 
     let insertId;
     if (buildingType === "Apartment") {
@@ -1254,7 +1371,7 @@ exports.updateSavedAddress = async (
   },
 ) => {
   const table = type === "Apartment" ? "apartment" : "house";
-  const conn = await db.marketPlace.promise().getConnection();
+  const conn = await db.collectionofficer.promise().getConnection();
   try {
     await conn.beginTransaction();
 
@@ -1291,6 +1408,8 @@ exports.updateSavedAddress = async (
       : { code: null, number: null };
 
     // ── 1. Check duplicate saveAs (excluding current record by id) ──
+    // This is the ONLY uniqueness constraint — address location and
+    // phone numbers are intentionally allowed to repeat.
     if (resolvedCustomerId && saveAs) {
       const [[hSaveDup]] = await conn.query(
         `SELECT id FROM house WHERE customerId = ? AND LOWER(saveAs) = LOWER(?) AND id != ? LIMIT 1`,
@@ -1306,119 +1425,6 @@ exports.updateSavedAddress = async (
           `An address named "${saveAs}" already exists for this customer.`,
         );
         err.code = "DUPLICATE_SAVE_AS";
-        throw err;
-      }
-    }
-
-    // ── 2. Check duplicate physical address location (excluding current record by id) ──
-    if (type === "Apartment") {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND LOWER(TRIM(buildingNo))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(buildingName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(unitNo))       = LOWER(TRIM(?))
-           AND LOWER(TRIM(floorNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(houseNo))      = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName))   = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))         = LOWER(TRIM(?))
-           AND id != ?
-         LIMIT 1`,
-        [
-          resolvedCustomerId,
-          buildingNo,
-          buildingName,
-          unitNo,
-          floorNo,
-          houseNo,
-          streetName,
-          nearestCity || "",
-          addressId,
-        ],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This apartment address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    } else {
-      const [[locDup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND LOWER(TRIM(houseNo))    = LOWER(TRIM(?))
-           AND LOWER(TRIM(streetName)) = LOWER(TRIM(?))
-           AND LOWER(TRIM(city))       = LOWER(TRIM(?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, houseNo, streetName, nearestCity || "", addressId],
-      );
-      if (locDup) {
-        await conn.rollback();
-        const err = new Error(
-          "This house address already exists. Please use a different address.",
-        );
-        err.code = "DUPLICATE_ADDRESS";
-        throw err;
-      }
-    }
-
-    // ── 3. Check duplicate phone number (excluding current record by id — works for both same-type and type-change edits) ──
-    const targetPhone1 = phone1Parsed.number;
-    const targetPhone2 = phone2Parsed.number;
-
-    if (resolvedCustomerId && targetPhone1) {
-      const [[hPhoneDup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone1, targetPhone1, addressId],
-      );
-      const [[aPhoneDup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone1, targetPhone1, addressId],
-      );
-      if (hPhoneDup || aPhoneDup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 1 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
-        throw err;
-      }
-    }
-
-    if (resolvedCustomerId && targetPhone2) {
-      const [[hPhone2Dup]] = await conn.query(
-        `SELECT id FROM house
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone2, targetPhone2, addressId],
-      );
-      const [[aPhone2Dup]] = await conn.query(
-        `SELECT id FROM apartment
-         WHERE customerId = ?
-           AND (billingPhone1 = ? OR (billingPhone2 IS NOT NULL AND billingPhone2 = ?))
-           AND id != ?
-         LIMIT 1`,
-        [resolvedCustomerId, targetPhone2, targetPhone2, addressId],
-      );
-      if (hPhone2Dup || aPhone2Dup) {
-        await conn.rollback();
-        const err = new Error(
-          "Phone Number - 2 is already saved in another address.",
-        );
-        err.code = "DUPLICATE_PHONE";
         throw err;
       }
     }
@@ -1557,4 +1563,25 @@ exports.updateSavedAddress = async (
   } finally {
     conn.release();
   }
+};
+
+exports.resubmitWholesaleBr = async (customerId, brImg) => {
+  const [cusRows] = await db.collectionofficer.promise().query(
+    "SELECT id FROM marketplaceusers WHERE id = ? OR cusId = ? LIMIT 1",
+    [customerId, customerId]
+  );
+  if (cusRows.length === 0) {
+    throw new Error("Customer not found");
+  }
+  const userId = cusRows[0].id;
+  const [insertResult] = await db.collectionofficer.promise().query(
+    "INSERT INTO pendingwholesaleusers (userId, approveStatus, brImg, createdAt) VALUES (?, 'To Review', ?, NOW())",
+    [userId, brImg]
+  );
+  return {
+    id: insertResult.insertId,
+    userId,
+    approveStatus: "To Review",
+    brImg,
+  };
 };

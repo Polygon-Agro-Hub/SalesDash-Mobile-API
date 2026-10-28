@@ -10,12 +10,11 @@ exports.sendSMS = async (phoneNumber, message) => {
       throw new Error(`Invalid phone number: ${phoneNumber}`);
     }
 
-    const apiKey = process.env.SMS_API_KEY;
-    const senderId = process.env.SMS_SENDER_ID || "PolygonAgro";
+    const apiKey = process.env.SHOUTOUT_API_KEY;
 
     // Prepare request data
     const requestData = {
-      source: senderId,
+      source: "Polygon",
       destinations: [formattedNumber],
       content: { sms: message },
       transports: ["sms"],
@@ -133,3 +132,76 @@ function formatPhoneNumber(phoneNumber) {
 
   return cleaned;
 }
+
+/**
+ * Send OTP using ShoutOUT OTP service
+ */
+exports.sendOTP = async ({ destination, phoneNumber, content, message, source = "Polygon" }) => {
+  const dest = destination || phoneNumber;
+  if (!dest) {
+    throw new Error("Phone number / destination is required");
+  }
+
+  const cleanedPhoneNumber = dest.toString().replace(/[^\d]/g, "");
+  const smsText = (content && content.sms) ? content.sms : (message || "");
+  const apiKey = process.env.SHOUTOUT_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("SHOUTOUT_API_KEY is not configured on the server");
+  }
+
+  const body = {
+    source: source || "Polygon",
+    transport: "sms",
+    content: {
+      sms: smsText,
+    },
+    destination: cleanedPhoneNumber,
+  };
+
+  const headers = {
+    Authorization: `Apikey ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  const response = await axios.post(
+    "https://api.getshoutout.com/otpservice/send",
+    body,
+    { headers }
+  );
+
+  return response.data;
+};
+
+/**
+ * Verify OTP using ShoutOUT OTP service
+ */
+exports.verifyOTP = async ({ code, referenceId }) => {
+  if (!code || !referenceId) {
+    throw new Error("code and referenceId are required");
+  }
+
+  const apiKey = process.env.SHOUTOUT_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("SHOUTOUT_API_KEY is not configured on the server");
+  }
+
+  const headers = {
+    Authorization: `Apikey ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  const body = {
+    code,
+    referenceId,
+  };
+
+  const response = await axios.post(
+    "https://api.getshoutout.com/otpservice/verify",
+    body,
+    { headers }
+  );
+
+  return response.data;
+};

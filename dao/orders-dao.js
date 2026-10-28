@@ -1,16 +1,18 @@
 const db = require("../startup/database");
 const smsService = require("../services/sms-service");
+const orderSmsHelper = require("../services/order-sms-helper");
 const QRCode = require("qrcode");
 const uploadFileToS3 = require("../middleware/s3upload");
 
 exports.processOrder = async (orderData, salesAgentId) => {
   console.time("process-order");
+  const orderPlacedDate = new Date();
   let connection;
   let transactionStarted = false;
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     // Start transaction
     await connection.beginTransaction();
@@ -28,11 +30,124 @@ exports.processOrder = async (orderData, salesAgentId) => {
     );
 
     // STEP 3: Insert into processorders table SECOND
-    const processOrderId = await insertProcessOrder(
-      connection,
-      orderId,
-      orderData,
-    );
+    const rawScheduleType = orderData.sheduleType || orderData.scheduleType;
+    let normScheduleType = "One Time";
+    if (
+      rawScheduleType === "Once a Week" ||
+      rawScheduleType === "Twice a Week"
+    ) {
+      normScheduleType = rawScheduleType;
+    }
+
+    let processOrderId;
+    let processOrderIds = [];
+
+    const isRecurring =
+      normScheduleType === "Once a Week" || normScheduleType === "Twice a Week";
+
+    if (isRecurring) {
+      const targetDates = [];
+      if (
+        Array.isArray(orderData.calculatedOrders) &&
+        orderData.calculatedOrders.length > 0
+      ) {
+        for (const o of orderData.calculatedOrders) {
+          const d = parseDateValue(o.date || o.dateStr);
+          if (d) targetDates.push(d);
+        }
+      }
+
+      if (targetDates.length === 0) {
+        const daysArr =
+          orderData.selectedDays ||
+          orderData.recurringDays ||
+          (normScheduleType === "Twice a Week" ? ["Tu", "Sa"] : ["Tu"]);
+        const numWeeks =
+          parseInt(orderData.validityPeriod || orderData.validityWeeks, 10) ||
+          4;
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() + 3);
+        minDate.setHours(0, 0, 0, 0);
+
+        const allComputed = [];
+        daysArr.forEach((d) => {
+          const targetDay = DAY_MAP[d] !== undefined ? DAY_MAP[d] : 2;
+          const firstDate = new Date(minDate);
+          while (firstDate.getDay() !== targetDay) {
+            firstDate.setDate(firstDate.getDate() + 1);
+          }
+          for (let w = 0; w < numWeeks; w++) {
+            const nextDate = new Date(firstDate);
+            nextDate.setDate(firstDate.getDate() + w * 7);
+            allComputed.push(nextDate);
+          }
+        });
+        allComputed.sort((a, b) => a.getTime() - b.getTime());
+        targetDates.push(...allComputed);
+      }
+
+      for (let i = 0; i < targetDates.length; i++) {
+        const sDate = targetDates[i];
+        const isFirstOrder = i === 0;
+
+        const isFreeDelivery = Boolean(
+          orderData.isCoupon &&
+          orderData.couponType &&
+          (String(orderData.couponType).toLowerCase().includes("free") ||
+            String(orderData.couponType).toLowerCase().includes("delivery")),
+        );
+        const originalDeliveryCharge = parseFloat(
+          orderData.initialDeliveryCharge ||
+          orderData.normalDeliveryCharge ||
+          (isFreeDelivery ? 350 : orderData.deliveryCharge) ||
+          0,
+        );
+        const couponVal = isFreeDelivery
+          ? 0
+          : parseFloat(orderData.couponValue) || 0;
+
+        const currentOrderData = isFirstOrder
+          ? orderData
+          : {
+            ...orderData,
+            isCoupon: 0,
+            couponType: null,
+            couponValue: 0.0,
+            deliveryCharge: originalDeliveryCharge,
+            fullTotal:
+              parseFloat(orderData.normalGrandTotal) ||
+              Math.max(
+                0,
+                (parseFloat(orderData.fullTotal) || 0) +
+                couponVal +
+                (isFreeDelivery ? originalDeliveryCharge : 0),
+              ),
+            total:
+              parseFloat(orderData.normalTotal) ||
+              parseFloat(orderData.total) ||
+              null,
+          };
+
+        const pId = await insertProcessOrder(
+          connection,
+          orderId,
+          currentOrderData,
+          sDate,
+        );
+        processOrderIds.push(pId);
+      }
+      processOrderId = processOrderIds[0];
+    } else {
+      // One Time
+      const date1 = parseDateValue(orderData.sheduleDate);
+      processOrderId = await insertProcessOrder(
+        connection,
+        orderId,
+        orderData,
+        date1,
+      );
+      processOrderIds = [processOrderId];
+    }
 
     await assignCenterToOrder(connection, orderId, orderData, userDetails);
 
@@ -41,27 +156,40 @@ exports.processOrder = async (orderData, salesAgentId) => {
 
     await updateSalesAgentStars(connection, salesAgentId);
 
+    await updateUserCreditInfo(connection, orderData.userId);
+
     // STEP 5: Process order based on isPackage flag
     if (orderData.isPackage === 1) {
-      // Package order - Insert into orderpackage table using processOrderId
-      await insertOrderPackage(connection, processOrderId, orderData);
-
-      // Process items array for package orders (NEW LOGIC)
-      if (orderData.items && orderData.items.length > 0) {
-        await insertAdditionalItems(connection, orderId, orderData.items);
+      // Package order - Insert into orderpackage table for each processOrderId
+      for (const pId of processOrderIds) {
+        await insertOrderPackage(connection, pId, orderData);
       }
 
-      // Process additional items if present for package orders (EXISTING LOGIC)
-      if (orderData.additionalItems && orderData.additionalItems.length > 0) {
-        await insertAdditionalItems(
-          connection,
-          orderId,
-          orderData.additionalItems,
-        );
+      // Insert additional items for each process order (Delivery 1 = Delivery 2 = Delivery 3...)
+      for (const pId of processOrderIds) {
+        if (orderData.items && orderData.items.length > 0) {
+          await insertAdditionalItems(
+            connection,
+            orderId,
+            orderData.items,
+            pId,
+          );
+        }
+
+        if (orderData.additionalItems && orderData.additionalItems.length > 0) {
+          await insertAdditionalItems(
+            connection,
+            orderId,
+            orderData.additionalItems,
+            pId,
+          );
+        }
       }
     } else {
-      // Regular order (isPackage = 0) - Items go to orderadditionalitems table
-      await processRegularOrderItems(connection, orderId, orderData);
+      // Regular order (isPackage = 0) - Insert items for each process order
+      for (const pId of processOrderIds) {
+        await processRegularOrderItems(connection, orderId, orderData, pId);
+      }
     }
 
     // Commit transaction if everything succeeded
@@ -81,11 +209,75 @@ exports.processOrder = async (orderData, salesAgentId) => {
     } catch (smsError) {
       // Log SMS error but don't fail the entire order since it's already committed
       console.error("Failed to send order confirmation SMS:", smsError);
-      // You might want to add this to a retry queue or notification system
+    }
+
+    // STEP 7: Payment Reminder (push + socket + ordernotfication insert)
+    // ONLY for CARD orders whose schedule date is the earliest possible date (today + 3).
+    // Example: placed on the 16th -> only the order scheduled for the 19th gets it.
+    // isConfirmed = 1 is set in insertProcessOrder exactly for that date.
+    const isCardPayment =
+      orderData.paymentMethod &&
+      String(orderData.paymentMethod).toLowerCase().includes("card");
+
+    if (isCardPayment && processOrderIds && processOrderIds.length > 0) {
+      try {
+        const polygonNotificationService = require("../services/polygon-notification-service");
+
+        if (
+          typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
+          "function"
+        ) {
+          const [procRows] = await db.collectionofficer.promise().query(
+            `SELECT id, invNo, sheduleDate
+               FROM processorders
+              WHERE id IN (?) AND isConfirmed = 1`,
+            [processOrderIds],
+          );
+
+          // Other dates (23rd, 26th, ...) are skipped: no notification, no DB insert
+          for (const row of procRows || []) {
+            polygonNotificationService
+              .notifyPolygonPaymentReminder({
+                processOrderId: row.id,
+                invNo: row.invNo,
+                scheduledDate: row.sheduleDate,
+                orderPlacedDate,
+                userId: orderData.userId,
+              })
+              .catch((err) => {
+                console.warn(
+                  `⚠️ [Payment Reminder] Error notifying Polygon for processOrder ${row.id}:`,
+                  err?.message,
+                );
+              });
+          }
+        }
+      } catch (notifErr) {
+        console.warn(
+          "⚠️ [Payment Reminder] Failed to dispatch Polygon card payment reminder:",
+          notifErr?.message,
+        );
+      }
+    }
+
+    let primaryInvoiceNumber = null;
+    if (processOrderId) {
+      const [invRows] = await connection.execute(
+        `SELECT invNo FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+        [processOrderId],
+      );
+      if (invRows.length > 0) {
+        primaryInvoiceNumber = invRows[0].invNo;
+      }
     }
 
     console.timeEnd("process-order");
-    return { orderId, processOrderId };
+    return {
+      orderId,
+      processOrderId,
+      processOrderIds,
+      invoiceNumber: primaryInvoiceNumber,
+    };
   } catch (error) {
     console.error("Error in processOrder:", error);
 
@@ -151,6 +343,61 @@ function getBuildingTypeInt(buildingType) {
     4: 4,
   };
   return buildingTypeMapping[buildingType] || 1;
+}
+
+const DAY_MAP = { Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6, Su: 0 };
+
+function getUpcomingDeliveryDates(selectedDays, minDaysAhead = 3) {
+  const minDate = new Date();
+  minDate.setDate(minDate.getDate() + minDaysAhead);
+  minDate.setHours(0, 0, 0, 0);
+
+  const daysArr =
+    Array.isArray(selectedDays) && selectedDays.length > 0
+      ? selectedDays
+      : ["Tu"];
+
+  return daysArr
+    .map((d) => {
+      const targetDay = DAY_MAP[d] !== undefined ? DAY_MAP[d] : 2;
+      const dt = new Date(minDate);
+      while (dt.getDay() !== targetDay) {
+        dt.setDate(dt.getDate() + 1);
+      }
+      return dt;
+    })
+    .sort((a, b) => a.getTime() - b.getTime());
+}
+
+function parseDateValue(val) {
+  if (!val) return null;
+  if (val instanceof Date && !isNaN(val.getTime())) return val;
+  if (typeof val === "string") {
+    const parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) return parsed;
+    const match = val.match(/^(\d{1,2})\s([A-Za-z]{3})\s(\d{4})$/);
+    if (match) {
+      const monthNames = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      const m = monthNames.indexOf(match[2]);
+      if (m !== -1) {
+        return new Date(parseInt(match[3], 10), m, parseInt(match[1], 10));
+      }
+    }
+  }
+  return null;
 }
 
 async function assignCenterToOrder(
@@ -235,13 +482,40 @@ async function insertMainOrder(
     fullTotal,
     discount = 0,
     sheduleType = "One Time",
+    scheduleType,
     sheduleDate,
     sheduleTime,
+    validityPeriod,
+    validityWeeks,
+    selectedDays,
+    recurringDays,
     isPackage,
     deliveryCharge = 0,
     isFinalizeImdt = 0,
     isPaySMS = 0,
   } = orderData;
+
+  const rawScheduleType = sheduleType || scheduleType;
+  let normScheduleType = "One Time";
+  if (rawScheduleType === "Once a Week" || rawScheduleType === "Twice a Week") {
+    normScheduleType = rawScheduleType;
+  }
+
+  const isRecurring =
+    normScheduleType === "Once a Week" || normScheduleType === "Twice a Week";
+  const parsedValidityPeriod = isRecurring
+    ? parseInt(validityPeriod || validityWeeks, 10) || null
+    : null;
+
+  const rawDays = selectedDays || recurringDays;
+  let parsedSelectedDays = null;
+  if (isRecurring && rawDays) {
+    if (typeof rawDays === "string") {
+      parsedSelectedDays = rawDays;
+    } else if (Array.isArray(rawDays)) {
+      parsedSelectedDays = JSON.stringify(rawDays);
+    }
+  }
 
   // Normalize a phone number: strip country code / leading 0, return last 9 digits
   const normalizePhone = (raw) => {
@@ -260,8 +534,13 @@ async function insertMainOrder(
     return digits.slice(-9);
   };
 
-  const orderTitle =
-    orderData.deliveryAddress?.billingTitle || userDetails.title;
+  const orderTitle = (
+    orderData.deliveryAddress?.billingTitle ||
+    userDetails.title ||
+    ""
+  )
+    .trim()
+    .replace(/\.$/, "");
   const orderFullName = orderData.deliveryAddress?.billingName
     ? orderData.deliveryAddress.billingName.trim()
     : `${userDetails.firstName} ${userDetails.lastName}`.trim();
@@ -323,15 +602,14 @@ async function insertMainOrder(
     formattedDate = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
   }
 
-  // Insert order record with user data from marketplaceusers table INCLUDING longitude and latitude
+  // Insert order record with user data from marketplaceusers table INCLUDING longitude, latitude, validityPeriod, and selectedDays (sheduleDate is stored only in processorders)
   const [result] = await connection.query(
     `INSERT INTO orders (
           userId,  orderApp, delivaryMethod, centerId, buildingType,
           title, fullName, phonecode1, phone1, phonecode2, phone2,
-          isCoupon, couponValue, total, fullTotal, discount,
-          sheduleType, sheduleDate, sheduleTime, isPackage, 
-          longitude, latitude, deliveryCharge, isFinalizeImdt, isPaySMS, createdAt
-        ) VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          sheduleType, validityPeriod, selectedDays, sheduleTime, isPackage, 
+          longitude, latitude, isFinalizeImdt, isPaySMS, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       userId,
       orderApp,
@@ -344,18 +622,13 @@ async function insertMainOrder(
       orderPhone1,
       orderPhonecode2,
       orderPhone2,
-      isCoupon,
-      couponValue,
-      total,
-      fullTotal,
-      discount,
-      sheduleType,
-      formattedDate,
+      normScheduleType,
+      parsedValidityPeriod,
+      parsedSelectedDays,
       sheduleTime,
       isPackage,
       longitude,
       latitude,
-      deliveryCharge,
       isFinalizeImdt ? 1 : 0,
       isPaySMS ? 1 : 0,
     ],
@@ -392,56 +665,145 @@ async function generateQRCode(text) {
   }
 }
 
-async function insertProcessOrder(connection, orderId, orderData) {
-  try {
-    // Generate date prefix (YYMMDD)
-    const today = new Date();
-    const year = today.getFullYear().toString().slice(-2); // Last 2 digits of year (25)
-    const month = (today.getMonth() + 1).toString().padStart(2, "0"); // Month (08)
-    const day = today.getDate().toString().padStart(2, "0"); // Day (04)
+const BONUS_PER_TIER = 250;
+const TIER_THRESHOLD = 25000;
 
-    const datePrefix = `${year}${month}${day}`;
+async function updateUserCreditInfo(connection, userId) {
+  // Lock the user row so two concurrent requests can't double-apply a bonus
+  const [userRows] = await connection.query(
+    `SELECT creditLimit, creditLimitBonusTier
+       FROM marketplaceusers WHERE id = ? FOR UPDATE`,
+    [userId],
+  );
+  if (!userRows.length) throw new Error(`User not found with ID: ${userId}`);
 
-    // Get the current max sequence number for today (last 4 digits)
-    const [sequenceResult] = await connection.query(
-      `
-            SELECT MAX(CAST(RIGHT(invNo, 4) AS UNSIGNED)) as maxSequence
-            FROM processorders 
-            WHERE invNo LIKE ? 
-              AND LENGTH(invNo) = 10
-              AND invNo REGEXP '^[0-9]+$'
-        `,
-      [`${datePrefix}%`],
+  const currentCreditLimit = parseFloat(userRows[0].creditLimit || 0);
+  const currentTierCount = Math.floor(
+    parseFloat(userRows[0].creditLimitBonusTier || 0) / TIER_THRESHOLD,
+  );
+
+  // Count total delivered amount from processorders
+  const [rows] = await connection.query(
+    `SELECT COALESCE(SUM(p.fullTotal), 0) AS deliveredTotal
+       FROM processorders p
+       JOIN orders o ON p.orderid = o.id
+      WHERE o.userId = ?
+        AND p.status IN ('Delivered', 'Picked up')`,
+    [userId],
+  );
+  const deliveredTotal = parseFloat(rows[0].deliveredTotal || 0);
+
+  const earnedTierCount = Math.floor(deliveredTotal / TIER_THRESHOLD);
+  const finalTierCount = Math.max(currentTierCount, earnedTierCount);
+  const newTiersCrossed = finalTierCount - currentTierCount;
+
+  const finalCreditLimit =
+    currentCreditLimit + newTiersCrossed * BONUS_PER_TIER;
+  const finalTierValue = finalTierCount * TIER_THRESHOLD;
+
+  // Only write when a new tier was crossed
+  if (newTiersCrossed > 0) {
+    await connection.query(
+      `UPDATE marketplaceusers
+          SET creditLimit = ?, creditLimitBonusTier = ?
+        WHERE id = ?`,
+      [finalCreditLimit, finalTierValue, userId],
     );
+  }
 
-    // Calculate next sequence number (4 digits)
-    let sequenceNumber = 1;
-    if (sequenceResult[0] && sequenceResult[0].maxSequence !== null) {
-      sequenceNumber = sequenceResult[0].maxSequence + 1;
-    }
+  return {
+    deliveredTotal,
+    creditLimit: finalCreditLimit,
+    creditLimitBonusTier: finalTierValue,
+  };
+}
 
-    // Generate final 10-digit invoice number: YYMMDDXXXX
-    const invNo = `${datePrefix}${sequenceNumber.toString().padStart(4, "0")}`;
+async function insertProcessOrder(
+  connection,
+  orderId,
+  orderData,
+  targetScheduleDate = null,
+) {
+  try {
+    await connection.query("CALL generate_invoice_number(@new_inv_no)");
+    const [invNoResult] = await connection.query(
+      "SELECT @new_inv_no AS inv_no",
+    );
+    const invNo = invNoResult[0].inv_no;
 
-    // ✨ GENERATE QR CODE containing the invoice number
     const qrCodeDataURL = await generateQRCode(invNo);
 
-    // Normalize paymentMethod: "Card" or "Cash"
     const paymentMethodValue =
       orderData.paymentMethod &&
         orderData.paymentMethod.toLowerCase().includes("card")
         ? "Card"
         : "Cash";
 
-    const isCardPayment = paymentMethodValue === "Card";
     const isPaidValue = 0;
     const amountValue = 0.0;
 
-    // Insert process order record WITH QR CODE
+    // isConfirmed = 1 only when:
+    // 1. Order type qualifies:
+    //    - Only alacarte items (isPackage === 0)
+    //    - Only packages OR packages + alacarte items (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
+    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff)
+    const now = new Date();
+    const isAfterCutoff = now.getHours() >= 18;
+    const extraDays = isAfterCutoff ? 4 : 3;
+    const epsd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + extraDays,
+    );
+    epsd.setHours(0, 0, 0, 0);
+
+    const schedDate = targetScheduleDate ? new Date(targetScheduleDate) : null;
+    const isEpsdDate =
+      schedDate &&
+      !isNaN(schedDate.getTime()) &&
+      schedDate.getFullYear() === epsd.getFullYear() &&
+      schedDate.getMonth() === epsd.getMonth() &&
+      schedDate.getDate() === epsd.getDate();
+
+    const isPackageOrder = Number(orderData.isPackage) === 1;
+    const isFinalizeImmediate =
+      orderData.isFinalizeImdt !== undefined &&
+        orderData.isFinalizeImdt !== null
+        ? Number(orderData.isFinalizeImdt) === 1
+        : !isPackageOrder;
+
+    const isAutoConfirmType = !isPackageOrder || isFinalizeImmediate;
+
+    const isConfirmedValue = isAutoConfirmType && isEpsdDate ? 1 : 0;
+
+    const isCouponVal = orderData.isCoupon ? 1 : 0;
+    const couponTypeVal = orderData.couponType || null;
+    const couponValueVal = parseFloat(orderData.couponValue) || 0.0;
+    const totalVal =
+      orderData.total !== undefined && orderData.total !== null
+        ? parseFloat(orderData.total)
+        : null;
+    const fullTotalVal =
+      orderData.fullTotal !== undefined && orderData.fullTotal !== null
+        ? parseFloat(orderData.fullTotal)
+        : null;
+    const discountVal =
+      orderData.discount !== undefined && orderData.discount !== null
+        ? parseFloat(orderData.discount)
+        : 0.0;
+    const deliveryChargeVal =
+      orderData.deliveryCharge !== undefined &&
+        orderData.deliveryCharge !== null
+        ? parseFloat(orderData.deliveryCharge)
+        : 0.0;
+
+    // Insert process order record WITH QR CODE and sheduleDate
     const [result] = await connection.query(
       `INSERT INTO processorders (
-          orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    orderid, invNo, transactionId, paymentMethod, ispaid, amount, creditPaid, moneyPaid, status, qrCode, sheduleDate,
+    isConfirmed,
+    isCoupon, couponType, couponValue, total, fullTotal, discount, deliveryCharge, createdAt
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         orderId,
         invNo,
@@ -453,6 +815,15 @@ async function insertProcessOrder(connection, orderId, orderData) {
         0.0,
         "Ordered",
         qrCodeDataURL,
+        targetScheduleDate ? new Date(targetScheduleDate) : null,
+        isConfirmedValue,
+        isCouponVal,
+        couponTypeVal,
+        couponValueVal,
+        totalVal,
+        fullTotalVal,
+        discountVal,
+        deliveryChargeVal,
       ],
     );
 
@@ -534,15 +905,32 @@ async function insertOrderPackage(connection, processOrderId, orderData) {
 }
 
 // Helper function to process regular order items (isPackage = 0)
-async function processRegularOrderItems(connection, orderId, orderData) {
-  if (!orderData.items || orderData.items.length === 0) {
+async function processRegularOrderItems(
+  connection,
+  orderId,
+  orderData,
+  processOrderId = null,
+) {
+  const items =
+    orderData.items && orderData.items.length > 0
+      ? orderData.items
+      : orderData.additionalItems && orderData.additionalItems.length > 0
+        ? orderData.additionalItems
+        : null;
+
+  if (!items || items.length === 0) {
     return;
   }
 
-  await insertAdditionalItems(connection, orderId, orderData.items);
+  await insertAdditionalItems(connection, orderId, items, processOrderId);
 }
 
-async function insertAdditionalItems(connection, orderId, items) {
+async function insertAdditionalItems(
+  connection,
+  orderId,
+  items,
+  proOrderId = null,
+) {
   if (!items || items.length === 0) return;
 
   for (const item of items) {
@@ -551,9 +939,9 @@ async function insertAdditionalItems(connection, orderId, items) {
     const normalPrice = price + discount;
 
     await connection.query(
-      "INSERT INTO orderadditionalitems (orderid, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+      "INSERT INTO orderadditionalitems ( proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES ( ?, ?, ?, ?, ?, ?, ?, NOW())",
       [
-        orderId,
+        proOrderId,
         item.productId || item.id,
         item.qty || item.quantity,
         item.unit || item.unitType,
@@ -565,7 +953,7 @@ async function insertAdditionalItems(connection, orderId, items) {
   }
 }
 
-// Enhanced helper function to send order confirmation SMS with total price, schedule date, and invoice number
+// Enhanced helper function to send order confirmation SMS with dedicated orderSmsHelper
 async function sendOrderConfirmationSMS(
   orderId,
   processOrderId,
@@ -578,10 +966,6 @@ async function sendOrderConfirmationSMS(
     // Format phone number
     const phoneNumber = `${userDetails.phoneCode}${userDetails.phoneNumber}`;
 
-    // Create SMS message
-    const customerName =
-      `${userDetails.firstName} ${userDetails.lastName}`.trim();
-
     // Get the invoice number from processorders table using processOrderId
     const [invoiceResult] = await connection.query(
       "SELECT invNo FROM processorders WHERE id = ?",
@@ -593,54 +977,30 @@ async function sendOrderConfirmationSMS(
         ? invoiceResult[0].invNo
         : processOrderId;
 
-    // Format total price (assuming it's in LKR)
-    const totalPrice = parseFloat(orderData.fullTotal);
-    const formattedPrice = `Rs. ${totalPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    // Delivery date (One Time or first recurring order date)
+    const rawDeliveryDate =
+      orderData.sheduleDate ||
+      (Array.isArray(orderData.calculatedOrders) &&
+        (orderData.calculatedOrders[0]?.date ||
+          orderData.calculatedOrders[0]?.dateStr));
 
-    // Format schedule date for SMS
-    let formattedScheduleDate = "";
-    if (orderData.sheduleDate) {
-      try {
-        // If it's already in YYYY-MM-DD format
-        if (orderData.sheduleDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          const date = new Date(orderData.sheduleDate);
-          formattedScheduleDate = date.toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          });
-        }
-        // If it's in "DD MMM YYYY" format
-        else if (orderData.sheduleDate.match(/^\d{1,2}\s[A-Za-z]{3}\s\d{4}$/)) {
-          formattedScheduleDate = orderData.sheduleDate;
-        }
-        // Default fallback
-        else {
-          formattedScheduleDate = orderData.sheduleDate;
-        }
-      } catch (dateError) {
-        console.warn("Error formatting schedule date for SMS:", dateError);
-        formattedScheduleDate = orderData.sheduleDate;
-      }
-    }
+    const isPackageOrder = Number(orderData.isPackage) === 1 ? 1 : 0;
+    const isFinalizeImdt =
+      orderData.isFinalizeImdt !== undefined &&
+        orderData.isFinalizeImdt !== null
+        ? Number(orderData.isFinalizeImdt)
+        : 0;
 
-    // Format schedule time
-    const scheduleTime = orderData.sheduleTime || "";
-
-    // Build enhanced SMS message (keeping it concise for SMS limits)
-    let smsMessage = `Dear ${customerName}, your order has been successfully placed!\n\n`;
-    smsMessage += `Invoice: #${invoiceNo}\n`;
-    smsMessage += `Total: ${formattedPrice}\n`;
-
-    if (formattedScheduleDate) {
-      smsMessage += `Delivery Date: ${formattedScheduleDate}`;
-      smsMessage += `\n`;
-    }
-
-    smsMessage += `\nThank you for choosing Polygon Holdings! Our team will contact you shortly.\nSupport: +94 770111999`;
-
-    // Actually call the SMS service
-    const smsResult = await smsService.sendSMS(phoneNumber, smsMessage);
+    // Call the dedicated SMS helper function
+    const smsResult = await orderSmsHelper.sendOrderConfirmationSMSHelper({
+      phoneNumber,
+      invoiceNo,
+      deliveryDate: rawDeliveryDate,
+      paymentMethod: orderData.paymentMethod,
+      isPackage: isPackageOrder,
+      isFinalizeImdt,
+      orderPlacedTime: new Date(),
+    });
 
     if (smsResult && smsResult.success) {
       return smsResult;
@@ -649,7 +1009,7 @@ async function sendOrderConfirmationSMS(
       throw new Error("SMS sending failed");
     }
   } catch (error) {
-    console.error("Error sending enhanced order confirmation SMS:", error);
+    console.error("Error sending order confirmation SMS:", error);
     // Re-throw the error so the calling function can decide how to handle it
     throw error;
   }
@@ -662,7 +1022,7 @@ exports.getDataCustomerId = async (customerId) => {
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     // First query to get basic customer info including phoneCode and phoneNumber
     const customerSql = `
@@ -723,20 +1083,19 @@ exports.getDataCustomerId = async (customerId) => {
 exports.getDeliveredOrdersTotal = async (userId) => {
   let connection;
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
+
     const [rows] = await connection.query(
-      `SELECT COALESCE(SUM(p.amount), 0) AS deliveredTotal
-       FROM processorders p
-       INNER JOIN orders o ON o.id = p.orderId
-       WHERE o.userId = ?
-         AND p.status IN ('Delivered', 'Picked up')`,
+      `SELECT creditLimit
+       FROM marketplaceusers
+       WHERE id = ?`,
       [userId],
     );
-    const deliveredTotal = parseFloat(rows[0]?.deliveredTotal || 0);
-    // Base 2000, +250 for every full 25000 in total order value
-    const tiersEarned = Math.floor(deliveredTotal / 25000);
-    const creditBalance = 2000 + tiersEarned * 250;
-    return { deliveredTotal, creditBalance };
+
+    // User not found
+    if (!rows.length) return null;
+
+    return { creditLimit: parseFloat(rows[0].creditLimit || 0) };
   } catch (err) {
     console.error("Error in getDeliveredOrdersTotal:", err);
     throw err;
@@ -750,26 +1109,58 @@ exports.getOrderById = async (orderId) => {
 
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
+
+    // Check if orderId matches a processorders.id
+    const [procRows] = await connection.execute(
+      `SELECT id, orderId FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+    );
+
+    let targetProcessId = null;
+
+    if (procRows.length > 0) {
+      targetProcessId = procRows[0].id;
+    } else {
+      // If orderId is a parent orders.id, resolve the FIRST scheduled process order
+      const [firstProcRows] = await connection.execute(
+        `SELECT id FROM collection_officer.processorders WHERE orderId = ? ORDER BY sheduleDate ASC, id ASC LIMIT 1`,
+        [orderId],
+      );
+      if (firstProcRows.length > 0) {
+        targetProcessId = firstProcRows[0].id;
+      }
+    }
+
+    const whereClause = targetProcessId ? `WHERE p.id = ?` : `WHERE o.id = ?`;
+    const queryParam = targetProcessId ? targetProcessId : orderId;
 
     const sql = `
              SELECT
                 o.id AS orderId,
                 o.userId,
+                o.title AS orderTitle,
+                o.fullName AS orderFullName,
+                o.phonecode1 AS orderPhoneCode1,  
+o.phone1 AS orderPhone1,           
+o.phonecode2 AS orderPhoneCode2,  
+o.phone2 AS orderPhone2,   
                 o.sheduleType,
-                o.sheduleDate,
+                o.validityPeriod,
+                o.selectedDays,
                 o.sheduleTime,
                 o.createdAt,
-                o.total,
-                o.discount,
-                o.deliveryCharge,
-                o.fullTotal,
+                p.total,
+                p.discount,
+                p.deliveryCharge,
+                p.fullTotal,
                 o.isPackage,
                 o.delivaryMethod,
                 c.title,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
+                p.id AS processId,
                 p.invNo AS invoiceNumber,
                 p.status As status,
                 p.reportStatus As reportStatus,
@@ -777,6 +1168,7 @@ exports.getOrderById = async (orderId) => {
                 p.creditPaid,
                 p.moneyPaid,
                 p.isPaid,
+                p.sheduleDate AS processSheduleDate,
                 oai.qty,
                 oai.productId,
                 oai.unit,
@@ -791,39 +1183,50 @@ exports.getOrderById = async (orderId) => {
             FROM orders o
             JOIN marketplaceusers c ON o.userId = c.id
             LEFT JOIN processorders p ON o.id = p.orderId
-            LEFT JOIN orderadditionalitems oai ON oai.orderId = o.id
+            LEFT JOIN orderadditionalitems oai ON oai.proOrderId = p.id
             LEFT JOIN orderpackage op ON op.orderId = p.id
             LEFT JOIN marketplacepackages mpp ON mpp.id = op.packageId
-            WHERE o.id = ?
+            ${whereClause}
+            ORDER BY p.sheduleDate ASC, p.id ASC
         `;
 
-    const [orderResults] = await connection.execute(sql, [orderId]);
+    const [orderResults] = await connection.execute(sql, [queryParam]);
 
     if (orderResults.length === 0) {
       return { message: "No order found with the given ID" };
     }
 
     const order = orderResults[0];
+    const parentOrderId = order.orderId;
 
     let formattedAddress = "";
     let buildingType = "";
     let buildingDetails = {};
 
-    // Filter out null/undefined items and create additional items array
-    const additionalItems = orderResults
-      .filter((item) => item.productId !== null && item.productId !== undefined)
-      .map((item) => ({
-        productId: item.productId,
-        qty: parseFloat(item.qty) || 0,
-        unit: item.unit || "",
-        price: parseFloat(item.price) || 0,
-        discount: parseFloat(item.itemDiscount) || 0,
-      }));
+    // Filter out null/undefined items and create unique additional items array (deduplicate by productId)
+    const seenProductIds = new Set();
+    const additionalItems = [];
+    for (const item of orderResults) {
+      if (
+        item.productId !== null &&
+        item.productId !== undefined &&
+        !seenProductIds.has(item.productId)
+      ) {
+        seenProductIds.add(item.productId);
+        additionalItems.push({
+          productId: item.productId,
+          qty: parseFloat(item.qty) || 0,
+          unit: item.unit || "",
+          price: parseFloat(item.price) || 0,
+          discount: parseFloat(item.itemDiscount) || 0,
+        });
+      }
+    }
 
-    // Determine building type + address from orderhouse / orderapartment tables (by orderId)
+    // Determine building type + address from orderhouse / orderapartment tables (by parentOrderId)
     const [houseRows] = await connection.execute(
       `SELECT houseNo, streetName, city FROM orderhouse WHERE orderid = ? LIMIT 1`,
-      [orderId]
+      [parentOrderId],
     );
 
     if (houseRows.length > 0) {
@@ -846,7 +1249,7 @@ exports.getOrderById = async (orderId) => {
     } else {
       const [apartmentRows] = await connection.execute(
         `SELECT buildingNo, buildingName, unitNo, floorNo, houseNo, streetName, city FROM orderapartment WHERE orderid = ? LIMIT 1`,
-        [orderId]
+        [parentOrderId],
       );
 
       if (apartmentRows.length > 0) {
@@ -974,9 +1377,13 @@ exports.getOrderById = async (orderId) => {
     // Return order data
     const result = {
       orderId: order.orderId,
+      processId: order.processId,
       userId: order.userId,
       scheduleType: order.sheduleType,
-      scheduleDate: order.sheduleDate,
+      scheduleDate: order.processSheduleDate,
+      processScheduleDate: order.processSheduleDate,
+      validityPeriod: order.validityPeriod,
+      selectedDays: order.selectedDays,
       scheduleTime: order.sheduleTime,
       createdAt: order.createdAt,
       total: order.total,
@@ -986,14 +1393,18 @@ exports.getOrderById = async (orderId) => {
       isPackage: order.isPackage,
       delivaryMethod: order.delivaryMethod,
       customerInfo: {
-        title: order.title,
+        title: order.orderTitle,
+        fullName: order.orderFullName,
         firstName: order.firstName,
         lastName: order.lastName,
-        phoneNumber: order.phoneNumber,
+        phoneCode: order.orderPhoneCode1 || "+94",
+        phoneNumber: order.orderPhone1 || order.phoneNumber, // account phone only as fallback
+        phoneCode2: order.orderPhoneCode2 || "",
+        phoneNumber2: order.orderPhone2 || "",
         buildingType: buildingType,
       },
-      fullAddress: formattedAddress,     // single-string address (e.g. for confirm screen)
-      buildingDetails: buildingDetails,  // raw fields (e.g. for invoice screen)
+      fullAddress: formattedAddress, // single-string address (e.g. for confirm screen)
+      buildingDetails: buildingDetails, // raw fields (e.g. for invoice screen)
       orderStatus: {
         invoiceNumber: order.invoiceNumber,
         status: order.status,
@@ -1022,7 +1433,6 @@ exports.getOrderById = async (orderId) => {
   }
 };
 
-
 exports.getOrderByCustomerId = (
   customerId,
   page = 1,
@@ -1039,14 +1449,13 @@ exports.getOrderByCustomerId = (
     const countSql = `
       SELECT COUNT(*) as totalCount
       FROM orders o
-      LEFT JOIN market_place.processorders p ON o.id = p.orderId
+      LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
       WHERE o.userId = ?
       ${statusClause}
     `;
 
-    db.marketPlace.query(countSql, countParams, (err, countResult) => {
+    db.collectionofficer.query(countSql, countParams, (err, countResult) => {
       if (err) return reject(err);
-
       const totalCount = countResult[0].totalCount;
       if (totalCount === 0) {
         return resolve({ message: "No orders found for this customer" });
@@ -1057,224 +1466,264 @@ exports.getOrderByCustomerId = (
         : [customerId, limit, offset];
 
       const ordersSql = `
-        SELECT 
-          o.id AS orderId,
-          o.userId,
-          o.sheduleType,
-          o.sheduleDate,
-          o.sheduleTime,
-          o.createdAt,
-          o.total,
-          o.discount,
-          o.fullTotal,
-          p.invNo AS InvNo,
-          p.isPaid,
-          p.reportStatus AS reportStatus,
-          p.paymentMethod AS paymentMethod,
-          p.status AS status
-        FROM orders o
-        LEFT JOIN market_place.processorders p ON o.id = p.orderId
-        WHERE o.userId = ?
-        ${statusClause}
-        ORDER BY o.createdAt DESC
-        LIMIT ? OFFSET ?
-      `;
+  SELECT 
+    o.id AS orderId,
+    p.id AS processId,
+    o.userId,
+    o.sheduleType,
+    p.sheduleDate AS sheduleDate,
+    p.sheduleDate AS processSheduleDate,
+    o.validityPeriod,
+    o.selectedDays,
+    o.sheduleTime,
+    o.createdAt,
+    p.total,
+    p.discount,
+    p.fullTotal,
+    p.invNo AS InvNo,
+    p.isPaid,
+    p.reportStatus AS reportStatus,
+    p.paymentMethod AS paymentMethod,
+    p.status AS status
+  FROM orders o
+  LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
+  WHERE o.userId = ?
+  ${statusClause}
+  ORDER BY COALESCE(p.sheduleDate, o.createdAt) DESC, p.id DESC
+  LIMIT ? OFFSET ?
+`;
 
-      db.marketPlace.query(ordersSql, orderParams, (err, orderResults) => {
-        if (err) return reject(err);
-        resolve({ orders: orderResults, totalCount });
-      });
+      db.collectionofficer.query(
+        ordersSql,
+        orderParams,
+        (err, orderResults) => {
+          if (err) return reject(err);
+          resolve({ orders: orderResults, totalCount });
+        },
+      );
     });
   });
 };
 
-exports.getAllOrderDetails = async (salesAgentId, page = 1, limit = 5) => {
+// Replace your existing exports.getAllOrderDetails in the order DAO with this.
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const placeholders = (arr) => arr.map(() => "?").join(",");
+
+exports.getAllOrderDetails = async (
+  salesAgentId,
+  page = 1,
+  limit = 10,
+  filters = {},
+) => {
   let connection;
 
   try {
-    // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
-    // Ensure page and limit are integers
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
 
-    // First, get the total count
-    let countSql = `
-            SELECT COUNT(*) as totalCount
-            FROM orders o
-            LEFT JOIN market_place.processorders p ON o.id = p.orderId
-            LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
-        `;
+    const { search = "", dateFrom = "", dateTo = "" } = filters;
 
-    const countParams = [];
-    if (salesAgentId) {
-      countSql += ` WHERE m.salesAgent = ?`;
-      countParams.push(salesAgentId);
-    }
-
-    const [countResult] = await connection.execute(countSql, countParams);
-    const totalCount = countResult[0].totalCount;
-
-    // Main query with pagination - using string interpolation for LIMIT and OFFSET
-    let sql = `
-            SELECT 
-                o.id AS orderId,
-                o.userId,
-                o.sheduleType,
-                o.sheduleDate,
-                o.sheduleTime,
-                o.createdAt,
-                o.total,
-                o.discount,
-                o.fullTotal,
-                o.deliveryCharge,
-                m.salesAgent,
-                o.buildingType,
-                p.invNo AS InvNo,
-                p.isPaid,
-                p.reportStatus AS reportStatus,
-                p.paymentMethod AS paymentMethod,
-                p.status As status
-            FROM orders o
-            LEFT JOIN market_place.processorders p ON o.id = p.orderId
-            LEFT JOIN market_place.marketplaceusers m ON o.userId = m.id
-        `;
-
-    // Add WHERE clause if salesAgentId is provided
+    // ---------- shared WHERE clause (used by BOTH count and data query) ----------
+    const where = [];
     const params = [];
+
     if (salesAgentId) {
-      sql += ` WHERE m.salesAgent = ?`;
+      where.push("m.salesAgent = ?");
       params.push(salesAgentId);
     }
 
-    // Add ORDER BY and LIMIT/OFFSET using string interpolation
-    sql += ` ORDER BY o.createdAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    if (search) {
+      // escape LIKE wildcards so "%" / "_" in the input are treated literally
+      const escaped = search.replace(/[\\%_]/g, "\\$&");
+      where.push("p.invNo LIKE ?");
+      params.push(`%${escaped}%`);
+    }
+
+    if (DATE_RE.test(dateFrom) && DATE_RE.test(dateTo)) {
+      where.push("DATE(p.sheduleDate) BETWEEN ? AND ?");
+      params.push(dateFrom, dateTo);
+    }
+
+    const whereSql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+
+    const fromSql = `
+      FROM orders o
+      LEFT JOIN collection_officer.processorders p ON o.id = p.orderId
+      LEFT JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+    `;
+
+    // ---------- total count (matches the active search/filter) ----------
+    const [countResult] = await connection.execute(
+      `SELECT COUNT(*) AS totalCount ${fromSql} ${whereSql}`,
+      params,
+    );
+    const totalCount = countResult[0].totalCount;
+
+    // ---------- page of orders ----------
+    const sql = `
+      SELECT
+        o.id AS orderId,
+        o.userId,
+        o.sheduleType,
+        p.sheduleDate AS sheduleDate,
+        p.sheduleDate AS processSheduleDate,
+        o.validityPeriod,
+        o.selectedDays,
+        o.sheduleTime,
+        o.createdAt,
+        p.total,
+        p.discount,
+        p.fullTotal,
+        p.deliveryCharge,
+        m.salesAgent,
+        o.buildingType,
+        p.id AS processId,
+        p.invNo AS InvNo,
+        p.isPaid,
+        p.reportStatus AS reportStatus,
+        p.paymentMethod AS paymentMethod,
+        p.status AS status
+      ${fromSql}
+      ${whereSql}
+      ORDER BY COALESCE(p.sheduleDate, o.createdAt) DESC, p.id DESC, o.id DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `;
 
     const [orderResults] = await connection.execute(sql, params);
 
     if (orderResults.length === 0) {
-      return {
-        orders: [],
-        totalCount: totalCount,
-      };
+      return { orders: [], totalCount };
     }
 
-    // Process each order to get corresponding address details
-    const processedOrders = [];
+    // ---------- addresses: 2 batched queries instead of 1-2 per order ----------
+    const houseIds = [
+      ...new Set(
+        orderResults
+          .filter((o) => o.buildingType === "House")
+          .map((o) => o.userId),
+      ),
+    ];
+    const apartmentIds = [
+      ...new Set(
+        orderResults
+          .filter((o) => o.buildingType === "Apartment")
+          .map((o) => o.userId),
+      ),
+    ];
 
-    for (const order of orderResults) {
-      const customerId = order.userId; // Using userId as customerId
-      const buildingType = order.buildingType;
+    const houseMap = new Map();
+    if (houseIds.length) {
+      const [rows] = await connection.execute(
+        `SELECT customerId, houseNo, streetName, city
+         FROM house
+         WHERE customerId IN (${placeholders(houseIds)})`,
+        houseIds,
+      );
+      for (const r of rows) {
+        if (!houseMap.has(r.customerId)) houseMap.set(r.customerId, r);
+      }
+    }
+
+    const apartmentMap = new Map();
+    if (apartmentIds.length) {
+      const [rows] = await connection.execute(
+        `SELECT customerId, buildingNo, buildingName, unitNo, floorNo,
+                houseNo, streetName, city
+         FROM apartment
+         WHERE customerId IN (${placeholders(apartmentIds)})`,
+        apartmentIds,
+      );
+      for (const r of rows) {
+        if (!apartmentMap.has(r.customerId)) apartmentMap.set(r.customerId, r);
+      }
+    }
+
+    const processedOrders = orderResults.map((order) => {
       let formattedAddress = "";
 
-      if (buildingType === "House") {
-        const addressSql = `
-                    SELECT 
-                        houseNo,
-                        streetName,
-                        city
-                    FROM house
-                    WHERE customerId = ?
-                `;
-
-        const [addressResults] = await connection.execute(addressSql, [
-          customerId,
-        ]);
-
-        if (addressResults[0]) {
-          const addr = addressResults[0];
+      if (order.buildingType === "House") {
+        const addr = houseMap.get(order.userId);
+        if (addr) {
           formattedAddress =
-            `${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-          formattedAddress = formattedAddress.replace(/\s+/g, " ").trim();
+            `${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`
+              .replace(/\s+/g, " ")
+              .trim();
         }
-      } else if (buildingType === "Apartment") {
-        const addressSql = `
-                    SELECT 
-                        buildingNo,
-                        buildingName,
-                        unitNo,
-                        floorNo,
-                        houseNo,
-                        streetName,
-                        city
-                    FROM apartment
-                    WHERE customerId = ?
-                `;
-
-        const [addressResults] = await connection.execute(addressSql, [
-          customerId,
-        ]);
-
-        if (addressResults[0]) {
-          const addr = addressResults[0];
+      } else if (order.buildingType === "Apartment") {
+        const addr = apartmentMap.get(order.userId);
+        if (addr) {
           formattedAddress =
-            `${addr.buildingName || ""} ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`.trim();
-          formattedAddress = formattedAddress
-            .replace(/\s+/g, " ")
-            .replace(/, Unit ,/, ",")
-            .replace(/, Floor ,/, ",")
-            .trim();
-          formattedAddress = formattedAddress.replace(/,\s*$/, "");
+            `${addr.buildingName || ""} ${addr.buildingNo || ""}, Unit ${addr.unitNo || ""}, Floor ${addr.floorNo || ""}, ${addr.houseNo || ""} ${addr.streetName || ""}, ${addr.city || ""}`
+              .replace(/\s+/g, " ")
+              .replace(/, Unit ,/, ",")
+              .replace(/, Floor ,/, ",")
+              .trim()
+              .replace(/,\s*$/, "");
         }
       }
 
-      processedOrders.push({
-        ...order,
-        fullAddress: formattedAddress,
-      });
-    }
+      return { ...order, fullAddress: formattedAddress };
+    });
 
-    return {
-      orders: processedOrders,
-      totalCount: totalCount,
-    };
+    return { orders: processedOrders, totalCount };
   } catch (err) {
     console.error("Database error:", err);
     throw err;
   } finally {
-    // Always release the connection back to the pool
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 };
 
 exports.reportOrder = (orderId, reportStatus) => {
   return new Promise((resolve, reject) => {
-    const updateSql = `
-      UPDATE market_place.processorders 
-      SET reportStatus = ?
-      WHERE orderId = ?
-    `;
+    db.collectionofficer.query(
+      `SELECT id FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+      (checkErr, checkResult) => {
+        if (checkErr) return reject(checkErr);
 
-    db.marketPlace.query(updateSql, [reportStatus, orderId], (err, result) => {
-      if (err) {
-        return reject(err);
-      }
+        const isProcessId = checkResult && checkResult.length > 0;
+        const updateSql = isProcessId
+          ? `UPDATE collection_officer.processorders SET reportStatus = ? WHERE id = ?`
+          : `UPDATE collection_officer.processorders SET reportStatus = ? WHERE orderId = ?`;
 
-      // Check if any row was affected
-      if (result.affectedRows === 0) {
-        return resolve({
-          message: "Order not found or could not be updated",
-        });
-      }
+        db.collectionofficer.query(
+          updateSql,
+          [reportStatus, orderId],
+          (err, result) => {
+            if (err) {
+              return reject(err);
+            }
 
-      // Return success
-      resolve({
-        success: true,
-        message: "Order report status updated successfully",
-        orderId: orderId,
-        reportStatus: reportStatus,
-      });
-    });
+            // Check if any row was affected
+            if (result.affectedRows === 0) {
+              return resolve({
+                message: "Order not found or could not be updated",
+              });
+            }
+
+            // Return success
+            resolve({
+              success: true,
+              message: "Order report status updated successfully",
+              orderId: orderId,
+              reportStatus: reportStatus,
+            });
+          },
+        );
+      },
+    );
   });
 };
 
 exports.cancelOrder = (orderId) => {
   return new Promise((resolve, reject) => {
-    db.marketPlace.getConnection((connErr, connection) => {
+    db.collectionofficer.getConnection((connErr, connection) => {
       if (connErr) return reject(connErr);
 
       connection.beginTransaction((txErr) => {
@@ -1284,132 +1733,198 @@ exports.cancelOrder = (orderId) => {
         }
 
         const selectSql = `
-          SELECT id, status, paymentMethod, isPaid, amount
-          FROM market_place.processorders
-          WHERE orderId = ?
+          SELECT id, orderId AS parentOrderId, status, paymentMethod, isPaid, amount, invNo
+          FROM collection_officer.processorders
+          WHERE id = ? OR orderId = ?
+          ORDER BY (id = ?) DESC
+          LIMIT 1
           FOR UPDATE
         `;
 
-        connection.query(selectSql, [orderId], (selectErr, selectResult) => {
-          if (selectErr) {
-            return connection.rollback(() => {
-              connection.release();
-              reject(selectErr);
-            });
-          }
+        connection.query(
+          selectSql,
+          [orderId, orderId, orderId],
+          (selectErr, selectResult) => {
+            if (selectErr) {
+              return connection.rollback(() => {
+                connection.release();
+                reject(selectErr);
+              });
+            }
 
-          if (selectResult.length === 0) {
-            return connection.rollback(() => {
-              connection.release();
-              resolve({ success: false, message: "Order not found" });
-            });
-          }
+            if (selectResult.length === 0) {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order not found" });
+              });
+            }
 
-          const orderRow = selectResult[0];
-          const actualId = orderRow.id;
+            const orderRow = selectResult[0];
+            const actualId = orderRow.id;
+            const parentOrderId = orderRow.parentOrderId;
 
-          if (orderRow.status === "Cancelled") {
-            return connection.rollback(() => {
-              connection.release();
-              resolve({ success: false, message: "Order already cancelled" });
-            });
-          }
+            if (orderRow.status === "Cancelled") {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order already cancelled" });
+              });
+            }
 
-          const shouldRefund =
-            orderRow.paymentMethod === "Card" &&
-            (orderRow.isPaid === 1 || orderRow.isPaid === true);
+            const shouldRefund =
+              orderRow.paymentMethod === "Card" &&
+              (orderRow.isPaid === 1 || orderRow.isPaid === true);
 
-          const refundAmount = parseFloat(orderRow.amount) || 0;
+            const refundAmount = parseFloat(orderRow.amount) || 0;
 
-          const updateOrderSql = shouldRefund
-            ? `UPDATE market_place.processorders
+            const updateOrderSql = shouldRefund
+              ? `UPDATE collection_officer.processorders
                SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
-               WHERE orderId = ?`
-            : `UPDATE market_place.processorders
+               WHERE id = ?`
+              : `UPDATE collection_officer.processorders
                SET status = 'Cancelled'
-               WHERE orderId = ?`;
+               WHERE id = ?`;
 
-          connection.query(updateOrderSql, [orderId], (updateErr, updateResult) => {
-            if (updateErr) {
-              return connection.rollback(() => {
-                connection.release();
-                reject(updateErr);
-              });
-            }
-
-            if (updateResult.affectedRows === 0) {
-              return connection.rollback(() => {
-                connection.release();
-                resolve({ success: false, message: "Order not found or already cancelled" });
-              });
-            }
-
-            const finishWithNotification = (refundErr) => {
-              if (refundErr) {
-                return connection.rollback(() => {
-                  connection.release();
-                  reject(refundErr);
-                });
-              }
-
-              const notificationSql = `
-                INSERT INTO dashnotification (orderId, title, readStatus, createdAt)
-                VALUES (?, ?, ?, NOW())
-              `;
-
-              connection.query(
-                notificationSql,
-                [actualId, "Order is Cancelled", 0],
-                (notifErr) => {
-                  // Match existing behavior: notification failure doesn't roll back
-                  // the cancellation/refund, it's just reported.
-                  connection.commit((commitErr) => {
+            connection.query(
+              updateOrderSql,
+              [actualId],
+              (updateErr, updateResult) => {
+                if (updateErr) {
+                  return connection.rollback(() => {
                     connection.release();
-                    if (commitErr) return reject(commitErr);
+                    reject(updateErr);
+                  });
+                }
+
+                if (updateResult.affectedRows === 0) {
+                  return connection.rollback(() => {
+                    connection.release();
                     resolve({
-                      success: true,
-                      message: notifErr
-                        ? "Order cancelled successfully but notification failed"
-                        : "Order cancelled successfully",
-                      orderId,
-                      refunded: shouldRefund,
-                      refundAmount: shouldRefund ? refundAmount : 0,
-                      notificationInserted: !notifErr,
-                      ...(notifErr ? { error: notifErr.message } : {}),
+                      success: false,
+                      message: "Order not found or already cancelled",
                     });
                   });
                 }
-              );
-            };
 
-            if (!shouldRefund) {
-              return finishWithNotification(null);
-            }
-
-            // Resolve userId via orders table.
-            // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
-            // so we must look it up by `id` here.
-            const userIdSql = `SELECT userId FROM market_place.orders WHERE id = ?`;
-            connection.query(userIdSql, [orderId], (userErr, userResult) => {
-              if (userErr) return finishWithNotification(userErr);
-              if (userResult.length === 0 || !userResult[0].userId) {
-                return finishWithNotification(
-                  new Error("Could not resolve userId for refund"),
+                // Best-effort: update driver order status if assigned
+                connection.query(
+                  `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
+                  [actualId],
+                  () => { },
                 );
-              }
-              const userId = userResult[0].userId;
 
-              const refundSql = `
-                UPDATE market_place.marketplaceusers
+                const finishWithNotification = (refundErr) => {
+                  if (refundErr) {
+                    return connection.rollback(() => {
+                      connection.release();
+                      reject(refundErr);
+                    });
+                  }
+
+                  const dashNotificationSql = `
+    INSERT INTO collection_officer.dashnotification (orderId, title, readStatus, createdAt)
+    VALUES (?, ?, ?, NOW())
+  `;
+
+                  const orderNotificationSql = `
+    INSERT INTO collection_officer.ordernotfication (orderId, Title, message, isRead, createdAt)
+    VALUES (?, ?, ?, ?, NOW())
+  `;
+
+                  const invoiceNumber = orderRow.invNo || orderId;
+                  const notificationMessage = `Your order #${invoiceNumber} has been cancelled successfully.`;
+
+                  connection.query(
+                    dashNotificationSql,
+                    [actualId, "Order is Cancelled", 0],
+                    (dashNotifErr) => {
+                      connection.query(
+                        orderNotificationSql,
+                        [actualId, "Order Cancelled", notificationMessage, 0],
+                        (orderNotifErr) => {
+                          // Match existing behavior: notification failure doesn't roll back
+                          // the cancellation/refund, it's just reported.
+                          const notifErr = dashNotifErr || orderNotifErr;
+                          connection.commit((commitErr) => {
+                            connection.release();
+                            if (commitErr) return reject(commitErr);
+
+                            // Trigger real-time Polygon customer notification
+                            const polygonNotificationService = require("../services/polygon-notification-service");
+                            polygonNotificationService
+                              .notifyPolygonOrderCancelled(
+                                actualId,
+                                invoiceNumber,
+                              )
+                              .catch(() => { });
+
+                            // Trigger background push notification to the assigned Sales Agent
+                            const salesdashNotificationService = require("../services/salesdash-notification-service");
+                            salesdashNotificationService
+                              .notifyDashOrderCancelled(actualId, invoiceNumber)
+                              .catch(() => { });
+
+                            resolve({
+                              success: true,
+                              message: notifErr
+                                ? "Order cancelled successfully but notification failed"
+                                : "Order cancelled successfully",
+                              orderId,
+                              refunded: shouldRefund,
+                              refundAmount: shouldRefund ? refundAmount : 0,
+                              notificationInserted: !notifErr,
+                              ...(notifErr
+                                ? {
+                                  error:
+                                    (dashNotifErr && dashNotifErr.message) ||
+                                    (orderNotifErr && orderNotifErr.message),
+                                }
+                                : {}),
+                            });
+                          });
+                        },
+                      );
+                    },
+                  );
+                };
+
+                if (!shouldRefund) {
+                  return finishWithNotification(null);
+                }
+
+                // Resolve userId via orders table.
+                // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
+                // so we must look it up by `id` here.
+                const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
+                connection.query(
+                  userIdSql,
+                  [parentOrderId],
+                  (userErr, userResult) => {
+                    if (userErr) return finishWithNotification(userErr);
+                    if (userResult.length === 0 || !userResult[0].userId) {
+                      return finishWithNotification(
+                        new Error("Could not resolve userId for refund"),
+                      );
+                    }
+                    const userId = userResult[0].userId;
+
+                    const refundSql = `
+                UPDATE collection_officer.marketplaceusers
                 SET creditBalance = creditBalance + ?
                 WHERE id = ?
               `;
-              connection.query(refundSql, [refundAmount, userId], (creditErr) => {
-                finishWithNotification(creditErr || null);
-              });
-            });
-          });
-        });
+                    connection.query(
+                      refundSql,
+                      [refundAmount, userId],
+                      (creditErr) => {
+                        finishWithNotification(creditErr || null);
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
       });
     });
   });
@@ -1417,7 +1932,7 @@ exports.cancelOrder = (orderId) => {
 
 exports.getOrderCountBySalesAgent = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
     try {
       // First get all customers assigned to this sales agent
       const customersQuery = `
@@ -1472,7 +1987,7 @@ exports.getOrderCountBySalesAgent = async (salesAgentId) => {
 
 exports.getTodayStats = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
 
     try {
       // Get current date in YYYY-MM-DD format
@@ -1518,7 +2033,7 @@ exports.getTodayStats = async (salesAgentId) => {
 
 exports.getMonthlyStats = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
 
     try {
       // Get current month range
@@ -1531,14 +2046,15 @@ exports.getMonthlyStats = async (salesAgentId) => {
           ? `${year + 1}-01-01`
           : `${year}-${(month + 1).toString().padStart(2, "0")}-01`;
 
-      // Get sum of numOfStars for the current month
+      // Get sum of numOfStars and targetAchievedDays for the current month
       const [rows] = await connection.query(
-        "SELECT SUM(numOfStars) as totalStars FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?",
+        "SELECT SUM(numOfStars) as totalStars, COUNT(CASE WHEN completed >= target AND target > 0 THEN 1 END) as targetAchievedDays FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?",
         [salesAgentId, firstDay, lastDay],
       );
 
       return {
         totalStars: rows[0].totalStars || 0,
+        targetAchievedDays: rows[0].targetAchievedDays || 0,
       };
     } finally {
       connection.release();
@@ -1549,14 +2065,40 @@ exports.getMonthlyStats = async (salesAgentId) => {
   }
 };
 
+exports.getTotalDeliveredValueBySalesAgent = async (salesAgentId) => {
+  try {
+    const connection = await db.collectionofficer.promise().getConnection();
+    try {
+      const [rows] = await connection.query(
+        `SELECT COALESCE(SUM(p.fullTotal), 0) AS totalDeliveredAmount
+         FROM collection_officer.processorders p
+         JOIN collection_officer.orders o ON p.orderid = o.id
+         JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+        WHERE m.salesAgent = ?
+          AND m.isActive = 1
+          AND p.status IN ('Delivered', 'Picked up')`,
+        [salesAgentId],
+      );
+      return parseFloat(rows[0]?.totalDeliveredAmount || 0);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error("Error in getTotalDeliveredValueBySalesAgent:", error);
+    throw error;
+  }
+};
+
 exports.getCombinedStats = async (salesAgentId) => {
   try {
     const dailyStats = await exports.getTodayStats(salesAgentId);
     const monthlyStats = await exports.getMonthlyStats(salesAgentId);
+    const totalDeliveredValue = await exports.getTotalDeliveredValueBySalesAgent(salesAgentId);
 
     return {
       daily: dailyStats,
       monthly: monthlyStats,
+      totalDeliveredValue,
     };
   } catch (error) {
     console.error("Error in getCombinedStats:", error);
@@ -1566,7 +2108,7 @@ exports.getCombinedStats = async (salesAgentId) => {
 
 exports.getAllAgentStats = async (salesAgentId) => {
   try {
-    const connection = await db.marketPlace.promise().getConnection();
+    const connection = await db.collectionofficer.promise().getConnection();
 
     try {
       // Get today's stats
@@ -1626,38 +2168,44 @@ exports.getAllAgentStats = async (salesAgentId) => {
 };
 
 async function updateSalesAgentStars(connection, salesAgentId) {
-  // Get current date in YYYY-MM-DD format
-  const today = new Date();
-  const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
+  try {
+    if (!salesAgentId) return;
 
-  // Check if a record exists for this sales agent on the current date
-  const [existingRows] = await connection.query(
-    "SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?",
-    [salesAgentId, formattedDate],
-  );
+    // Get current date in YYYY-MM-DD format
+    const today = new Date();
+    const formattedDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
 
-  if (existingRows.length > 0) {
-    // Record exists, update the completed count by incrementing it
-    const currentRecord = existingRows[0];
-    const currentCompleted = currentRecord.completed || 0;
-    const newCompleted = currentCompleted + 1;
-    const targetValue = currentRecord.target || 0;
+    // Check if a record exists for this sales agent on the current date
+    const [existingRows] = await connection.query(
+      "SELECT id, completed, target, numOfStars FROM salesagentstars WHERE salesagentId = ? AND date = ?",
+      [salesAgentId, formattedDate],
+    );
 
-    // Determine if numOfStars should be updated
-    let numOfStars = currentRecord.numOfStars || 0;
-    if (newCompleted === targetValue) {
-      numOfStars = 1;
+    if (existingRows.length > 0) {
+      // Record exists, update the completed count by incrementing it
+      const currentRecord = existingRows[0];
+      const currentCompleted = currentRecord.completed || 0;
+      const newCompleted = currentCompleted + 1;
+      const targetValue = currentRecord.target || 0;
+
+      // Determine if numOfStars should be updated
+      let numOfStars = currentRecord.numOfStars || 0;
+      if (newCompleted === targetValue) {
+        numOfStars = 1;
+      }
+
+      await connection.query(
+        "UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?",
+        [newCompleted, numOfStars, currentRecord.id],
+      );
+    } else {
+      await connection.query(
+        "INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)",
+        [salesAgentId, formattedDate, 1, 0, 0], // Initialize with defaults
+      );
     }
-
-    await connection.query(
-      "UPDATE salesagentstars SET completed = ?, numOfStars = ? WHERE id = ?",
-      [newCompleted, numOfStars, currentRecord.id],
-    );
-  } else {
-    await connection.query(
-      "INSERT INTO salesagentstars (salesagentId, date, completed, target, numOfStars) VALUES (?, ?, ?, ?, ?)",
-      [salesAgentId, formattedDate, 1, 0, 0], // Initialize with defaults
-    );
+  } catch (error) {
+    console.error("Error updating sales agent stars:", error);
   }
 }
 
@@ -1665,16 +2213,26 @@ exports.getReturnReason = async (orderId) => {
   let connection;
   try {
     // Get connection from pool
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
+
+    // Check if orderId matches processorders.id
+    const [procRows] = await connection.query(
+      `SELECT id FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+    );
+
+    const filterField =
+      procRows && procRows.length > 0 ? "po.id" : "po.orderId";
 
     // Single query with joins to get return reason directly
     const returnReasonSql = `
             SELECT rr.rsnEnglish as returnReason , dro.note as otherReason
-            FROM market_place.processorders po
+            FROM collection_officer.processorders po
             INNER JOIN collection_officer.driverorders do ON do.orderId = po.id
             INNER JOIN collection_officer.driverreturnorders dro ON dro.drvOrderId = do.id
             INNER JOIN collection_officer.returnreason rr ON rr.id = dro.returnReasonId
-            WHERE po.orderId = ?
+            WHERE ${filterField} = ?
+            ORDER BY dro.createdAt DESC
             LIMIT 1
         `;
 
@@ -1702,7 +2260,16 @@ exports.getReturnReason = async (orderId) => {
 exports.getHold = async (orderId) => {
   let connection;
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
+
+    // Check if orderId matches processorders.id
+    const [procRows] = await connection.query(
+      `SELECT id FROM collection_officer.processorders WHERE id = ? LIMIT 1`,
+      [orderId],
+    );
+
+    const filterField =
+      procRows && procRows.length > 0 ? "po.id" : "po.orderId";
 
     const holdCheckSql = `
       SELECT 
@@ -1712,11 +2279,11 @@ exports.getHold = async (orderId) => {
         dho.restartedTime,
         dho.createdAt     AS holdCreatedAt,
         hr.rsnEnglish     AS holdReason
-      FROM market_place.processorders po
+      FROM collection_officer.processorders po
       LEFT JOIN collection_officer.driverorders  do  ON po.id      = do.orderId
       LEFT JOIN collection_officer.driverholdorders dho ON do.id   = dho.drvOrderId
       LEFT JOIN collection_officer.holdreason     hr  ON dho.holdReasonId = hr.id
-      WHERE po.orderId = ?
+      WHERE ${filterField} = ?
         AND dho.id IS NOT NULL
       ORDER BY dho.createdAt ASC
     `;
@@ -1750,7 +2317,7 @@ exports.getHold = async (orderId) => {
 exports.checkOrderPaymentStatus = async (orderId) => {
   let connection;
   try {
-    connection = await db.marketPlace.promise().getConnection();
+    connection = await db.collectionofficer.promise().getConnection();
 
     const paymentCheckSql = `
       SELECT 
@@ -1760,9 +2327,9 @@ exports.checkOrderPaymentStatus = async (orderId) => {
         po.isPaid,
         po.amount,
         mu.cusId
-      FROM market_place.processorders po
-      LEFT JOIN market_place.orders o ON o.id = po.orderId
-      LEFT JOIN market_place.marketplaceusers mu ON mu.id = o.userId
+      FROM collection_officer.processorders po
+      LEFT JOIN collection_officer.orders o ON o.id = po.orderId
+      LEFT JOIN collection_officer.marketplaceusers mu ON mu.id = o.userId
       WHERE po.orderId = ?
       LIMIT 1
     `;
@@ -1792,5 +2359,200 @@ exports.checkOrderPaymentStatus = async (orderId) => {
     if (connection) {
       connection.release();
     }
+  }
+};
+
+exports.getDailyTargets = async (
+  salesAgentId,
+  month,
+  year,
+  page = 1,
+  limit = 5,
+) => {
+  let connection;
+
+  try {
+    connection = await db.collectionofficer.promise().getConnection();
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
+    // first day of the month -> first day of next month (index friendly)
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+    const whereSql = `
+      WHERE s.salesAgentId = ?
+        AND s.date >= ?
+        AND s.date < ?
+    `;
+    const params = [salesAgentId, startDate, endDate];
+
+    // ---------- total count ----------
+    const [countResult] = await connection.execute(
+      `SELECT COUNT(*) AS totalCount
+       FROM collection_officer.salesagentstars s
+       ${whereSql}`,
+      params,
+    );
+    const totalCount = countResult[0].totalCount;
+
+    // ---------- page of daily records ----------
+    const [rows] = await connection.execute(
+      `SELECT
+         s.id,
+         DATE_FORMAT(s.date, '%Y-%m-%d') AS date,
+         s.target,
+         s.completed,
+         s.numOfStars
+       FROM collection_officer.salesagentstars s
+       ${whereSql}
+       ORDER BY s.date DESC, s.id DESC
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      params,
+    );
+
+    return { records: rows, totalCount };
+  } catch (err) {
+    console.error("Database error:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+
+exports.getCustomersTotalValueSummary = async (salesAgentId, { page = 1, limit = 5, filter = "all" } = {}) => {
+  let connection;
+  try {
+    connection = await db.collectionofficer.promise().getConnection();
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.max(parseInt(limit, 10) || 5, 1);
+    const offset = (pageNum - 1) * limitNum;
+
+    // 1. Grand total of delivered / picked up orders for all customers of this sales agent
+    const [totalRows] = await connection.query(
+      `SELECT COALESCE(SUM(p.fullTotal), 0) AS grandTotal
+       FROM collection_officer.processorders p
+       JOIN collection_officer.orders o ON p.orderid = o.id
+       JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         AND p.status IN ('Delivered', 'Picked up')`,
+      [salesAgentId]
+    );
+    const grandTotalValue = parseFloat(totalRows[0]?.grandTotal || 0);
+
+    // 2. Customer counts by category
+    const [countsRows] = await connection.query(
+      `SELECT
+         COUNT(*) AS allCount,
+         COALESCE(SUM(CASE WHEN m.buyerType = 'Wholesale' THEN 0 ELSE 1 END), 0) AS retailCount,
+         COALESCE(SUM(CASE WHEN m.buyerType = 'Wholesale' THEN 1 ELSE 0 END), 0) AS wholesaleCount
+       FROM collection_officer.marketplaceusers m
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1`,
+      [salesAgentId]
+    );
+
+    const allCount = parseInt(countsRows[0]?.allCount || 0, 10);
+    const retailCount = parseInt(countsRows[0]?.retailCount || 0, 10);
+    const wholesaleCount = parseInt(countsRows[0]?.wholesaleCount || 0, 10);
+
+    // 3. Filter condition
+    let filterSql = "";
+    if (filter === "retail") {
+      filterSql = " AND (m.buyerType = 'Retail' OR m.buyerType IS NULL)";
+    } else if (filter === "wholesale") {
+      filterSql = " AND m.buyerType = 'Wholesale'";
+    }
+
+    // 4. Total filtered count
+    const [filterCountRows] = await connection.query(
+      `SELECT COUNT(*) AS total
+       FROM collection_officer.marketplaceusers m
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         ${filterSql}`,
+      [salesAgentId]
+    );
+    const totalRecords = parseInt(filterCountRows[0]?.total || 0, 10);
+    const totalPages = Math.ceil(totalRecords / limitNum) || 1;
+
+    // 5. Paginated customers with completed sales sum and count
+    const [customerRows] = await connection.query(
+      `SELECT
+         m.id,
+         m.cusId,
+         m.title,
+         m.firstName,
+         m.lastName,
+         m.phoneCode,
+         m.phoneNumber,
+         m.buyerType,
+         m.companyName,
+         m.created_at AS createdAt,
+         COALESCE(sales.totalCompletedSales, 0) AS totalCompletedSales,
+         COALESCE(sales.completedOrdersCount, 0) AS completedOrdersCount
+       FROM collection_officer.marketplaceusers m
+       LEFT JOIN (
+         SELECT
+           o.userId,
+           SUM(p.fullTotal) AS totalCompletedSales,
+           COUNT(p.id) AS completedOrdersCount
+         FROM collection_officer.processorders p
+         JOIN collection_officer.orders o ON p.orderid = o.id
+         WHERE p.status IN ('Delivered', 'Picked up')
+         GROUP BY o.userId
+       ) sales ON sales.userId = m.id
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         ${filterSql}
+       ORDER BY m.firstName ASC, m.lastName ASC, m.id ASC
+       LIMIT ? OFFSET ?`,
+      [salesAgentId, limitNum, offset]
+    );
+
+    const customers = customerRows.map((c) => {
+      const fullPhone = `${c.phoneCode || ""}${c.phoneNumber || ""}`;
+      return {
+        id: c.id,
+        cusId: c.cusId,
+        title: c.title,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phoneNumber: fullPhone,
+        buyerType: c.buyerType || "Retail",
+        companyName: c.companyName || null,
+        createdAt: c.createdAt,
+        totalCompletedSales: parseFloat(c.totalCompletedSales || 0),
+        completedOrdersCount: parseInt(c.completedOrdersCount || 0, 10),
+      };
+    });
+
+    return {
+      grandTotalValue,
+      counts: {
+        all: allCount,
+        retail: retailCount,
+        wholesale: wholesaleCount,
+      },
+      customers,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalRecords,
+        limit: limitNum,
+      },
+    };
+  } catch (err) {
+    console.error("Error in getCustomersTotalValueSummary:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
   }
 };

@@ -2,10 +2,24 @@ const jwt = require("jsonwebtoken");
 const db = require("../startup/database");
 
 const auth = (req, res, next) => {
-  const token = req.headers["authorization"]?.split(" ")[1]; 
+  const authHeader = req.headers["authorization"] || req.headers["Authorization"];
+  let token = null;
+
+  if (authHeader) {
+    if (authHeader.startsWith("Bearer ") || authHeader.startsWith("bearer ")) {
+      token = authHeader.substring(7).trim();
+    } else {
+      token = authHeader.trim();
+    }
+  }
+
+  // Strip quotes if wrapped in quotes
+  if (token) {
+    token = token.replace(/^["']|["']$/g, "").trim();
+  }
 
   if (!token) {
-    console.error("No token provided");
+    console.error("No token provided in request headers:", req.headers);
     return res.status(401).json({
       status: "error",
       message: "No token provided",
@@ -21,11 +35,9 @@ const auth = (req, res, next) => {
       });
     }
 
-    console.log("Decoded token:", decoded);
-
     // Verify user status from DB
     const sql = "SELECT status FROM salesagent WHERE id = ?";
-    db.marketPlace.query(sql, [decoded.id], (dbErr, results) => {
+    db.collectionofficer.query(sql, [decoded.id], (dbErr, results) => {
       if (dbErr) {
         console.error("Database error during status verification:", dbErr);
         return res.status(500).json({

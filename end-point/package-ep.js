@@ -1,5 +1,6 @@
 const asyncHandler = require("express-async-handler");
 const packageDAO = require("../dao/package-dao");
+const packageCache = require("../services/package-cache");
 
 exports.getAllPackages = asyncHandler(async (req, res) => {
   try {
@@ -13,6 +14,7 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
     };
 
+    // Always fetch directly from MySQL database without serving stale cached dates
     const packages = await packageDAO.getAllPackages(filters);
 
     if (!packages || packages.length === 0) {
@@ -23,11 +25,16 @@ exports.getAllPackages = asyncHandler(async (req, res) => {
       });
     }
 
+    res.setHeader("X-Cache", "MISS");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.status(200).json({
       message: "Packages fetched successfully",
       data: packages,
       total: packages.length,
       filters: filters,
+      cached: false,
     });
   } catch (error) {
     console.error("Error fetching packages:", error);
@@ -108,6 +115,9 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
     }
 
     // Send successful response with the marketplace item details
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.status(200).json({
       message: "Marketplace item fetched successfully",
       data: marketplaceIPackage, 
@@ -252,4 +262,45 @@ exports.validatePackageItems = asyncHandler(async (req, res) => {
     });
   }
 });
+
+// Broadcast package updates to all connected mobile clients
+exports.notifyPackageUpdate = asyncHandler(async (req, res) => {
+  try {
+    const io = req.app.get("io");
+    const payload = req.body || {};
+
+    // 1. Refresh in-memory cache with fresh data from database
+    let freshPackages = [];
+    try {
+      freshPackages = await packageCache.refreshPackageCache();
+    } catch (cacheErr) {
+      console.warn("⚠️ [PackageService] Could not refresh cache, invalidating instead:", cacheErr.message);
+      packageCache.clearPackageCache();
+    }
+
+    // 2. Emit real-time WebSocket event to all connected SalesDash apps with updated data
+    if (io) {
+      const broadcastData = freshPackages && freshPackages.length > 0 ? freshPackages : payload;
+      io.emit("packagesUpdated", broadcastData);
+      io.emit("packageUpdated", broadcastData);
+      console.log(
+        `📢 [PackageService] Broadcasted real-time packagesUpdated to all clients (${freshPackages.length} packages in cache)`
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Package cache refreshed and socket broadcast emitted successfully",
+      count: freshPackages.length,
+      action: payload.action || "update",
+    });
+  } catch (error) {
+    console.error("Error broadcasting package update:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to broadcast package update",
+    });
+  }
+});
+
 

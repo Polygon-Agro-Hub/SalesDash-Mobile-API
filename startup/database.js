@@ -1,27 +1,53 @@
 const mysql = require("mysql2");
 require("dotenv").config();
 
-// Create a MySQL connection pool
-const createPool = (database) => {
-  return mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT,
-    database: database,
-    charset: "utf8mb4",
-    waitForConnections: true,
-    connectionLimit: 3,
-    maxIdle: 2,
-    queueLimit: 0,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
-  });
+const admin = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME_AD,
+  port: process.env.DB_PORT,
+  charset: 'utf8mb4',
+  waitForConnections: true,
+  connectionLimit: 1,
+  maxIdle: 6, 
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay : 0,
+});
+
+const plantcare = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME_PC,
+  port: process.env.DB_PORT,
+  charset: 'utf8mb4',
+  waitForConnections: true,
+  connectionLimit: 4,
+  maxIdle: 6, 
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay : 0,
+});
+
+const collectionofficer = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME_CO,
+  port: process.env.DB_PORT,
+  charset: 'utf8mb4',
+  waitForConnections: true,
+  connectionLimit: 5,
+  maxIdle: 6, 
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay : 0,
+});
+
+module.exports = {
+  plantcare,
+  collectionofficer,
+  admin,
 };
-
-const plantcare = createPool(process.env.DB_NAME_PC);
-const collectionofficer = createPool(process.env.DB_NAME_CO);
-const marketPlace = createPool(process.env.DB_NAME_MP);
-const admin = createPool(process.env.DB_NAME_AD);
-
-module.exports = { plantcare, collectionofficer, marketPlace, admin };

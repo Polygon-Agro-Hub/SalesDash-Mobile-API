@@ -14,6 +14,9 @@ exports.getAllPackages = async (filters = {}) => {
             mp.packingFee, 
             mp.serviceFee,
             mp.isValid,
+            mp.packageType,
+            DATE_FORMAT(mp.startDate, '%Y-%m-%d') AS startDate,
+            DATE_FORMAT(mp.endDate, '%Y-%m-%d') AS endDate,
             COUNT(dpi.id) as itemCount
         FROM marketplacepackages mp
         INNER JOIN definepackage dp ON mp.id = dp.packageId
@@ -30,12 +33,12 @@ exports.getAllPackages = async (filters = {}) => {
     }
 
     // Add price range filters
-    if (filters.minPrice !== null) {
+    if (filters.minPrice !== null && filters.minPrice !== undefined) {
       query += ` AND mp.productPrice >= ?`;
       queryParams.push(filters.minPrice);
     }
 
-    if (filters.maxPrice !== null) {
+    if (filters.maxPrice !== null && filters.maxPrice !== undefined) {
       query += ` AND mp.productPrice <= ?`;
       queryParams.push(filters.maxPrice);
     }
@@ -48,7 +51,7 @@ exports.getAllPackages = async (filters = {}) => {
     }
 
     // Group by to handle DISTINCT with COUNT
-    query += ` GROUP BY mp.id, mp.displayName, mp.image, mp.status, mp.created_at, mp.description, mp.productPrice, mp.packingFee, mp.serviceFee, mp.isValid`;
+    query += ` GROUP BY mp.id, mp.displayName, mp.image, mp.status, mp.created_at, mp.description, mp.productPrice, mp.packingFee, mp.serviceFee, mp.isValid, mp.packageType, mp.startDate, mp.endDate`;
 
     // Add ordering
     query += ` ORDER BY mp.displayName ASC`;
@@ -59,7 +62,7 @@ exports.getAllPackages = async (filters = {}) => {
       queryParams.push(filters.limit, filters.offset || 0);
     }
 
-    db.marketPlace.query(query, queryParams, (error, results) => {
+    db.collectionofficer.query(query, queryParams, (error, results) => {
       if (error) {
         console.error("Error fetching packages:", error);
         reject(error);
@@ -83,7 +86,7 @@ exports.getItemsByPackageId = async (packageId) => {
         WHERE pd.packageId = ?
         `;
 
-    db.marketPlace.query(query, [packageId], (error, results) => {
+    db.collectionofficer.query(query, [packageId], (error, results) => {
       if (error) {
         console.error("Error fetching items for package:", error);
         reject(error);
@@ -109,7 +112,7 @@ exports.getMarketplaceItemDetails = async (mpItemId) => {
         WHERE id = ?;
         `;
 
-    db.marketPlace.query(query, [mpItemId], (error, results) => {
+    db.collectionofficer.query(query, [mpItemId], (error, results) => {
       if (error) {
         console.error("Error fetching marketplace item details:", error);
         reject(error);
@@ -126,13 +129,15 @@ exports.getMarketplacePackage = async (packageId) => {
         SELECT 
           id,
           displayName,
-        
-          description
+          description,
+          packageType,
+          DATE_FORMAT(startDate, '%Y-%m-%d') AS startDate,
+          DATE_FORMAT(endDate, '%Y-%m-%d') AS endDate
         FROM marketplacepackages
         WHERE id = ?;
         `;
 
-    db.marketPlace.query(query, [packageId], (error, results) => {
+    db.collectionofficer.query(query, [packageId], (error, results) => {
       if (error) {
         console.error("Error fetching package details:", error);
         reject(error);
@@ -155,7 +160,7 @@ exports.getAllCrops = async () => {
           AND mpi.isEnable = 1
         ORDER BY mpi.displayName ASC;
         `;
-    const [results] = await db.marketPlace.promise().query(query);
+    const [results] = await db.collectionofficer.promise().query(query);
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
@@ -174,7 +179,7 @@ exports.getCropById = async (id) => {
             WHERE id = ?;
         `;
 
-    const [results] = await db.marketPlace.promise().query(query, [id]);
+    const [results] = await db.collectionofficer.promise().query(query, [id]);
 
     return results[0];
   } catch (error) {
@@ -201,12 +206,12 @@ exports.getPackageItemByProductId = async (packageId, productId) => {
           mi.unitType,
           mi.startValue,
           mi.changeby
-        FROM market_place.packagedetails pd
+        FROM collection_officer.packagedetails pd
         LEFT JOIN marketplaceitems mi ON pd.mpItemId = mi.id
         WHERE pd.packageId = ? AND pd.mpItemId = ?;
         `;
 
-    db.marketPlace.query(query, [packageId, productId], (error, results) => {
+    db.collectionofficer.query(query, [packageId, productId], (error, results) => {
       if (error) {
         console.error("Error fetching package item details:", error);
         reject(error);
@@ -251,7 +256,7 @@ exports.getChangeByValue = async (mpItemId) => {
         WHERE id = ?;
         `;
 
-    db.marketPlace.query(query, [mpItemId], (error, results) => {
+    db.collectionofficer.query(query, [mpItemId], (error, results) => {
       if (error) {
         console.error("Error fetching marketplace item details:", error);
         reject(error);
@@ -271,21 +276,9 @@ exports.checkDisabledItems = async (packageId, itemIds) => {
   if (packageId) {
     // 1. Check if package itself is disabled
     const packageQuery = `SELECT status FROM marketplacepackages WHERE id = ?`;
-    const [packages] = await db.marketPlace.promise().query(packageQuery, [packageId]);
-    if (packages.length > 0 && packages[0].status !== "Enabled") {
+    const [packages] = await db.collectionofficer.promise().query(packageQuery, [packageId]);
+    if (packages.length > 0 && packages[0].status === "Disabled") {
       result.packageDisabled = true;
-    }
-
-    // 2. Check if package items are disabled
-    const packageItemsQuery = `
-      SELECT mi.id, mi.displayName
-      FROM packagedetails pd
-      INNER JOIN marketplaceitems mi ON pd.productTypeId = mi.productTypeId
-      WHERE pd.packageId = ? AND mi.isEnable = 0
-    `;
-    const [disabledPkgItems] = await db.marketPlace.promise().query(packageItemsQuery, [packageId]);
-    if (disabledPkgItems.length > 0) {
-      result.disabledItems.push(...disabledPkgItems.map(item => ({ id: item.id, displayName: item.displayName })));
     }
   }
 
@@ -296,7 +289,7 @@ exports.checkDisabledItems = async (packageId, itemIds) => {
       FROM marketplaceitems
       WHERE id IN (${placeholders}) AND isEnable = 0
     `;
-    const [disabledItems] = await db.marketPlace.promise().query(itemsQuery, itemIds);
+    const [disabledItems] = await db.collectionofficer.promise().query(itemsQuery, itemIds);
     if (disabledItems.length > 0) {
       result.disabledItems.push(...disabledItems.map(item => ({ id: item.id, displayName: item.displayName })));
     }

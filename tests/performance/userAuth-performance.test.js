@@ -10,10 +10,6 @@ jest.mock("../../startup/database", () => ({
         promise: () => ({ query: jest.fn() }),
         query: jest.fn(),
     },
-    marketPlace: {
-        promise: () => ({ query: jest.fn() }),
-        query: jest.fn(),
-    },
     admin: {
         promise: () => ({ query: jest.fn() }),
         query: jest.fn(),
