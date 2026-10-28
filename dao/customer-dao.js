@@ -258,7 +258,7 @@ const insertBuildingData = async (customerId, customerData, contactInfo) => {
   }
 };
 
-exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customerType = null) => {
+exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customerType = null, buyerType = null) => {
   return new Promise((resolve, reject) => {
     const offset = (page - 1) * limit;
 
@@ -269,12 +269,23 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customer
       typeFilter = " AND (c.created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR c.created_at IS NULL)";
     }
 
+    let buyerTypeFilter = "";
+    if (buyerType) {
+      const normalized = String(buyerType).trim().toLowerCase();
+      if (normalized === "wholesale") {
+        buyerTypeFilter = " AND c.buyerType = 'Wholesale'";
+      } else if (normalized === "retail") {
+        buyerTypeFilter = " AND (c.buyerType = 'Retail' OR c.buyerType IS NULL)";
+      }
+    }
+
     const countQuery = `
       SELECT COUNT(DISTINCT c.id) AS totalCount
       FROM marketplaceusers c
       WHERE c.salesAgent = ?
         AND c.isActive = 1
         ${typeFilter}
+        ${buyerTypeFilter}
     `;
 
     const dataQuery = `
@@ -296,6 +307,7 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customer
       WHERE c.salesAgent = ?
         AND c.isActive = 1
         ${typeFilter}
+        ${buyerTypeFilter}
       GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType, c.companyName, c.created_at
       ORDER BY c.id
       LIMIT ? OFFSET ?
