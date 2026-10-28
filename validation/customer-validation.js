@@ -75,14 +75,22 @@ exports.createCustomerSchema = Joi.object({
   }),
   companyPhoneCode: Joi.string().trim().max(5).optional().allow("", null),
   brImg: Joi.string().optional().allow("", null),
-  nic: Joi.string()
-    .trim()
-    .max(12)
-    .required()
-    .messages({
-      "string.empty": "NIC/Passport number is required",
-      "string.max": "Document number cannot exceed 12 characters",
+  nic: Joi.when("docType", {
+    is: "PASS",
+    then: Joi.string().trim().required().messages({
+      "string.empty": "Passport ID is required",
+      "any.required": "Passport ID is required",
     }),
+    otherwise: Joi.string()
+      .trim()
+      .max(12)
+      .required()
+      .messages({
+        "string.empty": "NIC number is required",
+        "string.max": "Document number cannot exceed 12 characters",
+        "any.required": "NIC number is required",
+      }),
+  }),
   city: Joi.string().trim().required().messages({
     "string.empty": "City is required",
   }),
@@ -293,7 +301,6 @@ exports.checkCustomerSchema = Joi.object({
   email: Joi.string().email().optional().allow("", null),
   nic: Joi.string()
     .trim()
-    .max(12)
     .optional()
     .allow("", null),
   excludeId: Joi.number().integer().positive().optional().allow(null),
