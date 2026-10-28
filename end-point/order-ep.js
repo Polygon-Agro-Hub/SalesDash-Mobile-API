@@ -334,6 +334,20 @@ exports.reportOrder = async (req, res) => {
   }
 };
 
+exports.getExistingCustomersDeliveredTotal = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+    if (!salesAgentId) {
+      return res.status(400).json({ success: false, message: "Sales agent ID is required" });
+    }
+    const total = await orderDao.getTotalDeliveredValueBySalesAgent(salesAgentId);
+    return res.status(200).json({ success: true, data: { totalDeliveredValue: total } });
+  } catch (error) {
+    console.error("Error in getExistingCustomersDeliveredTotal:", error);
+    return res.status(500).json({ success: false, message: "Failed to get total delivered value", error: error.message });
+  }
+};
+
 exports.getAgentStats = async (req, res) => {
   try {
     const salesAgentId = req.user.id;

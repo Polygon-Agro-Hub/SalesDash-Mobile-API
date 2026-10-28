@@ -2046,14 +2046,15 @@ exports.getMonthlyStats = async (salesAgentId) => {
           ? `${year + 1}-01-01`
           : `${year}-${(month + 1).toString().padStart(2, "0")}-01`;
 
-      // Get sum of numOfStars for the current month
+      // Get sum of numOfStars and targetAchievedDays for the current month
       const [rows] = await connection.query(
-        "SELECT SUM(numOfStars) as totalStars FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?",
+        "SELECT SUM(numOfStars) as totalStars, COUNT(CASE WHEN completed >= target AND target > 0 THEN 1 END) as targetAchievedDays FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?",
         [salesAgentId, firstDay, lastDay],
       );
 
       return {
         totalStars: rows[0].totalStars || 0,
+        targetAchievedDays: rows[0].targetAchievedDays || 0,
       };
     } finally {
       connection.release();
@@ -2064,14 +2065,40 @@ exports.getMonthlyStats = async (salesAgentId) => {
   }
 };
 
+exports.getTotalDeliveredValueBySalesAgent = async (salesAgentId) => {
+  try {
+    const connection = await db.collectionofficer.promise().getConnection();
+    try {
+      const [rows] = await connection.query(
+        `SELECT COALESCE(SUM(p.fullTotal), 0) AS totalDeliveredAmount
+         FROM collection_officer.processorders p
+         JOIN collection_officer.orders o ON p.orderid = o.id
+         JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+        WHERE m.salesAgent = ?
+          AND m.isActive = 1
+          AND p.status IN ('Delivered', 'Picked up')`,
+        [salesAgentId],
+      );
+      return parseFloat(rows[0]?.totalDeliveredAmount || 0);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error("Error in getTotalDeliveredValueBySalesAgent:", error);
+    throw error;
+  }
+};
+
 exports.getCombinedStats = async (salesAgentId) => {
   try {
     const dailyStats = await exports.getTodayStats(salesAgentId);
     const monthlyStats = await exports.getMonthlyStats(salesAgentId);
+    const totalDeliveredValue = await exports.getTotalDeliveredValueBySalesAgent(salesAgentId);
 
     return {
       daily: dailyStats,
       monthly: monthlyStats,
+      totalDeliveredValue,
     };
   } catch (error) {
     console.error("Error in getCombinedStats:", error);
