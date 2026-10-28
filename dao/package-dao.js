@@ -148,15 +148,19 @@ exports.getMarketplacePackage = async (packageId) => {
   });
 };
 
-exports.getAllCrops = async () => {
+exports.getAllCrops = async (queryParams) => {
   try {
+    const isWholesale = queryParams?.buyerType && String(queryParams.buyerType).toLowerCase() === "wholesale";
+    const categoryFilter = isWholesale
+      ? "LOWER(mpi.category) IN ('wholesale', 'retail')"
+      : "LOWER(mpi.category) = 'retail'";
     const query = `
         SELECT 
             mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
             mpi.normalPrice, mpi.discountedPrice, mpi.discount,
             mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
         FROM marketplaceitems mpi
-        WHERE mpi.category = 'Retail'
+        WHERE ${categoryFilter}
           AND mpi.isEnable = 1
         ORDER BY mpi.displayName ASC;
         `;
