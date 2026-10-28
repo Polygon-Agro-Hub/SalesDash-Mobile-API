@@ -970,25 +970,35 @@ exports.getCustomerDataLocation = async (customerId) => {
   return new Promise((resolve, reject) => {
     const query = `
             SELECT 
-                id,
-                salesAgent,
-                googleId,
-                cusId,
-                title,
-                firstName,
-                lastName,
-                phoneCode,
-                phoneCode2,
-                phoneNumber,
-                phoneNumber2,
-                buyerType,
-                creditBalance,
-                email,
-                password,
-                image,
-                created_at
-            FROM marketplaceusers 
-            WHERE cusId = ? OR id = ?
+                m.id,
+                m.salesAgent,
+                m.googleId,
+                m.cusId,
+                m.title,
+                m.firstName,
+                m.lastName,
+                m.phoneCode,
+                m.phoneCode2,
+                m.phoneNumber,
+                m.phoneNumber2,
+                m.buyerType,
+                m.companyName,
+                m.companyPhone,
+                m.companyPhoneCode,
+                m.creditBalance,
+                m.email,
+                m.password,
+                m.image,
+                m.created_at,
+                pw.id AS wholesaleApplicationId,
+                pw.approveStatus AS wholesaleApproveStatus,
+                pw.brImg AS wholesaleBrImg,
+                pw.createdAt AS wholesaleCreatedAt
+            FROM marketplaceusers m
+            LEFT JOIN pendingwholesaleusers pw ON pw.id = (
+                SELECT MAX(id) FROM pendingwholesaleusers WHERE userId = m.id
+            )
+            WHERE m.cusId = ? OR m.id = ?
             LIMIT 1
         `;
 
@@ -1553,4 +1563,25 @@ exports.updateSavedAddress = async (
   } finally {
     conn.release();
   }
+};
+
+exports.resubmitWholesaleBr = async (customerId, brImg) => {
+  const [cusRows] = await db.collectionofficer.promise().query(
+    "SELECT id FROM marketplaceusers WHERE id = ? OR cusId = ? LIMIT 1",
+    [customerId, customerId]
+  );
+  if (cusRows.length === 0) {
+    throw new Error("Customer not found");
+  }
+  const userId = cusRows[0].id;
+  const [insertResult] = await db.collectionofficer.promise().query(
+    "INSERT INTO pendingwholesaleusers (userId, approveStatus, brImg, createdAt) VALUES (?, 'To Review', ?, NOW())",
+    [userId, brImg]
+  );
+  return {
+    id: insertResult.insertId,
+    userId,
+    approveStatus: "To Review",
+    brImg,
+  };
 };

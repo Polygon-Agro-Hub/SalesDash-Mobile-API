@@ -608,3 +608,17 @@ exports.uploadBrImage = async (req, res) => {
     return res.status(500).json({ error: "Failed to upload BR document to R2" });
   }
 };
+
+exports.resubmitWholesaleBr = asyncHandler(async (req, res) => {
+  const { customerId, brImg } = req.body;
+  if (!customerId || !brImg) {
+    return res.status(400).json({ error: "Customer ID and BR Image are required" });
+  }
+
+  const result = await customerDAO.resubmitWholesaleBr(customerId, brImg);
+  res.status(200).json({
+    status: "success",
+    message: "BR document resubmitted successfully",
+    data: result,
+  });
+});

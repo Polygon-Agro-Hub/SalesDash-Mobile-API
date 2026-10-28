@@ -48,4 +48,6 @@ router.put('/update-saved-address/:addressId', customerEp.updateSavedAddress);
 
 router.post('/upload-br', customerEp.uploadBrImage);
 
+router.post("/resubmit-wholesale-br", auth, customerEp.resubmitWholesaleBr);
+
 module.exports = router;
