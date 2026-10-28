@@ -204,15 +204,23 @@ const insertBuildingData = async (customerId, customerData, contactInfo) => {
   }
 };
 
-exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
+exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customerType = null) => {
   return new Promise((resolve, reject) => {
     const offset = (page - 1) * limit;
+
+    let typeFilter = "";
+    if (customerType === "new") {
+      typeFilter = " AND c.created_at >= DATE_SUB(NOW(), INTERVAL 84 DAY)";
+    } else if (customerType === "existing") {
+      typeFilter = " AND (c.created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR c.created_at IS NULL)";
+    }
 
     const countQuery = `
       SELECT COUNT(DISTINCT c.id) AS totalCount
       FROM marketplaceusers c
       WHERE c.salesAgent = ?
         AND c.isActive = 1
+        ${typeFilter}
     `;
 
     const dataQuery = `
@@ -226,12 +234,14 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10) => {
         c.phoneNumber,
         c.email,
         c.buyerType,
+        c.created_at AS createdAt,
         COUNT(o.id) AS orderCount
       FROM marketplaceusers c
       LEFT JOIN orders o ON c.id = o.userId
       WHERE c.salesAgent = ?
         AND c.isActive = 1
-      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType
+        ${typeFilter}
+      GROUP BY c.id, c.cusId, c.title, c.firstName, c.lastName, c.phoneCode, c.phoneNumber, c.email, c.buyerType, c.created_at
       ORDER BY c.id
       LIMIT ? OFFSET ?
     `;
@@ -666,9 +676,14 @@ exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
     try {
       const [rows] = await connection.query(
         `
-        SELECT salesAgent, COUNT(*) AS customerCount
+        SELECT 
+          salesAgent, 
+          COUNT(*) AS customerCount,
+          COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 84 DAY) THEN 1 END) AS newCustomerCount,
+          COUNT(CASE WHEN created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR created_at IS NULL THEN 1 END) AS existingCustomerCount
         FROM marketplaceusers
         WHERE salesAgent = ?
+          AND isActive = 1
         GROUP BY salesAgent
       `,
         [salesAgentId],
@@ -677,7 +692,7 @@ exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
       // Return the count for the specific agent, or default object if no customers found
       return rows.length > 0
         ? rows[0]
-        : { salesAgent: parseInt(salesAgentId), customerCount: 0 };
+        : { salesAgent: parseInt(salesAgentId), customerCount: 0, newCustomerCount: 0, existingCustomerCount: 0 };
     } finally {
       connection.release();
     }

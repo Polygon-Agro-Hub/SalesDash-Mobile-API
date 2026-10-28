@@ -58,11 +58,13 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const customerType = req.query.type || req.query.customerType || null;
 
     const result = await customerDAO.getCustomersBySalesAgent(
       salesAgentId,
       page,
       limit,
+      customerType,
     );
 
     res.status(200).json({
