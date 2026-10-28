@@ -58,11 +58,15 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const customerType = req.query.type || req.query.customerType || null;
+    const buyerType = req.query.buyerType || null;
 
     const result = await customerDAO.getCustomersBySalesAgent(
       salesAgentId,
       page,
       limit,
+      customerType,
+      buyerType,
     );
 
     res.status(200).json({
@@ -571,4 +575,52 @@ exports.updateSavedAddress = asyncHandler(async (req, res) => {
     }
     res.status(500).json({ error: error.message });
   }
+});
+
+exports.uploadBrImage = async (req, res) => {
+  try {
+    const { base64, fileName } = req.body;
+    if (!base64) {
+      return res.status(400).json({ error: "No image or document data provided" });
+    }
+
+    let cleanBase64 = base64;
+    let ext = "png";
+    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      const mime = matches[1];
+      ext = mime.split("/")[1] || "png";
+      if (ext.includes("pdf")) ext = "pdf";
+      cleanBase64 = matches[2];
+    } else if (fileName && fileName.includes(".")) {
+      ext = fileName.split(".").pop();
+    }
+
+    const buffer = Buffer.from(cleanBase64, "base64");
+    const uploadFileToS3 = require("../middleware/s3upload");
+    const safeName = fileName || ("br_" + Date.now() + "." + ext);
+    const fileUrl = await uploadFileToS3(buffer, safeName, "wholesale_br");
+
+    return res.status(200).json({
+      status: "success",
+      url: fileUrl,
+    });
+  } catch (error) {
+    console.error("Error uploading BR document to R2:", error);
+    return res.status(500).json({ error: "Failed to upload BR document to R2" });
+  }
+};
+
+exports.resubmitWholesaleBr = asyncHandler(async (req, res) => {
+  const { customerId, brImg } = req.body;
+  if (!customerId || !brImg) {
+    return res.status(400).json({ error: "Customer ID and BR Image are required" });
+  }
+
+  const result = await customerDAO.resubmitWholesaleBr(customerId, brImg);
+  res.status(200).json({
+    status: "success",
+    message: "BR document resubmitted successfully",
+    data: result,
+  });
 });

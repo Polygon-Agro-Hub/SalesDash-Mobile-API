@@ -334,6 +334,20 @@ exports.reportOrder = async (req, res) => {
   }
 };
 
+exports.getExistingCustomersDeliveredTotal = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+    if (!salesAgentId) {
+      return res.status(400).json({ success: false, message: "Sales agent ID is required" });
+    }
+    const total = await orderDao.getTotalDeliveredValueBySalesAgent(salesAgentId);
+    return res.status(200).json({ success: true, data: { totalDeliveredValue: total } });
+  } catch (error) {
+    console.error("Error in getExistingCustomersDeliveredTotal:", error);
+    return res.status(500).json({ success: false, message: "Failed to get total delivered value", error: error.message });
+  }
+};
+
 exports.getAgentStats = async (req, res) => {
   try {
     const salesAgentId = req.user.id;
@@ -504,5 +518,67 @@ exports.checkOrderPaymentStatus = async (req, res) => {
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getDailyTargets = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+
+    const now = new Date();
+    const month = parseInt(req.query.month, 10) || now.getMonth() + 1; // 1-12
+    const year = parseInt(req.query.year, 10) || now.getFullYear();
+
+    if (month < 1 || month > 12 || year < 2000 || year > 2100) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid month or year",
+      });
+    }
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 100);
+
+    const result = await orderDao.getDailyTargets(
+      salesAgentId,
+      month,
+      year,
+      page,
+      limit,
+    );
+
+    const totalPages = Math.max(Math.ceil(result.totalCount / limit), 1);
+
+    res.status(200).json({
+      success: true,
+      count: result.records.length,
+      totalCount: result.totalCount,
+      currentPage: page,
+      totalPages,
+      hasMore: page < totalPages,
+      data: result.records,
+    });
+  } catch (error) {
+    console.error("Error fetching daily targets:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch daily targets",
+      error: error.message,
+    });
+  }
+};
+
+exports.getCustomersTotalValueSummary = async (req, res) => {
+  try {
+    const salesAgentId = req.user.id;
+    if (!salesAgentId) {
+      return res.status(400).json({ success: false, message: "Sales agent ID is required" });
+    }
+    const { page, limit, filter } = req.query;
+    const result = await orderDao.getCustomersTotalValueSummary(salesAgentId, { page, limit, filter });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("Error in getCustomersTotalValueSummary:", error);
+    return res.status(500).json({ success: false, message: "Failed to get customers total value summary", error: error.message });
   }
 };

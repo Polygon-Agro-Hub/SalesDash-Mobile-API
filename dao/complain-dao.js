@@ -74,6 +74,7 @@ exports.getComplainCategoriesDAO = async (appName) => {
                 FROM complaincategory cc
                 JOIN systemapplications ssa ON cc.appId = ssa.id
                 WHERE ssa.appName = ?
+                ORDER BY cc.categoryEnglish ASC
       `;
     db.admin.query(query, [appName], (error, results) => {
       if (error) {

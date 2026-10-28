@@ -55,15 +55,42 @@ exports.createCustomerSchema = Joi.object({
   email: Joi.string().email().optional().allow("", null).messages({
     "string.email": "Email must be a valid email address",
   }),
-  nic: Joi.string()
-    .trim()
-    .pattern(/^([0-9]{9}[vVxX]|[0-9]{12})$/)
-    .required()
-    .messages({
-      "string.empty": "NIC number is required",
-      "string.pattern.base":
-        "NIC must be 9 digits followed by V/X, or 12 digits",
+  docType: Joi.string().valid("NIC", "PASS").optional().default("NIC"),
+  buyerType: Joi.string().valid("Retail", "Wholesale").optional().default("Retail"),
+  companyName: Joi.when("buyerType", {
+    is: "Wholesale",
+    then: Joi.string().trim().max(255).required().messages({
+      "string.empty": "Company name is required for wholesale customer",
+      "any.required": "Company name is required for wholesale customer",
     }),
+    otherwise: Joi.string().trim().max(255).optional().allow("", null),
+  }),
+  companyPhone: Joi.when("buyerType", {
+    is: "Wholesale",
+    then: Joi.string().trim().max(20).required().messages({
+      "string.empty": "Company phone is required for wholesale customer",
+      "any.required": "Company phone is required for wholesale customer",
+    }),
+    otherwise: Joi.string().trim().max(20).optional().allow("", null),
+  }),
+  companyPhoneCode: Joi.string().trim().max(5).optional().allow("", null),
+  brImg: Joi.string().optional().allow("", null),
+  nic: Joi.when("docType", {
+    is: "PASS",
+    then: Joi.string().trim().required().messages({
+      "string.empty": "Passport ID is required",
+      "any.required": "Passport ID is required",
+    }),
+    otherwise: Joi.string()
+      .trim()
+      .max(12)
+      .required()
+      .messages({
+        "string.empty": "NIC number is required",
+        "string.max": "Document number cannot exceed 12 characters",
+        "any.required": "NIC number is required",
+      }),
+  }),
   city: Joi.string().trim().required().messages({
     "string.empty": "City is required",
   }),
@@ -274,11 +301,7 @@ exports.checkCustomerSchema = Joi.object({
   email: Joi.string().email().optional().allow("", null),
   nic: Joi.string()
     .trim()
-    .pattern(/^([0-9]{9}[vVxX]|[0-9]{12})$/)
     .optional()
-    .allow("", null)
-    .messages({
-      "string.pattern.base": "NIC must be 9 digits followed by V/X, or 12 digits",
-    }),
+    .allow("", null),
   excludeId: Joi.number().integer().positive().optional().allow(null),
 });
