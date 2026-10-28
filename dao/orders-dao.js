@@ -768,7 +768,7 @@ async function insertProcessOrder(
     const isPackageOrder = Number(orderData.isPackage) === 1;
     const isFinalizeImmediate =
       orderData.isFinalizeImdt !== undefined &&
-      orderData.isFinalizeImdt !== null
+        orderData.isFinalizeImdt !== null
         ? Number(orderData.isFinalizeImdt) === 1
         : !isPackageOrder;
 
@@ -987,7 +987,7 @@ async function sendOrderConfirmationSMS(
     const isPackageOrder = Number(orderData.isPackage) === 1 ? 1 : 0;
     const isFinalizeImdt =
       orderData.isFinalizeImdt !== undefined &&
-      orderData.isFinalizeImdt !== null
+        orderData.isFinalizeImdt !== null
         ? Number(orderData.isFinalizeImdt)
         : 0;
 
@@ -2332,5 +2332,67 @@ exports.checkOrderPaymentStatus = async (orderId) => {
     if (connection) {
       connection.release();
     }
+  }
+};
+
+exports.getDailyTargets = async (
+  salesAgentId,
+  month,
+  year,
+  page = 1,
+  limit = 5,
+) => {
+  let connection;
+
+  try {
+    connection = await db.collectionofficer.promise().getConnection();
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
+    // first day of the month -> first day of next month (index friendly)
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+    const whereSql = `
+      WHERE s.salesAgentId = ?
+        AND s.date >= ?
+        AND s.date < ?
+    `;
+    const params = [salesAgentId, startDate, endDate];
+
+    // ---------- total count ----------
+    const [countResult] = await connection.execute(
+      `SELECT COUNT(*) AS totalCount
+       FROM collection_officer.salesagentstars s
+       ${whereSql}`,
+      params,
+    );
+    const totalCount = countResult[0].totalCount;
+
+    // ---------- page of daily records ----------
+    const [rows] = await connection.execute(
+      `SELECT
+         s.id,
+         DATE_FORMAT(s.date, '%Y-%m-%d') AS date,
+         s.target,
+         s.completed,
+         s.numOfStars
+       FROM collection_officer.salesagentstars s
+       ${whereSql}
+       ORDER BY s.date DESC, s.id DESC
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      params,
+    );
+
+    return { records: rows, totalCount };
+  } catch (err) {
+    console.error("Database error:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
   }
 };

@@ -31,5 +31,7 @@ router.get('/delivered-total/:userId', auth, orderEp.getDeliveredOrdersTotal);
 
 router.get('/check-payment-status/:orderId', orderEp.checkOrderPaymentStatus);
 
+router.get("/daily-targets", auth, orderEp.getDailyTargets);
+
 module.exports = router;
 
