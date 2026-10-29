@@ -126,7 +126,7 @@ function generateOrderConfirmationSMS({
     return {
       type: 5,
       scenario: "Review and confirm before delivery",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedDate}. Please pay by 6:00 PM to confirm your order, or it will be cancelled.`,
+      message: `Dear Customer, You’ll receive an order review request via the Polygon Platform by 8:00 AM on ${formattedDate}. Please review and accept your order by 6:00 PM or it will be canceled.`,
     };
   }
 
