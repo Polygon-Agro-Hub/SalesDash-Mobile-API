@@ -45,8 +45,11 @@ exports.addCustomer = (customerData, salesAgent) => {
       const hashedPassword = await bcrypt.hash(nic, SALT_ROUNDS);
 
       const docType = customerData.docType === "PASS" ? "PASS" : "NIC";
-      const buyerType = customerData.buyerType === "Wholesale" ? "Wholesale" : "Retail";
-      const companyName = customerData.companyName ? customerData.companyName.trim() : null;
+      const buyerType =
+        customerData.buyerType === "Wholesale" ? "Wholesale" : "Retail";
+      const companyName = customerData.companyName
+        ? customerData.companyName.trim()
+        : null;
 
       let companyPhoneCode = null;
       let companyPhone = null;
@@ -108,21 +111,35 @@ exports.addCustomer = (customerData, salesAgent) => {
               let brImg = customerData.brImg || null;
               if (brImg && brImg.startsWith("data:")) {
                 try {
-                  const matches = brImg.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                  const matches = brImg.match(
+                    /^data:([A-Za-z-+\/]+);base64,(.+)$/,
+                  );
                   if (matches && matches.length === 3) {
                     const buffer = Buffer.from(matches[2], "base64");
                     const ext = matches[1].split("/")[1] || "png";
                     const uploadFileToS3 = require("../middleware/s3upload");
-                    brImg = await uploadFileToS3(buffer, `br_${Date.now()}.${ext}`, "wholesale_br");
+                    brImg = await uploadFileToS3(
+                      buffer,
+                      `br_${Date.now()}.${ext}`,
+                      "wholesale_br",
+                    );
                   }
                 } catch (upErr) {
-                  console.error("Failed to upload BR to R2/S3, storing original payload:", upErr);
+                  console.error(
+                    "Failed to upload BR to R2/S3, storing original payload:",
+                    upErr,
+                  );
                 }
               }
               const sqlPending = `INSERT INTO pendingwholesaleusers (userId, approveStatus, brImg) VALUES (?, 'To Review', ?)`;
-              await db.collectionofficer.promise().query(sqlPending, [insertId, brImg]);
+              await db.collectionofficer
+                .promise()
+                .query(sqlPending, [insertId, brImg]);
             } catch (pendingErr) {
-              console.error("Error creating pendingwholesaleusers record:", pendingErr);
+              console.error(
+                "Error creating pendingwholesaleusers record:",
+                pendingErr,
+              );
             }
           }
 
@@ -158,7 +175,9 @@ const generateCustomerId = async () => {
         LIMIT 1
     `;
 
-  const [result] = await db.collectionofficer.promise().query(sqlGetLastCustomerId);
+  const [result] = await db.collectionofficer
+    .promise()
+    .query(sqlGetLastCustomerId);
 
   let newCustomerId = "CUS-00001";
 
@@ -180,7 +199,7 @@ async function sendCustomerWelcomeSMS(phoneCode, phoneNumber, nic) {
     const smsMessage =
       `Welcome to Polygon! Your Polygon Mobile App login details are:\n` +
       `Username: ${phoneNumber}\n` +
-      `Password: ${nic} (Your NIC)\n` +
+      `Password: ${nic} (Your NIC/ Passport)\n` +
       `Please keep your login details confidential.`;
 
     const smsResult = await smsService.sendSMS(fullPhoneNumber, smsMessage);
@@ -250,15 +269,18 @@ const insertBuildingData = async (customerId, customerData, contactInfo) => {
         contactInfo.nic,
       );
     } catch (smsError) {
-      console.error(
-        "Failed to send welcome SMS to new customer:",
-        smsError,
-      );
+      console.error("Failed to send welcome SMS to new customer:", smsError);
     }
   }
 };
 
-exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customerType = null, buyerType = null) => {
+exports.getCustomersBySalesAgent = (
+  salesAgentId,
+  page = 1,
+  limit = 10,
+  customerType = null,
+  buyerType = null,
+) => {
   return new Promise((resolve, reject) => {
     const offset = (page - 1) * limit;
 
@@ -266,7 +288,8 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customer
     if (customerType === "new") {
       typeFilter = " AND c.created_at >= DATE_SUB(NOW(), INTERVAL 84 DAY)";
     } else if (customerType === "existing") {
-      typeFilter = " AND (c.created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR c.created_at IS NULL)";
+      typeFilter =
+        " AND (c.created_at < DATE_SUB(NOW(), INTERVAL 84 DAY) OR c.created_at IS NULL)";
     }
 
     let buyerTypeFilter = "";
@@ -275,7 +298,8 @@ exports.getCustomersBySalesAgent = (salesAgentId, page = 1, limit = 10, customer
       if (normalized === "wholesale") {
         buyerTypeFilter = " AND c.buyerType = 'Wholesale'";
       } else if (normalized === "retail") {
-        buyerTypeFilter = " AND (c.buyerType = 'Retail' OR c.buyerType IS NULL)";
+        buyerTypeFilter =
+          " AND (c.buyerType = 'Retail' OR c.buyerType IS NULL)";
       }
     }
 
@@ -759,7 +783,12 @@ exports.getCustomerCountBySalesAgent = async (salesAgentId) => {
       // Return the count for the specific agent, or default object if no customers found
       return rows.length > 0
         ? rows[0]
-        : { salesAgent: parseInt(salesAgentId), customerCount: 0, newCustomerCount: 0, existingCustomerCount: 0 };
+        : {
+          salesAgent: parseInt(salesAgentId),
+          customerCount: 0,
+          newCustomerCount: 0,
+          existingCustomerCount: 0,
+        };
     } finally {
       connection.release();
     }
@@ -909,7 +938,9 @@ exports.getExcludeList = async (customerId) => {
       WHERE mps.id = ?  -- Filter by customerId
       ORDER BY mpi.displayName ASC; 
     `;
-    const [results] = await db.collectionofficer.promise().query(query, [customerId]);
+    const [results] = await db.collectionofficer
+      .promise()
+      .query(query, [customerId]);
 
     return results;
     ta;
@@ -940,7 +971,9 @@ exports.getCustomerPreferlist = async (customerId) => {
       WHERE mps.id = ?
       ORDER BY mpi.displayName ASC; 
     `;
-    const [results] = await db.collectionofficer.promise().query(query, [customerId]);
+    const [results] = await db.collectionofficer
+      .promise()
+      .query(query, [customerId]);
     return results;
   } catch (error) {
     console.error("Error fetching prefer list:", error);
@@ -1014,15 +1047,19 @@ exports.getCustomerDataLocation = async (customerId) => {
             LIMIT 1
         `;
 
-    db.collectionofficer.query(query, [customerId, customerId], (error, results) => {
-      if (error) {
-        console.error("Error fetching customer data:", error);
-        reject(error);
-      } else {
-        // Return the first result if exists, otherwise null
-        resolve(results.length > 0 ? results[0] : null);
-      }
-    });
+    db.collectionofficer.query(
+      query,
+      [customerId, customerId],
+      (error, results) => {
+        if (error) {
+          console.error("Error fetching customer data:", error);
+          reject(error);
+        } else {
+          // Return the first result if exists, otherwise null
+          resolve(results.length > 0 ? results[0] : null);
+        }
+      },
+    );
   });
 };
 
@@ -1586,10 +1623,36 @@ exports.resubmitWholesaleBr = async (customerId, brImg) => {
     throw new Error("Customer not found");
   }
   const userId = cusRows[0].id;
+
+  // 1. remember the old records (and their R2 urls)
+  const [oldRows] = await db.collectionofficer.promise().query(
+    "SELECT id, brImg FROM pendingwholesaleusers WHERE userId = ?",
+    [userId]
+  );
+
+  // 2. insert the new record
   const [insertResult] = await db.collectionofficer.promise().query(
     "INSERT INTO pendingwholesaleusers (userId, approveStatus, brImg, createdAt) VALUES (?, 'To Review', ?, NOW())",
     [userId, brImg]
   );
+
+  // 3. delete every older record of this customer
+  await db.collectionofficer.promise().query(
+    "DELETE FROM pendingwholesaleusers WHERE userId = ? AND id <> ?",
+    [userId, insertResult.insertId]
+  );
+
+  // 4. delete the old files from R2 (best-effort, never fails the request)
+  const deleteFileFromS3 = require("../middleware/s3delete");
+  const oldUrls = [
+    ...new Set(
+      oldRows.map((r) => r.brImg).filter((url) => url && url !== brImg)
+    ),
+  ];
+  await Promise.all(
+    oldUrls.map((url) => deleteFileFromS3(url, "wholesale_br/"))
+  );
+
   return {
     id: insertResult.insertId,
     userId,
