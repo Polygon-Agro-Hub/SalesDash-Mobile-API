@@ -120,7 +120,7 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
     res.setHeader("Expires", "0");
     res.status(200).json({
       message: "Marketplace item fetched successfully",
-      data: marketplaceIPackage, 
+      data: marketplaceIPackage,
     });
   } catch (error) {
     console.error("Error fetching marketplace item:", error);
@@ -134,10 +134,10 @@ exports.getMarketplacePackage = asyncHandler(async (req, res) => {
 });
 
 exports.getAllCrops = asyncHandler(async (req, res) => {
-  const cusId = req.query;
+  const { buyerType } = req.query;
 
   try {
-    const crops = await packageDAO.getAllCrops(cusId);
+    const crops = await packageDAO.getAllCrops({ buyerType });
     if (!crops || crops.length === 0) {
       return res.status(404).json({ message: "No crops found" });
     }
@@ -166,13 +166,13 @@ exports.getCropById = async (req, res) => {
 
     res.status(200).json({
       message: "Crop fetched successfully",
-      data: crop, 
+      data: crop,
     });
   } catch (error) {
     console.error(" Error fetching crop:", error);
     res
       .status(500)
-      .json({ message: "Failed to fetch crop", error: error.message }); 
+      .json({ message: "Failed to fetch crop", error: error.message });
   }
 };
 

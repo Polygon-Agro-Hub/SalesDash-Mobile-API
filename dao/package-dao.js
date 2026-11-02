@@ -150,21 +150,23 @@ exports.getMarketplacePackage = async (packageId) => {
 
 exports.getAllCrops = async (queryParams) => {
   try {
-    const isWholesale = queryParams?.buyerType && String(queryParams.buyerType).toLowerCase() === "wholesale";
-    const categoryFilter = isWholesale
-      ? "LOWER(mpi.category) IN ('wholesale', 'retail')"
-      : "LOWER(mpi.category) = 'retail'";
+    const isWholesale =
+      queryParams?.buyerType &&
+      String(queryParams.buyerType).toLowerCase() === "wholesale";
+
+    const category = isWholesale ? "wholesale" : "retail";
+
     const query = `
-        SELECT 
-            mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
-            mpi.normalPrice, mpi.discountedPrice, mpi.discount,
-            mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
-        FROM marketplaceitems mpi
-        WHERE ${categoryFilter}
-          AND mpi.isEnable = 1
-        ORDER BY mpi.displayName ASC;
-        `;
-    const [results] = await db.collectionofficer.promise().query(query);
+      SELECT 
+        mpi.id, mpi.varietyId, mpi.displayName, mpi.category,
+        mpi.normalPrice, mpi.discountedPrice, mpi.discount,
+        mpi.promo, mpi.unitType, mpi.startValue, mpi.changeby, mpi.tags
+      FROM marketplaceitems mpi
+      WHERE LOWER(mpi.category) = ?
+        AND mpi.isEnable = 1
+      ORDER BY mpi.displayName ASC;
+    `;
+    const [results] = await db.collectionofficer.promise().query(query, [category]);
     return results;
   } catch (error) {
     console.error("Error fetching crops:", error);
@@ -250,12 +252,12 @@ exports.getChangeByValue = async (mpItemId) => {
   return new Promise((resolve, reject) => {
     const query = `
         SELECT 
-          id,
-          
+          id,       
           discountedPrice, 
           unitType, 
           startValue, 
-          changeby
+          changeby,
+          maxQuantity
         FROM marketplaceitems
         WHERE id = ?;
         `;
