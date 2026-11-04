@@ -607,7 +607,7 @@ exports.uploadBrImage = async (req, res) => {
     });
   } catch (error) {
     console.error("Error uploading BR document to R2:", error);
-    return res.status(500).json({ error: "Failed to upload BR document to R2" });
+    return res.status(500).json({ error: "Failed to upload BR document" });
   }
 };
 
