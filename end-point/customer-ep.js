@@ -584,16 +584,50 @@ exports.uploadBrImage = async (req, res) => {
       return res.status(400).json({ error: "No image or document data provided" });
     }
 
+    const ALLOWED_EXT = ["pdf", "png", "jpg", "jpeg", "heic", "heif"];
+    const ALLOWED_MIME = [
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/heic",
+      "image/heif",
+    ];
+
     let cleanBase64 = base64;
-    let ext = "png";
+    let ext = "";
     const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     if (matches && matches.length === 3) {
-      const mime = matches[1];
-      ext = mime.split("/")[1] || "png";
-      if (ext.includes("pdf")) ext = "pdf";
+      const mime = matches[1].toLowerCase();
+      if (!ALLOWED_MIME.includes(mime)) {
+        return res.status(400).json({
+          error: "Unsupported file type. Only PDF, PNG, JPG, and HEIC files are allowed.",
+        });
+      }
+      if (mime.includes("pdf")) ext = "pdf";
+      else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+      else if (mime.includes("png")) ext = "png";
+      else if (mime.includes("heic")) ext = "heic";
+      else if (mime.includes("heif")) ext = "heif";
       cleanBase64 = matches[2];
     } else if (fileName && fileName.includes(".")) {
-      ext = fileName.split(".").pop();
+      ext = fileName.split(".").pop().toLowerCase();
+    }
+
+    if (fileName && fileName.includes(".")) {
+      const fileExt = fileName.split(".").pop().toLowerCase();
+      if (!ALLOWED_EXT.includes(fileExt)) {
+        return res.status(400).json({
+          error: "Unsupported file type. Only PDF, PNG, JPG, and HEIC files are allowed.",
+        });
+      }
+      if (!ext) ext = fileExt;
+    }
+
+    if (!ext || !ALLOWED_EXT.includes(ext.toLowerCase())) {
+      return res.status(400).json({
+        error: "Unsupported file type. Only PDF, PNG, JPG, and HEIC files are allowed.",
+      });
     }
 
     const buffer = Buffer.from(cleanBase64, "base64");
@@ -606,8 +640,8 @@ exports.uploadBrImage = async (req, res) => {
       url: fileUrl,
     });
   } catch (error) {
-    console.error("Error uploading BR document to R2:", error);
-    return res.status(500).json({ error: "Failed to upload BR document to R2" });
+    console.error("Error uploading BR document:", error);
+    return res.status(500).json({ error: "Failed to upload BR document" });
   }
 };
 
