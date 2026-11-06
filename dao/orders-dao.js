@@ -6,6 +6,7 @@ const uploadFileToS3 = require("../middleware/s3upload");
 
 exports.processOrder = async (orderData, salesAgentId) => {
   console.time("process-order");
+  const orderPlacedDate = new Date();
   let connection;
   let transactionStarted = false;
 
@@ -240,6 +241,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
                 processOrderId: row.id,
                 invNo: row.invNo,
                 scheduledDate: row.sheduleDate,
+                orderPlacedDate,
                 userId: orderData.userId,
               })
               .catch((err) => {
@@ -740,20 +742,39 @@ async function insertProcessOrder(
     const isPaidValue = 0;
     const amountValue = 0.0;
 
-    // isConfirmed = 1 only when schedule date is the earliest possible date (today + 3 days)
-    const earliestDate = new Date();
-    earliestDate.setDate(earliestDate.getDate() + 3);
-    earliestDate.setHours(0, 0, 0, 0);
+    // isConfirmed = 1 only when:
+    // 1. Order type qualifies:
+    //    - Only alacarte items (isPackage === 0)
+    //    - Only packages OR packages + alacarte items (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
+    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff)
+    const now = new Date();
+    const isAfterCutoff = now.getHours() >= 18;
+    const extraDays = isAfterCutoff ? 4 : 3;
+    const epsd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + extraDays,
+    );
+    epsd.setHours(0, 0, 0, 0);
 
     const schedDate = targetScheduleDate ? new Date(targetScheduleDate) : null;
-    const isConfirmedValue =
+    const isEpsdDate =
       schedDate &&
-        !isNaN(schedDate.getTime()) &&
-        schedDate.getFullYear() === earliestDate.getFullYear() &&
-        schedDate.getMonth() === earliestDate.getMonth() &&
-        schedDate.getDate() === earliestDate.getDate()
-        ? 1
-        : 0;
+      !isNaN(schedDate.getTime()) &&
+      schedDate.getFullYear() === epsd.getFullYear() &&
+      schedDate.getMonth() === epsd.getMonth() &&
+      schedDate.getDate() === epsd.getDate();
+
+    const isPackageOrder = Number(orderData.isPackage) === 1;
+    const isFinalizeImmediate =
+      orderData.isFinalizeImdt !== undefined &&
+        orderData.isFinalizeImdt !== null
+        ? Number(orderData.isFinalizeImdt) === 1
+        : !isPackageOrder;
+
+    const isAutoConfirmType = !isPackageOrder || isFinalizeImmediate;
+
+    const isConfirmedValue = isAutoConfirmType && isEpsdDate ? 1 : 0;
 
     const isCouponVal = orderData.isCoupon ? 1 : 0;
     const couponTypeVal = orderData.couponType || null;
@@ -901,12 +922,7 @@ async function processRegularOrderItems(
     return;
   }
 
-  await insertAdditionalItems(
-    connection,
-    orderId,
-    items,
-    processOrderId,
-  );
+  await insertAdditionalItems(connection, orderId, items, processOrderId);
 }
 
 async function insertAdditionalItems(
@@ -925,7 +941,6 @@ async function insertAdditionalItems(
     await connection.query(
       "INSERT INTO orderadditionalitems ( proOrderId, productId, qty, unit, price, discount, normalPrice, createdAt) VALUES ( ?, ?, ?, ?, ?, ?, ?, NOW())",
       [
-
         proOrderId,
         item.productId || item.id,
         item.qty || item.quantity,
@@ -969,11 +984,12 @@ async function sendOrderConfirmationSMS(
         (orderData.calculatedOrders[0]?.date ||
           orderData.calculatedOrders[0]?.dateStr));
 
+    const isPackageOrder = Number(orderData.isPackage) === 1 ? 1 : 0;
     const isFinalizeImdt =
       orderData.isFinalizeImdt !== undefined &&
         orderData.isFinalizeImdt !== null
         ? Number(orderData.isFinalizeImdt)
-        : 1;
+        : 0;
 
     // Call the dedicated SMS helper function
     const smsResult = await orderSmsHelper.sendOrderConfirmationSMSHelper({
@@ -981,6 +997,7 @@ async function sendOrderConfirmationSMS(
       invoiceNo,
       deliveryDate: rawDeliveryDate,
       paymentMethod: orderData.paymentMethod,
+      isPackage: isPackageOrder,
       isFinalizeImdt,
       orderPlacedTime: new Date(),
     });
@@ -1724,182 +1741,190 @@ exports.cancelOrder = (orderId) => {
           FOR UPDATE
         `;
 
-        connection.query(selectSql, [orderId, orderId, orderId], (selectErr, selectResult) => {
-          if (selectErr) {
-            return connection.rollback(() => {
-              connection.release();
-              reject(selectErr);
-            });
-          }
+        connection.query(
+          selectSql,
+          [orderId, orderId, orderId],
+          (selectErr, selectResult) => {
+            if (selectErr) {
+              return connection.rollback(() => {
+                connection.release();
+                reject(selectErr);
+              });
+            }
 
-          if (selectResult.length === 0) {
-            return connection.rollback(() => {
-              connection.release();
-              resolve({ success: false, message: "Order not found" });
-            });
-          }
+            if (selectResult.length === 0) {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order not found" });
+              });
+            }
 
-          const orderRow = selectResult[0];
-          const actualId = orderRow.id;
-          const parentOrderId = orderRow.parentOrderId;
+            const orderRow = selectResult[0];
+            const actualId = orderRow.id;
+            const parentOrderId = orderRow.parentOrderId;
 
-          if (orderRow.status === "Cancelled") {
-            return connection.rollback(() => {
-              connection.release();
-              resolve({ success: false, message: "Order already cancelled" });
-            });
-          }
+            if (orderRow.status === "Cancelled") {
+              return connection.rollback(() => {
+                connection.release();
+                resolve({ success: false, message: "Order already cancelled" });
+              });
+            }
 
-          const shouldRefund =
-            orderRow.paymentMethod === "Card" &&
-            (orderRow.isPaid === 1 || orderRow.isPaid === true);
+            const shouldRefund =
+              orderRow.paymentMethod === "Card" &&
+              (orderRow.isPaid === 1 || orderRow.isPaid === true);
 
-          const refundAmount = parseFloat(orderRow.amount) || 0;
+            const refundAmount = parseFloat(orderRow.amount) || 0;
 
-          const updateOrderSql = shouldRefund
-            ? `UPDATE collection_officer.processorders
+            const updateOrderSql = shouldRefund
+              ? `UPDATE collection_officer.processorders
                SET status = 'Cancelled', isPaid = 0, amount = 0.00, moneyPaid = 0
                WHERE id = ?`
-            : `UPDATE collection_officer.processorders
+              : `UPDATE collection_officer.processorders
                SET status = 'Cancelled'
                WHERE id = ?`;
 
-          connection.query(
-            updateOrderSql,
-            [actualId],
-            (updateErr, updateResult) => {
-              if (updateErr) {
-                return connection.rollback(() => {
-                  connection.release();
-                  reject(updateErr);
-                });
-              }
-
-              if (updateResult.affectedRows === 0) {
-                return connection.rollback(() => {
-                  connection.release();
-                  resolve({
-                    success: false,
-                    message: "Order not found or already cancelled",
-                  });
-                });
-              }
-
-              // Best-effort: update driver order status if assigned
-              connection.query(
-                `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
-                [actualId],
-                () => { },
-              );
-
-              const finishWithNotification = (refundErr) => {
-                if (refundErr) {
+            connection.query(
+              updateOrderSql,
+              [actualId],
+              (updateErr, updateResult) => {
+                if (updateErr) {
                   return connection.rollback(() => {
                     connection.release();
-                    reject(refundErr);
+                    reject(updateErr);
                   });
                 }
 
-                const dashNotificationSql = `
+                if (updateResult.affectedRows === 0) {
+                  return connection.rollback(() => {
+                    connection.release();
+                    resolve({
+                      success: false,
+                      message: "Order not found or already cancelled",
+                    });
+                  });
+                }
+
+                // Best-effort: update driver order status if assigned
+                connection.query(
+                  `UPDATE collection_officer.driverorders SET drvStatus = 'Cancelled' WHERE orderId = ?`,
+                  [actualId],
+                  () => { },
+                );
+
+                const finishWithNotification = (refundErr) => {
+                  if (refundErr) {
+                    return connection.rollback(() => {
+                      connection.release();
+                      reject(refundErr);
+                    });
+                  }
+
+                  const dashNotificationSql = `
     INSERT INTO collection_officer.dashnotification (orderId, title, readStatus, createdAt)
     VALUES (?, ?, ?, NOW())
   `;
 
-                const orderNotificationSql = `
+                  const orderNotificationSql = `
     INSERT INTO collection_officer.ordernotfication (orderId, Title, message, isRead, createdAt)
     VALUES (?, ?, ?, ?, NOW())
   `;
 
-                const invoiceNumber = orderRow.invNo || orderId;
-                const notificationMessage = `Your order #${invoiceNumber} has been cancelled successfully.`;
+                  const invoiceNumber = orderRow.invNo || orderId;
+                  const notificationMessage = `Your order #${invoiceNumber} has been cancelled successfully.`;
 
-                connection.query(
-                  dashNotificationSql,
-                  [actualId, "Order is Cancelled", 0],
-                  (dashNotifErr) => {
-                    connection.query(
-                      orderNotificationSql,
-                      [actualId, "Order Cancelled", notificationMessage, 0],
-                      (orderNotifErr) => {
-                        // Match existing behavior: notification failure doesn't roll back
-                        // the cancellation/refund, it's just reported.
-                        const notifErr = dashNotifErr || orderNotifErr;
-                        connection.commit((commitErr) => {
-                          connection.release();
-                          if (commitErr) return reject(commitErr);
+                  connection.query(
+                    dashNotificationSql,
+                    [actualId, "Order is Cancelled", 0],
+                    (dashNotifErr) => {
+                      connection.query(
+                        orderNotificationSql,
+                        [actualId, "Order Cancelled", notificationMessage, 0],
+                        (orderNotifErr) => {
+                          // Match existing behavior: notification failure doesn't roll back
+                          // the cancellation/refund, it's just reported.
+                          const notifErr = dashNotifErr || orderNotifErr;
+                          connection.commit((commitErr) => {
+                            connection.release();
+                            if (commitErr) return reject(commitErr);
 
-                          // Trigger real-time Polygon customer notification
-                          const polygonNotificationService = require("../services/polygon-notification-service");
-                          polygonNotificationService
-                            .notifyPolygonOrderCancelled(
-                              actualId,
-                              invoiceNumber,
-                            )
-                            .catch(() => { });
+                            // Trigger real-time Polygon customer notification
+                            const polygonNotificationService = require("../services/polygon-notification-service");
+                            polygonNotificationService
+                              .notifyPolygonOrderCancelled(
+                                actualId,
+                                invoiceNumber,
+                              )
+                              .catch(() => { });
 
-                          // Trigger background push notification to the assigned Sales Agent
-                          const salesdashNotificationService = require("../services/salesdash-notification-service");
-                          salesdashNotificationService
-                            .notifyDashOrderCancelled(actualId, invoiceNumber)
-                            .catch(() => { });
+                            // Trigger background push notification to the assigned Sales Agent
+                            const salesdashNotificationService = require("../services/salesdash-notification-service");
+                            salesdashNotificationService
+                              .notifyDashOrderCancelled(actualId, invoiceNumber)
+                              .catch(() => { });
 
-                          resolve({
-                            success: true,
-                            message: notifErr
-                              ? "Order cancelled successfully but notification failed"
-                              : "Order cancelled successfully",
-                            orderId,
-                            refunded: shouldRefund,
-                            refundAmount: shouldRefund ? refundAmount : 0,
-                            notificationInserted: !notifErr,
-                            ...(notifErr
-                              ? {
-                                error:
-                                  (dashNotifErr && dashNotifErr.message) ||
-                                  (orderNotifErr && orderNotifErr.message),
-                              }
-                              : {}),
+                            resolve({
+                              success: true,
+                              message: notifErr
+                                ? "Order cancelled successfully but notification failed"
+                                : "Order cancelled successfully",
+                              orderId,
+                              refunded: shouldRefund,
+                              refundAmount: shouldRefund ? refundAmount : 0,
+                              notificationInserted: !notifErr,
+                              ...(notifErr
+                                ? {
+                                  error:
+                                    (dashNotifErr && dashNotifErr.message) ||
+                                    (orderNotifErr && orderNotifErr.message),
+                                }
+                                : {}),
+                            });
                           });
-                        });
-                      },
-                    );
-                  },
-                );
-              };
-
-              if (!shouldRefund) {
-                return finishWithNotification(null);
-              }
-
-              // Resolve userId via orders table.
-              // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
-              // so we must look it up by `id` here.
-              const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
-              connection.query(userIdSql, [parentOrderId], (userErr, userResult) => {
-                if (userErr) return finishWithNotification(userErr);
-                if (userResult.length === 0 || !userResult[0].userId) {
-                  return finishWithNotification(
-                    new Error("Could not resolve userId for refund"),
+                        },
+                      );
+                    },
                   );
-                }
-                const userId = userResult[0].userId;
+                };
 
-                const refundSql = `
+                if (!shouldRefund) {
+                  return finishWithNotification(null);
+                }
+
+                // Resolve userId via orders table.
+                // processorders.orderId is a foreign key to orders.id (NOT orders.orderId),
+                // so we must look it up by `id` here.
+                const userIdSql = `SELECT userId FROM collection_officer.orders WHERE id = ?`;
+                connection.query(
+                  userIdSql,
+                  [parentOrderId],
+                  (userErr, userResult) => {
+                    if (userErr) return finishWithNotification(userErr);
+                    if (userResult.length === 0 || !userResult[0].userId) {
+                      return finishWithNotification(
+                        new Error("Could not resolve userId for refund"),
+                      );
+                    }
+                    const userId = userResult[0].userId;
+
+                    const refundSql = `
                 UPDATE collection_officer.marketplaceusers
                 SET creditBalance = creditBalance + ?
                 WHERE id = ?
               `;
-                connection.query(
-                  refundSql,
-                  [refundAmount, userId],
-                  (creditErr) => {
-                    finishWithNotification(creditErr || null);
+                    connection.query(
+                      refundSql,
+                      [refundAmount, userId],
+                      (creditErr) => {
+                        finishWithNotification(creditErr || null);
+                      },
+                    );
                   },
                 );
-              });
-            },
-          );
-        });
+              },
+            );
+          },
+        );
       });
     });
   });
@@ -2021,14 +2046,15 @@ exports.getMonthlyStats = async (salesAgentId) => {
           ? `${year + 1}-01-01`
           : `${year}-${(month + 1).toString().padStart(2, "0")}-01`;
 
-      // Get sum of numOfStars for the current month
+      // Get sum of numOfStars and targetAchievedDays for the current month
       const [rows] = await connection.query(
-        "SELECT SUM(numOfStars) as totalStars FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?",
+        "SELECT SUM(numOfStars) as totalStars, COUNT(CASE WHEN completed >= target AND target > 0 THEN 1 END) as targetAchievedDays FROM salesagentstars WHERE salesagentId = ? AND date >= ? AND date < ?",
         [salesAgentId, firstDay, lastDay],
       );
 
       return {
         totalStars: rows[0].totalStars || 0,
+        targetAchievedDays: rows[0].targetAchievedDays || 0,
       };
     } finally {
       connection.release();
@@ -2039,14 +2065,40 @@ exports.getMonthlyStats = async (salesAgentId) => {
   }
 };
 
+exports.getTotalDeliveredValueBySalesAgent = async (salesAgentId) => {
+  try {
+    const connection = await db.collectionofficer.promise().getConnection();
+    try {
+      const [rows] = await connection.query(
+        `SELECT COALESCE(SUM(p.fullTotal), 0) AS totalDeliveredAmount
+         FROM collection_officer.processorders p
+         JOIN collection_officer.orders o ON p.orderid = o.id
+         JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+        WHERE m.salesAgent = ?
+          AND m.isActive = 1
+          AND p.status IN ('Delivered', 'Picked up')`,
+        [salesAgentId],
+      );
+      return parseFloat(rows[0]?.totalDeliveredAmount || 0);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error("Error in getTotalDeliveredValueBySalesAgent:", error);
+    throw error;
+  }
+};
+
 exports.getCombinedStats = async (salesAgentId) => {
   try {
     const dailyStats = await exports.getTodayStats(salesAgentId);
     const monthlyStats = await exports.getMonthlyStats(salesAgentId);
+    const totalDeliveredValue = await exports.getTotalDeliveredValueBySalesAgent(salesAgentId);
 
     return {
       daily: dailyStats,
       monthly: monthlyStats,
+      totalDeliveredValue,
     };
   } catch (error) {
     console.error("Error in getCombinedStats:", error);
@@ -2169,7 +2221,8 @@ exports.getReturnReason = async (orderId) => {
       [orderId],
     );
 
-    const filterField = procRows && procRows.length > 0 ? "po.id" : "po.orderId";
+    const filterField =
+      procRows && procRows.length > 0 ? "po.id" : "po.orderId";
 
     // Single query with joins to get return reason directly
     const returnReasonSql = `
@@ -2215,7 +2268,8 @@ exports.getHold = async (orderId) => {
       [orderId],
     );
 
-    const filterField = procRows && procRows.length > 0 ? "po.id" : "po.orderId";
+    const filterField =
+      procRows && procRows.length > 0 ? "po.id" : "po.orderId";
 
     const holdCheckSql = `
       SELECT 
@@ -2305,5 +2359,200 @@ exports.checkOrderPaymentStatus = async (orderId) => {
     if (connection) {
       connection.release();
     }
+  }
+};
+
+exports.getDailyTargets = async (
+  salesAgentId,
+  month,
+  year,
+  page = 1,
+  limit = 5,
+) => {
+  let connection;
+
+  try {
+    connection = await db.collectionofficer.promise().getConnection();
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
+    // first day of the month -> first day of next month (index friendly)
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+    const whereSql = `
+      WHERE s.salesAgentId = ?
+        AND s.date >= ?
+        AND s.date < ?
+    `;
+    const params = [salesAgentId, startDate, endDate];
+
+    // ---------- total count ----------
+    const [countResult] = await connection.execute(
+      `SELECT COUNT(*) AS totalCount
+       FROM collection_officer.salesagentstars s
+       ${whereSql}`,
+      params,
+    );
+    const totalCount = countResult[0].totalCount;
+
+    // ---------- page of daily records ----------
+    const [rows] = await connection.execute(
+      `SELECT
+         s.id,
+         DATE_FORMAT(s.date, '%Y-%m-%d') AS date,
+         s.target,
+         s.completed,
+         s.numOfStars
+       FROM collection_officer.salesagentstars s
+       ${whereSql}
+       ORDER BY s.date DESC, s.id DESC
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      params,
+    );
+
+    return { records: rows, totalCount };
+  } catch (err) {
+    console.error("Database error:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+
+exports.getCustomersTotalValueSummary = async (salesAgentId, { page = 1, limit = 5, filter = "all" } = {}) => {
+  let connection;
+  try {
+    connection = await db.collectionofficer.promise().getConnection();
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.max(parseInt(limit, 10) || 5, 1);
+    const offset = (pageNum - 1) * limitNum;
+
+    // 1. Grand total of delivered / picked up orders for all customers of this sales agent
+    const [totalRows] = await connection.query(
+      `SELECT COALESCE(SUM(p.fullTotal), 0) AS grandTotal
+       FROM collection_officer.processorders p
+       JOIN collection_officer.orders o ON p.orderid = o.id
+       JOIN collection_officer.marketplaceusers m ON o.userId = m.id
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         AND p.status IN ('Delivered', 'Picked up')`,
+      [salesAgentId]
+    );
+    const grandTotalValue = parseFloat(totalRows[0]?.grandTotal || 0);
+
+    // 2. Customer counts by category
+    const [countsRows] = await connection.query(
+      `SELECT
+         COUNT(*) AS allCount,
+         COALESCE(SUM(CASE WHEN m.buyerType = 'Wholesale' THEN 0 ELSE 1 END), 0) AS retailCount,
+         COALESCE(SUM(CASE WHEN m.buyerType = 'Wholesale' THEN 1 ELSE 0 END), 0) AS wholesaleCount
+       FROM collection_officer.marketplaceusers m
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1`,
+      [salesAgentId]
+    );
+
+    const allCount = parseInt(countsRows[0]?.allCount || 0, 10);
+    const retailCount = parseInt(countsRows[0]?.retailCount || 0, 10);
+    const wholesaleCount = parseInt(countsRows[0]?.wholesaleCount || 0, 10);
+
+    // 3. Filter condition
+    let filterSql = "";
+    if (filter === "retail") {
+      filterSql = " AND (m.buyerType = 'Retail' OR m.buyerType IS NULL)";
+    } else if (filter === "wholesale") {
+      filterSql = " AND m.buyerType = 'Wholesale'";
+    }
+
+    // 4. Total filtered count
+    const [filterCountRows] = await connection.query(
+      `SELECT COUNT(*) AS total
+       FROM collection_officer.marketplaceusers m
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         ${filterSql}`,
+      [salesAgentId]
+    );
+    const totalRecords = parseInt(filterCountRows[0]?.total || 0, 10);
+    const totalPages = Math.ceil(totalRecords / limitNum) || 1;
+
+    // 5. Paginated customers with completed sales sum and count
+    const [customerRows] = await connection.query(
+      `SELECT
+         m.id,
+         m.cusId,
+         m.title,
+         m.firstName,
+         m.lastName,
+         m.phoneCode,
+         m.phoneNumber,
+         m.buyerType,
+         m.companyName,
+         m.created_at AS createdAt,
+         COALESCE(sales.totalCompletedSales, 0) AS totalCompletedSales,
+         COALESCE(sales.completedOrdersCount, 0) AS completedOrdersCount
+       FROM collection_officer.marketplaceusers m
+       LEFT JOIN (
+         SELECT
+           o.userId,
+           SUM(p.fullTotal) AS totalCompletedSales,
+           COUNT(p.id) AS completedOrdersCount
+         FROM collection_officer.processorders p
+         JOIN collection_officer.orders o ON p.orderid = o.id
+         WHERE p.status IN ('Delivered', 'Picked up')
+         GROUP BY o.userId
+       ) sales ON sales.userId = m.id
+       WHERE m.salesAgent = ?
+         AND m.isActive = 1
+         ${filterSql}
+       ORDER BY m.firstName ASC, m.lastName ASC, m.id ASC
+       LIMIT ? OFFSET ?`,
+      [salesAgentId, limitNum, offset]
+    );
+
+    const customers = customerRows.map((c) => {
+      const fullPhone = `${c.phoneCode || ""}${c.phoneNumber || ""}`;
+      return {
+        id: c.id,
+        cusId: c.cusId,
+        title: c.title,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phoneNumber: fullPhone,
+        buyerType: c.buyerType || "Retail",
+        companyName: c.companyName || null,
+        createdAt: c.createdAt,
+        totalCompletedSales: parseFloat(c.totalCompletedSales || 0),
+        completedOrdersCount: parseInt(c.completedOrdersCount || 0, 10),
+      };
+    });
+
+    return {
+      grandTotalValue,
+      counts: {
+        all: allCount,
+        retail: retailCount,
+        wholesale: wholesaleCount,
+      },
+      customers,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalRecords,
+        limit: limitNum,
+      },
+    };
+  } catch (err) {
+    console.error("Error in getCustomersTotalValueSummary:", err);
+    throw err;
+  } finally {
+    if (connection) connection.release();
   }
 };

@@ -91,6 +91,7 @@ function generateOrderConfirmationSMS({
   invoiceNo,
   deliveryDate,
   paymentMethod,
+  isPackage = 0,
   isFinalizeImdt = 1,
   orderPlacedTime = new Date(),
 }) {
@@ -101,6 +102,8 @@ function generateOrderConfirmationSMS({
     paymentMethod && String(paymentMethod).toLowerCase().includes("card");
   const isImmediateFinalize =
     isFinalizeImdt === 1 || isFinalizeImdt === true || isFinalizeImdt === "1";
+  const isPackageOrder =
+    isPackage === 1 || isPackage === true || isPackage === "1";
 
   const baseDeliveryDate = schedDate || epsd;
 
@@ -113,13 +116,17 @@ function generateOrderConfirmationSMS({
   const isAtEPSD = !!schedDate && schedDate.getTime() <= epsd.getTime();
 
   // ── SCENARIO 5: Review and confirm before delivery ───────────────────────
-  if (!isImmediateFinalize) {
-    const formattedDate = formatSmsDate(processingDate); // no +1
+  // Strictly for Package orders (isPackage = 1) where review before delivery was chosen
+  if (isPackageOrder && !isImmediateFinalize) {
+    // Date is Processing Date + 1 (i.e. Delivery Date - 2)
+    const reviewDate = new Date(processingDate.getTime());
+    reviewDate.setDate(reviewDate.getDate() + 1);
+    const formattedDate = formatSmsDate(reviewDate);
 
     return {
       type: 5,
       scenario: "Review and confirm before delivery",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedDate}. Please pay by 6:00 PM to confirm your order, or it will be canceled.`,
+      message: `Dear Customer, You’ll receive an order review request via the Polygon Platform by 8:00 AM on ${formattedDate}. Please review and accept your order by 6:00 PM or it will be canceled.`,
     };
   }
 
@@ -156,14 +163,14 @@ function generateOrderConfirmationSMS({
     return {
       type: 3,
       scenario: "Finalize Immediately - Delivery Date > EPSD - Cash",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be canceled.`,
+      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be cancelled.`,
     };
   } else {
     // Scenario 4: Card (In-app, Customer has to pay on the Processing Date)
     return {
       type: 4,
       scenario: "Finalize Immediately - Delivery Date > EPSD - Card",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please pay by 6:00 PM to confirm your order, or it will be canceled.`,
+      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please pay by 6:00 PM to confirm your order, or it will be cancelled.`,
     };
   }
 }
@@ -176,6 +183,7 @@ async function sendOrderConfirmationSMSHelper({
   invoiceNo,
   deliveryDate,
   paymentMethod,
+  isPackage,
   isFinalizeImdt,
   orderPlacedTime,
 }) {
@@ -183,6 +191,7 @@ async function sendOrderConfirmationSMSHelper({
     invoiceNo,
     deliveryDate,
     paymentMethod,
+    isPackage,
     isFinalizeImdt,
     orderPlacedTime,
   });

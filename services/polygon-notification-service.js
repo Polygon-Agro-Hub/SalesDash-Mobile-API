@@ -125,6 +125,7 @@ const notifyPolygonPaymentReminder = async ({
   processOrderId,
   invNo,
   scheduledDate,
+  orderPlacedDate, // NEW
   userId,
 }) => {
   const invoiceNumber = invNo || processOrderId;
@@ -132,10 +133,12 @@ const notifyPolygonPaymentReminder = async ({
     ? (scheduledDate instanceof Date ? scheduledDate : new Date(scheduledDate))
     : new Date();
   const scheduledDateStr = formatDateToMonthDay(schedDateObj);
-  const deadlineDateStr = getPaymentDeadlineDate(schedDateObj);
+
+  // Order placed date (falls back to today if not passed)
+  const placedDateStr = formatDateToMonthDay(orderPlacedDate || new Date());
 
   const title = "Payment Reminder !!!";
-  const message = `Order #${invoiceNumber} scheduled for ${scheduledDateStr}. Please pay via online banking before ${deadlineDateStr} at 6:00 PM to avoid cancellation.`;
+  const message = `Order #${invoiceNumber} scheduled for ${scheduledDateStr}. Please pay via online banking before ${placedDateStr} at 6:00 PM to avoid cancellation.`;
 
   return triggerPolygonNotification({
     orderId: processOrderId,
@@ -147,10 +150,10 @@ const notifyPolygonPaymentReminder = async ({
       invNo: invoiceNumber,
       userId,
       scheduledDate: scheduledDateStr,
-      deadlineDate: deadlineDateStr,
+      orderPlacedDate: placedDateStr, // replaces deadlineDate
       type: "payment_reminder",
     },
-    skipDbInsert: false, // Save to ordernotfication table
+    skipDbInsert: false,
   });
 };
 

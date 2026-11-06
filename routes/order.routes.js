@@ -17,7 +17,9 @@ router.post('/cancel-order/:orderId', auth, orderEp.cancelOrder)
 
 router.post('/report-order/:orderId', auth, orderEp.reportOrder);
 
-router.get('/sales-agent', auth, orderEp.getAgentStats)
+router.get('/sales-agent', auth, orderEp.getAgentStats);
+router.get('/delivered-existing-total', auth, orderEp.getExistingCustomersDeliveredTotal);
+router.get('/customers-total-value', auth, orderEp.getCustomersTotalValueSummary);
 
 router.get('/get-All-Start', auth, orderEp.getAgentAllStars);
 
@@ -30,6 +32,8 @@ router.get('/get-hold-reason/:orderId', orderEp.getHold);
 router.get('/delivered-total/:userId', auth, orderEp.getDeliveredOrdersTotal);
 
 router.get('/check-payment-status/:orderId', orderEp.checkOrderPaymentStatus);
+
+router.get("/daily-targets", auth, orderEp.getDailyTargets);
 
 module.exports = router;
 
