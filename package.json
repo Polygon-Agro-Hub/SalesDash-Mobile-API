@@ -24,7 +24,6 @@
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "expo-screen-capture": "^6.0.1",
     "express": "^4.19.2",
     "express-async-handler": "^1.2.0",
     "firebase-admin": "^14.5.0",
