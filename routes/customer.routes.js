@@ -16,6 +16,7 @@ router.put('/update-customer-data/:cusId', customerEp.updateCustomerData);
 router.post("/check-customer", customerEp.checkCustomer);
 
 router.get('/cutomer-count', auth, customerEp.getCustomerCountBySalesAgent);
+router.get('/customer-count', auth, customerEp.getCustomerCountBySalesAgent);
 
 router.get("/get-city", auth, customerEp.getAllPCity);
 
@@ -44,5 +45,9 @@ router.get('/get-address-book/:customerId', customerEp.getAddressBook);
 router.get('/get-saved-address/:addressId', customerEp.getSavedAddress);
 router.post('/add-saved-address', customerEp.addSavedAddress);
 router.put('/update-saved-address/:addressId', customerEp.updateSavedAddress);
+
+router.post('/upload-br', customerEp.uploadBrImage);
+
+router.post("/resubmit-wholesale-br", auth, customerEp.resubmitWholesaleBr);
 
 module.exports = router;

@@ -58,11 +58,15 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const customerType = req.query.type || req.query.customerType || null;
+    const buyerType = req.query.buyerType || null;
 
     const result = await customerDAO.getCustomersBySalesAgent(
       salesAgentId,
       page,
       limit,
+      customerType,
+      buyerType,
     );
 
     res.status(200).json({
@@ -571,4 +575,86 @@ exports.updateSavedAddress = asyncHandler(async (req, res) => {
     }
     res.status(500).json({ error: error.message });
   }
+});
+
+exports.uploadBrImage = async (req, res) => {
+  try {
+    const { base64, fileName } = req.body;
+    if (!base64) {
+      return res.status(400).json({ error: "No image or document data provided" });
+    }
+
+    const ALLOWED_EXT = ["pdf", "png", "jpg", "jpeg", "heic", "heif"];
+    const ALLOWED_MIME = [
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/heic",
+      "image/heif",
+    ];
+
+    let cleanBase64 = base64;
+    let ext = "";
+    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      const mime = matches[1].toLowerCase();
+      if (!ALLOWED_MIME.includes(mime)) {
+        return res.status(400).json({
+          error: "Unsupported file type. Only PDF, PNG, JPG, and HEIC files are allowed.",
+        });
+      }
+      if (mime.includes("pdf")) ext = "pdf";
+      else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+      else if (mime.includes("png")) ext = "png";
+      else if (mime.includes("heic")) ext = "heic";
+      else if (mime.includes("heif")) ext = "heif";
+      cleanBase64 = matches[2];
+    } else if (fileName && fileName.includes(".")) {
+      ext = fileName.split(".").pop().toLowerCase();
+    }
+
+    if (fileName && fileName.includes(".")) {
+      const fileExt = fileName.split(".").pop().toLowerCase();
+      if (!ALLOWED_EXT.includes(fileExt)) {
+        return res.status(400).json({
+          error: "Unsupported file type. Only PDF, PNG, JPG, and HEIC files are allowed.",
+        });
+      }
+      if (!ext) ext = fileExt;
+    }
+
+    if (!ext || !ALLOWED_EXT.includes(ext.toLowerCase())) {
+      return res.status(400).json({
+        error: "Unsupported file type. Only PDF, PNG, JPG, and HEIC files are allowed.",
+      });
+    }
+
+    const buffer = Buffer.from(cleanBase64, "base64");
+    const uploadFileToS3 = require("../middleware/s3upload");
+    const safeName = fileName || ("br_" + Date.now() + "." + ext);
+    const fileUrl = await uploadFileToS3(buffer, safeName, "wholesale_br");
+
+    return res.status(200).json({
+      status: "success",
+      url: fileUrl,
+    });
+  } catch (error) {
+    console.error("Error uploading BR document:", error);
+    return res.status(500).json({ error: "Failed to upload BR document" });
+  }
+};
+
+exports.resubmitWholesaleBr = asyncHandler(async (req, res) => {
+  const { customerId, brImg } = req.body;
+  if (!customerId || !brImg) {
+    return res.status(400).json({ error: "Customer ID and BR Image are required" });
+  }
+
+  const result = await customerDAO.resubmitWholesaleBr(customerId, brImg);
+  res.status(200).json({
+    status: "success",
+    message: "BR document resubmitted successfully",
+    data: result,
+  });
 });

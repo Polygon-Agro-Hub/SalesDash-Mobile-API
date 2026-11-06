@@ -72,6 +72,7 @@ const routes = {
   orders: require("./routes/order.routes"),
   notifications: require("./routes/notification.routes"),
   otp: require("./routes/otp.routes"),
+  support: require("./routes/support.routes"),
   health: require("./routes/health.routes"),
 };
 
@@ -85,6 +86,7 @@ app.use(`${BASE_PATH}/api/packages`, routes.packages);
 app.use(`${BASE_PATH}/api/orders`, routes.orders);
 app.use(`${BASE_PATH}/api/notifications`, routes.notifications);
 app.use(`${BASE_PATH}/api/otp`, routes.otp);
+app.use(`${BASE_PATH}/api/support`, routes.support);
 app.use(`${BASE_PATH}`, routes.health);
 app.use("", routes.health);
 
