@@ -138,10 +138,10 @@ function generateOrderConfirmationSMS({
 
   const baseDeliveryDate = schedDate || epsd;
 
-  // Processing Date is 3 days before Delivery Date (Delivery Date - 3)
-  // e.g. Delivery 23 Oct 2026 -> Processing Date 20 Oct 2026
+  // Processing Date is lead time before Delivery Date (2 days for Wholesale, 3 days for Retail)
+  const leadDays = isWholesale ? 2 : 3;
   const processingDate = new Date(baseDeliveryDate.getTime());
-  processingDate.setDate(processingDate.getDate() - 3);
+  processingDate.setDate(processingDate.getDate() - leadDays);
 
   // "At EPSD" = Delivery Date is the earliest possible date (or earlier)
   const isAtEPSD = !!schedDate && schedDate.getTime() <= epsd.getTime();
@@ -149,7 +149,7 @@ function generateOrderConfirmationSMS({
   // ── SCENARIO 5: Review and confirm before delivery ───────────────────────
   // Strictly for Package orders (isPackage = 1) where review before delivery was chosen
   if (isPackageOrder && !isImmediateFinalize) {
-    // Date is Processing Date + 1 (i.e. Delivery Date - 2)
+    // Date is Processing Date + 1 (i.e. Delivery Date - 2 for retail)
     const reviewDate = new Date(processingDate.getTime());
     reviewDate.setDate(reviewDate.getDate() + 1);
     const formattedDate = formatSmsDate(reviewDate);
@@ -161,14 +161,13 @@ function generateOrderConfirmationSMS({
     };
   }
 
-  // ── SCENARIOS 1 & 2: Finalize Immediately & Delivery Date = EPSD ─────────
+  // ── SCENARIOS 1 & 2: Delivery Date = EPSD (Earlier Possible Date) ─────────
   if (isAtEPSD) {
     if (!isCard) {
-      // Scenario 1: Cash
       const formattedDeliveryDate = formatSmsDate(baseDeliveryDate);
       return {
         type: 1,
-        scenario: "Finalize Immediately - Delivery Date = EPSD - Cash",
+        scenario: "Delivery Date = EPSD - Cash",
         message:
           `Dear customer, your order has been successfully placed!\n` +
           `Invoice: #${invoiceNo}\n` +
@@ -177,31 +176,30 @@ function generateOrderConfirmationSMS({
           `Support: +94 114313433`,
       };
     } else {
-      // Scenario 2: Card (In-app, Customer has to pay today)
       return {
         type: 2,
-        scenario: "Finalize Immediately - Delivery Date = EPSD - Card",
+        scenario: "Delivery Date = EPSD - Card",
         message: `Dear Customer, We’ve sent you an order confirmation request via the Polygon Platform. Please pay by 6:00 PM to confirm your order, or it will be cancelled.`,
       };
     }
   }
 
-  // ── SCENARIOS 3 & 4: Finalize Immediately & Delivery Date > EPSD ─────────
+  // ── SCENARIOS 3 & 4: Delivery Date > EPSD (After E.P.S.D.) ─────────────────
   const formattedProcessingDate = formatSmsDate(processingDate);
 
   if (!isCard) {
-    // Scenario 3: Cash
+    // Pay by cash
     return {
       type: 3,
-      scenario: "Finalize Immediately - Delivery Date > EPSD - Cash",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be cancelled.`,
+      scenario: "Delivery Date > EPSD - Cash",
+      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be canceled.`,
     };
   } else {
-    // Scenario 4: Card (In-app, Customer has to pay on the Processing Date)
+    // Card (in-app, Customer has to pay on the Processing Date)
     return {
       type: 4,
-      scenario: "Finalize Immediately - Delivery Date > EPSD - Card",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please pay by 6:00 PM to confirm your order, or it will be cancelled.`,
+      scenario: "Delivery Date > EPSD - Card",
+      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please pay by 6:00 PM to confirm your order, or it will be canceled.`,
     };
   }
 }
