@@ -56,23 +56,53 @@ function parseDeliveryDate(rawDate) {
   return null;
 }
 
+function getColomboNow(dateObj = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(dateObj);
+  const getPart = (type) =>
+    parseInt(parts.find((p) => p.type === type).value, 10);
+  const hourVal = getPart("hour");
+  const hour = hourVal === 24 ? 0 : hourVal;
+  return {
+    year: getPart("year"),
+    month: getPart("month") - 1,
+    day: getPart("day"),
+    hour,
+    isAfterCutoff: hour >= 18,
+  };
+}
+
 /**
  * Calculate Earliest Possible Schedule Date (E.P.S.D.)
  * - If order is placed before 6:00 PM: today + 3 days (13 Oct -> 16 Oct)
  * - If order is placed at or after 6:00 PM: today + 4 days (13 Oct -> 17 Oct)
  */
-function getEarliestPossibleScheduleDate(orderPlacedTime = new Date()) {
+function getEarliestPossibleScheduleDate(
+  orderPlacedTime = new Date(),
+  isWholesale = false,
+) {
   const now =
     orderPlacedTime instanceof Date
       ? orderPlacedTime
       : new Date(orderPlacedTime);
-  const isAfter6PM = now.getHours() >= 18; // 6:00 PM cutoff rule
-  const extraDays = isAfter6PM ? 4 : 3;
+  const colomboNow = getColomboNow(now);
+  const isAfter6PM = colomboNow.isAfterCutoff; // 6:00 PM cutoff rule in Colombo
+  const extraDays = isWholesale
+    ? (isAfter6PM ? 3 : 2)
+    : (isAfter6PM ? 4 : 3);
 
   const epsd = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + extraDays,
+    colomboNow.year,
+    colomboNow.month,
+    colomboNow.day + extraDays,
   );
   epsd.setHours(0, 0, 0, 0);
   return epsd;
@@ -94,8 +124,9 @@ function generateOrderConfirmationSMS({
   isPackage = 0,
   isFinalizeImdt = 1,
   orderPlacedTime = new Date(),
+  isWholesale = false,
 }) {
-  const epsd = getEarliestPossibleScheduleDate(orderPlacedTime);
+  const epsd = getEarliestPossibleScheduleDate(orderPlacedTime, isWholesale);
   const schedDate = parseDeliveryDate(deliveryDate);
 
   const isCard =
@@ -186,6 +217,7 @@ async function sendOrderConfirmationSMSHelper({
   isPackage,
   isFinalizeImdt,
   orderPlacedTime,
+  isWholesale,
 }) {
   const result = generateOrderConfirmationSMS({
     invoiceNo,
@@ -194,6 +226,7 @@ async function sendOrderConfirmationSMSHelper({
     isPackage,
     isFinalizeImdt,
     orderPlacedTime,
+    isWholesale,
   });
 
   console.log(

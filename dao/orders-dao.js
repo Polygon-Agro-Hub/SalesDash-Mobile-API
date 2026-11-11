@@ -110,6 +110,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
           ? orderData
           : {
             ...orderData,
+            isConfirmed: 0,
             isCoupon: 0,
             couponType: null,
             couponValue: 0.0,
@@ -133,6 +134,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
           orderId,
           currentOrderData,
           sDate,
+          userDetails,
         );
         processOrderIds.push(pId);
       }
@@ -145,6 +147,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
         orderId,
         orderData,
         date1,
+        userDetails,
       );
       processOrderIds = [processOrderId];
     }
@@ -718,11 +721,36 @@ async function updateUserCreditInfo(connection, userId) {
   };
 }
 
+function getColomboNow(dateObj = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(dateObj);
+  const getPart = (type) =>
+    parseInt(parts.find((p) => p.type === type).value, 10);
+  const hourVal = getPart("hour");
+  const hour = hourVal === 24 ? 0 : hourVal;
+  return {
+    year: getPart("year"),
+    month: getPart("month") - 1,
+    day: getPart("day"),
+    hour,
+    isAfterCutoff: hour >= 18,
+  };
+}
+
 async function insertProcessOrder(
   connection,
   orderId,
   orderData,
   targetScheduleDate = null,
+  userDetails = null,
 ) {
   try {
     await connection.query("CALL generate_invoice_number(@new_inv_no)");
@@ -742,28 +770,68 @@ async function insertProcessOrder(
     const isPaidValue = 0;
     const amountValue = 0.0;
 
+    // Determine buyer type
+    const isWholesale =
+      String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
+      Number(orderData.isWholesale) === 1;
+
     // isConfirmed = 1 only when:
     // 1. Order type qualifies:
     //    - Only alacarte items (isPackage === 0)
     //    - Only packages OR packages + alacarte items (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
-    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff)
-    const now = new Date();
-    const isAfterCutoff = now.getHours() >= 18;
-    const extraDays = isAfterCutoff ? 4 : 3;
+    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff in Colombo timezone and wholesale/retail)
+    const colomboNow = getColomboNow();
+    const isAfterCutoff = colomboNow.isAfterCutoff;
+    const extraDays = isWholesale
+      ? (isAfterCutoff ? 3 : 2)
+      : (isAfterCutoff ? 4 : 3);
     const epsd = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + extraDays,
+      colomboNow.year,
+      colomboNow.month,
+      colomboNow.day + extraDays,
     );
     epsd.setHours(0, 0, 0, 0);
 
     const schedDate = targetScheduleDate ? new Date(targetScheduleDate) : null;
-    const isEpsdDate =
-      schedDate &&
-      !isNaN(schedDate.getTime()) &&
-      schedDate.getFullYear() === epsd.getFullYear() &&
-      schedDate.getMonth() === epsd.getMonth() &&
-      schedDate.getDate() === epsd.getDate();
+    let isEpsdDate = false;
+    if (schedDate && !isNaN(schedDate.getTime())) {
+      const schedNormalized = new Date(
+        schedDate.getFullYear(),
+        schedDate.getMonth(),
+        schedDate.getDate(),
+      );
+      schedNormalized.setHours(0, 0, 0, 0);
+      const todayNormalized = new Date(
+        colomboNow.year,
+        colomboNow.month,
+        colomboNow.day,
+      );
+      todayNormalized.setHours(0, 0, 0, 0);
+      const diffDays = Math.round(
+        (schedNormalized.getTime() - todayNormalized.getTime()) /
+          (1000 * 60 * 60 * 24),
+      );
+
+      if (isWholesale) {
+        // Wholesale EPSD:
+        // Before 6 PM: Only Today + 2 days (Nov 13 when today is Nov 11) is EPSD (isConfirmed: 1)
+        // After 6 PM: Only Today + 3 days (Nov 14) is post-cutoff EPSD (isConfirmed: 1)
+        if (!isAfterCutoff && diffDays === 2) {
+          isEpsdDate = true;
+        } else if (isAfterCutoff && diffDays === 3) {
+          isEpsdDate = true;
+        }
+      } else {
+        // Retail EPSD:
+        // Before 6 PM: Only Today + 3 days (Nov 14) is EPSD (isConfirmed: 1)
+        // After 6 PM: Only Today + 4 days (Nov 15) is post-cutoff EPSD (isConfirmed: 1)
+        if (!isAfterCutoff && diffDays === 3) {
+          isEpsdDate = true;
+        } else if (isAfterCutoff && diffDays === 4) {
+          isEpsdDate = true;
+        }
+      }
+    }
 
     const isPackageOrder = Number(orderData.isPackage) === 1;
     const isFinalizeImmediate =
@@ -992,6 +1060,10 @@ async function sendOrderConfirmationSMS(
         : 0;
 
     // Call the dedicated SMS helper function
+    const isWholesaleBuyer =
+      String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
+      Number(orderData.isWholesale) === 1;
+
     const smsResult = await orderSmsHelper.sendOrderConfirmationSMSHelper({
       phoneNumber,
       invoiceNo,
@@ -1000,6 +1072,7 @@ async function sendOrderConfirmationSMS(
       isPackage: isPackageOrder,
       isFinalizeImdt,
       orderPlacedTime: new Date(),
+      isWholesale: isWholesaleBuyer,
     });
 
     if (smsResult && smsResult.success) {

@@ -58,6 +58,8 @@ const orderValidationSchema = Joi.object({
     isConfirmed: Joi.number().valid(0, 1).optional(),
     isPaySMS: Joi.number().valid(0, 1).optional(),
     deliveryAddress: Joi.object().allow(null).optional(),
+    buyerType: Joi.string().allow(null, "").optional(),
+    isWholesale: Joi.number().valid(0, 1).optional(),
   }).required(),
 });
 
