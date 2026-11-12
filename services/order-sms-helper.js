@@ -56,23 +56,53 @@ function parseDeliveryDate(rawDate) {
   return null;
 }
 
+function getColomboNow(dateObj = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(dateObj);
+  const getPart = (type) =>
+    parseInt(parts.find((p) => p.type === type).value, 10);
+  const hourVal = getPart("hour");
+  const hour = hourVal === 24 ? 0 : hourVal;
+  return {
+    year: getPart("year"),
+    month: getPart("month") - 1,
+    day: getPart("day"),
+    hour,
+    isAfterCutoff: hour >= 18,
+  };
+}
+
 /**
  * Calculate Earliest Possible Schedule Date (E.P.S.D.)
  * - If order is placed before 6:00 PM: today + 3 days (13 Oct -> 16 Oct)
  * - If order is placed at or after 6:00 PM: today + 4 days (13 Oct -> 17 Oct)
  */
-function getEarliestPossibleScheduleDate(orderPlacedTime = new Date()) {
+function getEarliestPossibleScheduleDate(
+  orderPlacedTime = new Date(),
+  isWholesale = false,
+) {
   const now =
     orderPlacedTime instanceof Date
       ? orderPlacedTime
       : new Date(orderPlacedTime);
-  const isAfter6PM = now.getHours() >= 18; // 6:00 PM cutoff rule
-  const extraDays = isAfter6PM ? 4 : 3;
+  const colomboNow = getColomboNow(now);
+  const isAfter6PM = colomboNow.isAfterCutoff; // 6:00 PM cutoff rule in Colombo
+  const extraDays = isWholesale
+    ? (isAfter6PM ? 3 : 2)
+    : (isAfter6PM ? 4 : 3);
 
   const epsd = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + extraDays,
+    colomboNow.year,
+    colomboNow.month,
+    colomboNow.day + extraDays,
   );
   epsd.setHours(0, 0, 0, 0);
   return epsd;
@@ -94,8 +124,9 @@ function generateOrderConfirmationSMS({
   isPackage = 0,
   isFinalizeImdt = 1,
   orderPlacedTime = new Date(),
+  isWholesale = false,
 }) {
-  const epsd = getEarliestPossibleScheduleDate(orderPlacedTime);
+  const epsd = getEarliestPossibleScheduleDate(orderPlacedTime, isWholesale);
   const schedDate = parseDeliveryDate(deliveryDate);
 
   const isCard =
@@ -107,10 +138,10 @@ function generateOrderConfirmationSMS({
 
   const baseDeliveryDate = schedDate || epsd;
 
-  // Processing Date is 3 days before Delivery Date (Delivery Date - 3)
-  // e.g. Delivery 23 Oct 2026 -> Processing Date 20 Oct 2026
+  // Processing Date is lead time before Delivery Date (2 days for Wholesale, 3 days for Retail)
+  const leadDays = isWholesale ? 2 : 3;
   const processingDate = new Date(baseDeliveryDate.getTime());
-  processingDate.setDate(processingDate.getDate() - 3);
+  processingDate.setDate(processingDate.getDate() - leadDays);
 
   // "At EPSD" = Delivery Date is the earliest possible date (or earlier)
   const isAtEPSD = !!schedDate && schedDate.getTime() <= epsd.getTime();
@@ -118,7 +149,7 @@ function generateOrderConfirmationSMS({
   // ── SCENARIO 5: Review and confirm before delivery ───────────────────────
   // Strictly for Package orders (isPackage = 1) where review before delivery was chosen
   if (isPackageOrder && !isImmediateFinalize) {
-    // Date is Processing Date + 1 (i.e. Delivery Date - 2)
+    // Date is Processing Date + 1 (i.e. Delivery Date - 2 for retail)
     const reviewDate = new Date(processingDate.getTime());
     reviewDate.setDate(reviewDate.getDate() + 1);
     const formattedDate = formatSmsDate(reviewDate);
@@ -130,14 +161,13 @@ function generateOrderConfirmationSMS({
     };
   }
 
-  // ── SCENARIOS 1 & 2: Finalize Immediately & Delivery Date = EPSD ─────────
+  // ── SCENARIOS 1 & 2: Delivery Date = EPSD (Earlier Possible Date) ─────────
   if (isAtEPSD) {
     if (!isCard) {
-      // Scenario 1: Cash
       const formattedDeliveryDate = formatSmsDate(baseDeliveryDate);
       return {
         type: 1,
-        scenario: "Finalize Immediately - Delivery Date = EPSD - Cash",
+        scenario: "Delivery Date = EPSD - Cash",
         message:
           `Dear customer, your order has been successfully placed!\n` +
           `Invoice: #${invoiceNo}\n` +
@@ -146,31 +176,30 @@ function generateOrderConfirmationSMS({
           `Support: +94 114313433`,
       };
     } else {
-      // Scenario 2: Card (In-app, Customer has to pay today)
       return {
         type: 2,
-        scenario: "Finalize Immediately - Delivery Date = EPSD - Card",
+        scenario: "Delivery Date = EPSD - Card",
         message: `Dear Customer, We’ve sent you an order confirmation request via the Polygon Platform. Please pay by 6:00 PM to confirm your order, or it will be cancelled.`,
       };
     }
   }
 
-  // ── SCENARIOS 3 & 4: Finalize Immediately & Delivery Date > EPSD ─────────
+  // ── SCENARIOS 3 & 4: Delivery Date > EPSD (After E.P.S.D.) ─────────────────
   const formattedProcessingDate = formatSmsDate(processingDate);
 
   if (!isCard) {
-    // Scenario 3: Cash
+    // Pay by cash
     return {
       type: 3,
-      scenario: "Finalize Immediately - Delivery Date > EPSD - Cash",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be cancelled.`,
+      scenario: "Delivery Date > EPSD - Cash",
+      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please confirm your order by 6:00 PM or it will be canceled.`,
     };
   } else {
-    // Scenario 4: Card (In-app, Customer has to pay on the Processing Date)
+    // Card (in-app, Customer has to pay on the Processing Date)
     return {
       type: 4,
-      scenario: "Finalize Immediately - Delivery Date > EPSD - Card",
-      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please pay by 6:00 PM to confirm your order, or it will be cancelled.`,
+      scenario: "Delivery Date > EPSD - Card",
+      message: `Dear Customer, You’ll receive an order confirmation request via the Polygon Platform by 8:00 AM on ${formattedProcessingDate}. Please pay by 6:00 PM to confirm your order, or it will be canceled.`,
     };
   }
 }
@@ -186,6 +215,7 @@ async function sendOrderConfirmationSMSHelper({
   isPackage,
   isFinalizeImdt,
   orderPlacedTime,
+  isWholesale,
 }) {
   const result = generateOrderConfirmationSMS({
     invoiceNo,
@@ -194,6 +224,7 @@ async function sendOrderConfirmationSMSHelper({
     isPackage,
     isFinalizeImdt,
     orderPlacedTime,
+    isWholesale,
   });
 
   console.log(
