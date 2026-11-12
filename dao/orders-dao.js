@@ -42,6 +42,10 @@ exports.processOrder = async (orderData, salesAgentId) => {
     let processOrderId;
     let processOrderIds = [];
 
+    // NEW: process orders that fall on the EPSD date and qualify for
+    // auto-confirm (used for the Card payment reminder in STEP 7)
+    const epsdProcessOrderIds = [];
+
     const isRecurring =
       normScheduleType === "Once a Week" || normScheduleType === "Twice a Week";
 
@@ -129,27 +133,36 @@ exports.processOrder = async (orderData, salesAgentId) => {
               null,
           };
 
+        // NEW: meta receives qualifiesForAutoConfirm from insertProcessOrder
+        const meta = {};
         const pId = await insertProcessOrder(
           connection,
           orderId,
           currentOrderData,
           sDate,
           userDetails,
+          meta,
         );
         processOrderIds.push(pId);
+        if (meta.qualifiesForAutoConfirm) epsdProcessOrderIds.push(pId);
       }
       processOrderId = processOrderIds[0];
     } else {
       // One Time
       const date1 = parseDateValue(orderData.sheduleDate);
+
+      // NEW: meta receives qualifiesForAutoConfirm from insertProcessOrder
+      const meta = {};
       processOrderId = await insertProcessOrder(
         connection,
         orderId,
         orderData,
         date1,
         userDetails,
+        meta,
       );
       processOrderIds = [processOrderId];
+      if (meta.qualifiesForAutoConfirm) epsdProcessOrderIds.push(processOrderId);
     }
 
     await assignCenterToOrder(connection, orderId, orderData, userDetails);
@@ -215,14 +228,14 @@ exports.processOrder = async (orderData, salesAgentId) => {
     }
 
     // STEP 7: Payment Reminder (push + socket + ordernotfication insert)
-    // ONLY for CARD orders whose schedule date is the earliest possible date (today + 3).
-    // Example: placed on the 16th -> only the order scheduled for the 19th gets it.
-    // isConfirmed = 1 is set in insertProcessOrder exactly for that date.
+    // ONLY for CARD orders whose schedule date is the earliest possible date (EPSD).
+    // CHANGED: Card + EPSD orders are now saved with isConfirmed = 0, so we can
+    // no longer select by "isConfirmed = 1". We use epsdProcessOrderIds instead.
     const isCardPayment =
       orderData.paymentMethod &&
       String(orderData.paymentMethod).toLowerCase().includes("card");
 
-    if (isCardPayment && processOrderIds && processOrderIds.length > 0) {
+    if (isCardPayment && epsdProcessOrderIds.length > 0) {
       try {
         const polygonNotificationService = require("../services/polygon-notification-service");
 
@@ -233,11 +246,11 @@ exports.processOrder = async (orderData, salesAgentId) => {
           const [procRows] = await db.collectionofficer.promise().query(
             `SELECT id, invNo, sheduleDate
                FROM processorders
-              WHERE id IN (?) AND isConfirmed = 1`,
-            [processOrderIds],
+              WHERE id IN (?)`,
+            [epsdProcessOrderIds],
           );
 
-          // Other dates (23rd, 26th, ...) are skipped: no notification, no DB insert
+          // Other dates are skipped: no notification, no DB insert
           for (const row of procRows || []) {
             polygonNotificationService
               .notifyPolygonPaymentReminder({
@@ -751,6 +764,7 @@ async function insertProcessOrder(
   orderData,
   targetScheduleDate = null,
   userDetails = null,
+  meta = {}, // NEW: output object, we set meta.qualifiesForAutoConfirm
 ) {
   try {
     await connection.query("CALL generate_invoice_number(@new_inv_no)");
@@ -775,11 +789,13 @@ async function insertProcessOrder(
       String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
       Number(orderData.isWholesale) === 1;
 
-    // isConfirmed = 1 only when:
+    // Auto-confirm rules:
     // 1. Order type qualifies:
     //    - Only alacarte items (isPackage === 0)
-    //    - Only packages OR packages + alacarte items (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
-    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff in Colombo timezone and wholesale/retail)
+    //    - Packages (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
+    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, 6:00 PM cutoff
+    //    in Colombo timezone, wholesale/retail)
+    // 3. Payment method is NOT Card  (Card orders stay isConfirmed = 0)
     const colomboNow = getColomboNow();
     const isAfterCutoff = colomboNow.isAfterCutoff;
     const extraDays = isWholesale
@@ -809,13 +825,13 @@ async function insertProcessOrder(
       todayNormalized.setHours(0, 0, 0, 0);
       const diffDays = Math.round(
         (schedNormalized.getTime() - todayNormalized.getTime()) /
-          (1000 * 60 * 60 * 24),
+        (1000 * 60 * 60 * 24),
       );
 
       if (isWholesale) {
         // Wholesale EPSD:
-        // Before 6 PM: Only Today + 2 days (Nov 13 when today is Nov 11) is EPSD (isConfirmed: 1)
-        // After 6 PM: Only Today + 3 days (Nov 14) is post-cutoff EPSD (isConfirmed: 1)
+        // Before 6 PM: Today + 2 days
+        // After 6 PM:  Today + 3 days
         if (!isAfterCutoff && diffDays === 2) {
           isEpsdDate = true;
         } else if (isAfterCutoff && diffDays === 3) {
@@ -823,8 +839,8 @@ async function insertProcessOrder(
         }
       } else {
         // Retail EPSD:
-        // Before 6 PM: Only Today + 3 days (Nov 14) is EPSD (isConfirmed: 1)
-        // After 6 PM: Only Today + 4 days (Nov 15) is post-cutoff EPSD (isConfirmed: 1)
+        // Before 6 PM: Today + 3 days
+        // After 6 PM:  Today + 4 days
         if (!isAfterCutoff && diffDays === 3) {
           isEpsdDate = true;
         } else if (isAfterCutoff && diffDays === 4) {
@@ -842,7 +858,14 @@ async function insertProcessOrder(
 
     const isAutoConfirmType = !isPackageOrder || isFinalizeImmediate;
 
-    const isConfirmedValue = isAutoConfirmType && isEpsdDate ? 1 : 0;
+    // NEW: qualifies for EPSD auto-confirm regardless of payment method.
+    // Reported back to processOrder so the Card payment reminder still fires.
+    const qualifiesForAutoConfirm = isAutoConfirmType && isEpsdDate;
+    if (meta) meta.qualifiesForAutoConfirm = qualifiesForAutoConfirm;
+
+    // CHANGED: Card orders must stay isConfirmed = 0 (confirmed after payment)
+    const isConfirmedValue =
+      qualifiesForAutoConfirm && paymentMethodValue !== "Card" ? 1 : 0;
 
     const isCouponVal = orderData.isCoupon ? 1 : 0;
     const couponTypeVal = orderData.couponType || null;
