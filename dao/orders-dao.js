@@ -208,6 +208,40 @@ exports.processOrder = async (orderData, salesAgentId) => {
       }
     }
 
+    // Payment reminder rows (Card + EPSD only) – saved in the same transaction
+    // so the row is guaranteed even if the Polygon webhook call later fails.
+    const isCardPayment =
+      orderData.paymentMethod &&
+      String(orderData.paymentMethod).toLowerCase().includes("card");
+
+    let reminderRows = [];
+    if (isCardPayment && epsdProcessOrderIds.length > 0) {
+      const polygonNotificationService = require("../services/polygon-notification-service");
+
+      const [procRows] = await connection.query(
+        `SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)`,
+        [epsdProcessOrderIds],
+      );
+      reminderRows = procRows || [];
+
+      for (const row of reminderRows) {
+        const { title, message } =
+          polygonNotificationService.buildPaymentReminderContent({
+            processOrderId: row.id,
+            invNo: row.invNo,
+            scheduledDate: row.sheduleDate,
+            orderPlacedDate,
+          });
+
+        await connection.query(
+          `INSERT INTO collection_officer.ordernotfication
+             (orderId, Title, message, isRead, createdAt)
+           VALUES (?, ?, ?, 0, NOW())`,
+          [row.id, title, message],
+        );
+      }
+    }
+
     // Commit transaction if everything succeeded
     await connection.commit();
     transactionStarted = false;
@@ -227,52 +261,29 @@ exports.processOrder = async (orderData, salesAgentId) => {
       console.error("Failed to send order confirmation SMS:", smsError);
     }
 
-    // STEP 7: Payment Reminder (push + socket + ordernotfication insert)
-    // ONLY for CARD orders whose schedule date is the earliest possible date (EPSD).
-    // CHANGED: Card + EPSD orders are now saved with isConfirmed = 0, so we can
-    // no longer select by "isConfirmed = 1". We use epsdProcessOrderIds instead.
-    const isCardPayment =
-      orderData.paymentMethod &&
-      String(orderData.paymentMethod).toLowerCase().includes("card");
-
-    if (isCardPayment && epsdProcessOrderIds.length > 0) {
+    // STEP 7: Push + Socket only (DB row already inserted inside the transaction above)
+    if (reminderRows.length > 0) {
       try {
         const polygonNotificationService = require("../services/polygon-notification-service");
-
-        if (
-          typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
-          "function"
-        ) {
-          const [procRows] = await db.collectionofficer.promise().query(
-            `SELECT id, invNo, sheduleDate
-               FROM processorders
-              WHERE id IN (?)`,
-            [epsdProcessOrderIds],
-          );
-
-          // Other dates are skipped: no notification, no DB insert
-          for (const row of procRows || []) {
-            polygonNotificationService
-              .notifyPolygonPaymentReminder({
-                processOrderId: row.id,
-                invNo: row.invNo,
-                scheduledDate: row.sheduleDate,
-                orderPlacedDate,
-                userId: orderData.userId,
-              })
-              .catch((err) => {
-                console.warn(
-                  `⚠️ [Payment Reminder] Error notifying Polygon for processOrder ${row.id}:`,
-                  err?.message,
-                );
-              });
-          }
+        for (const row of reminderRows) {
+          polygonNotificationService
+            .notifyPolygonPaymentReminder({
+              processOrderId: row.id,
+              invNo: row.invNo,
+              scheduledDate: row.sheduleDate,
+              orderPlacedDate,
+              userId: orderData.userId,
+              skipDbInsert: true, // row already in DB; Polygon must NOT insert again
+            })
+            .catch((err) =>
+              console.warn(
+                `⚠️ [Payment Reminder] push/socket failed for ${row.id}:`,
+                err?.message,
+              ),
+            );
         }
       } catch (notifErr) {
-        console.warn(
-          "⚠️ [Payment Reminder] Failed to dispatch Polygon card payment reminder:",
-          notifErr?.message,
-        );
+        console.warn("⚠️ [Payment Reminder] dispatch failed:", notifErr?.message);
       }
     }
 
