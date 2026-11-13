@@ -1147,6 +1147,7 @@ exports.getDataCustomerId = async (customerId) => {
                 lastName,
                 phoneCode,
                 phoneNumber,
+                buyerType,
                 email
             FROM marketplaceusers
             WHERE id = ?
@@ -1272,6 +1273,7 @@ o.phone2 AS orderPhone2,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
+                c.buyerType,
                 p.id AS processId,
                 p.invNo AS invoiceNumber,
                 p.status As status,
@@ -1503,6 +1505,7 @@ o.phone2 AS orderPhone2,
       deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
+      buyerType: order.buyerType,
       delivaryMethod: order.delivaryMethod,
       customerInfo: {
         title: order.orderTitle,
@@ -1514,6 +1517,7 @@ o.phone2 AS orderPhone2,
         phoneCode2: order.orderPhoneCode2 || "",
         phoneNumber2: order.orderPhone2 || "",
         buildingType: buildingType,
+        buyerType: order.buyerType,
       },
       fullAddress: formattedAddress, // single-string address (e.g. for confirm screen)
       buildingDetails: buildingDetails, // raw fields (e.g. for invoice screen)
