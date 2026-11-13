@@ -144,7 +144,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
           meta,
         );
         processOrderIds.push(pId);
-        if (meta.qualifiesForAutoConfirm) epsdProcessOrderIds.push(pId);
+        if (meta.isEpsdDate) epsdProcessOrderIds.push(pId);
       }
       processOrderId = processOrderIds[0];
     } else {
@@ -162,7 +162,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
         meta,
       );
       processOrderIds = [processOrderId];
-      if (meta.qualifiesForAutoConfirm) epsdProcessOrderIds.push(processOrderId);
+      if (meta.isEpsdDate) epsdProcessOrderIds.push(processOrderId);
     }
 
     await assignCenterToOrder(connection, orderId, orderData, userDetails);
@@ -872,7 +872,12 @@ async function insertProcessOrder(
     // NEW: qualifies for EPSD auto-confirm regardless of payment method.
     // Reported back to processOrder so the Card payment reminder still fires.
     const qualifiesForAutoConfirm = isAutoConfirmType && isEpsdDate;
-    if (meta) meta.qualifiesForAutoConfirm = qualifiesForAutoConfirm;
+    if (meta) {
+      meta.qualifiesForAutoConfirm = qualifiesForAutoConfirm;
+      // Payment reminder depends ONLY on the EPSD date (+ Card, checked in processOrder),
+      // not on package / finalize-immediately.
+      meta.isEpsdDate = isEpsdDate;
+    }
 
     // CHANGED: Card orders must stay isConfirmed = 0 (confirmed after payment)
     const isConfirmedValue =
