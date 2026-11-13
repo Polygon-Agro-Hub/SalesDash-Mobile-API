@@ -118,27 +118,53 @@ const getPaymentDeadlineDate = (scheduledDate) => {
 };
 
 /**
+ * Builds the title and message content for a payment reminder notification.
+ * Shared between the DAO (DB insert) and the webhook call (push + socket).
+ */
+const buildPaymentReminderContent = ({
+  processOrderId,
+  invNo,
+  scheduledDate,
+  orderPlacedDate,
+}) => {
+  const invoiceNumber = invNo || processOrderId;
+  const schedDateObj = scheduledDate
+    ? scheduledDate instanceof Date
+      ? scheduledDate
+      : new Date(scheduledDate)
+    : new Date();
+  const scheduledDateStr = formatDateToMonthDay(schedDateObj);
+  const placedDateStr = formatDateToMonthDay(orderPlacedDate || new Date());
+
+  return {
+    invoiceNumber,
+    scheduledDateStr,
+    placedDateStr,
+    title: "Payment Reminder !!!",
+    message: `Order #${invoiceNumber} scheduled for ${scheduledDateStr}. Please pay via online banking before ${placedDateStr} at 6:00 PM to avoid cancellation.`,
+  };
+};
+
+/**
  * Payment Reminder notification for card orders placed via Sales Dash.
- * Saves to ordernotfication table, dispatches FCM/Expo push and Socket.IO.
+ * DB row is now inserted by the order DAO inside the same transaction.
+ * This function only dispatches FCM/Expo push and Socket.IO (skipDbInsert: true by default).
  */
 const notifyPolygonPaymentReminder = async ({
   processOrderId,
   invNo,
   scheduledDate,
-  orderPlacedDate, // NEW
+  orderPlacedDate,
   userId,
+  skipDbInsert = true, // DB row is now inserted by the order DAO
 }) => {
-  const invoiceNumber = invNo || processOrderId;
-  const schedDateObj = scheduledDate
-    ? (scheduledDate instanceof Date ? scheduledDate : new Date(scheduledDate))
-    : new Date();
-  const scheduledDateStr = formatDateToMonthDay(schedDateObj);
-
-  // Order placed date (falls back to today if not passed)
-  const placedDateStr = formatDateToMonthDay(orderPlacedDate || new Date());
-
-  const title = "Payment Reminder !!!";
-  const message = `Order #${invoiceNumber} scheduled for ${scheduledDateStr}. Please pay via online banking before ${placedDateStr} at 6:00 PM to avoid cancellation.`;
+  const { invoiceNumber, scheduledDateStr, placedDateStr, title, message } =
+    buildPaymentReminderContent({
+      processOrderId,
+      invNo,
+      scheduledDate,
+      orderPlacedDate,
+    });
 
   return triggerPolygonNotification({
     orderId: processOrderId,
@@ -150,10 +176,10 @@ const notifyPolygonPaymentReminder = async ({
       invNo: invoiceNumber,
       userId,
       scheduledDate: scheduledDateStr,
-      orderPlacedDate: placedDateStr, // replaces deadlineDate
+      orderPlacedDate: placedDateStr,
       type: "payment_reminder",
     },
-    skipDbInsert: false,
+    skipDbInsert,
   });
 };
 
@@ -161,6 +187,7 @@ module.exports = {
   triggerPolygonNotification,
   notifyPolygonOrderCancelled,
   notifyPolygonPaymentReminder,
+  buildPaymentReminderContent, // NEW – used by orders-dao to build the row content
   formatDateToMonthDay,
   getPaymentDeadlineDate,
 };
