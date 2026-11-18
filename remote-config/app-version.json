@@ -5,8 +5,8 @@
     "minOsVersion": "24"
   },
   "ios": {
-    "latestVersion": "1.0.11",
-    "minimumVersion": "1.0.11"
+    "latestVersion": "1.0.12",
+    "minimumVersion": "1.0.12"
   },
   "messages": {
     "softTitle": "New Version Available!",
