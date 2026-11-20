@@ -90,6 +90,18 @@ app.use(`${BASE_PATH}/api/support`, routes.support);
 app.use(`${BASE_PATH}`, routes.health);
 app.use("", routes.health);
 
+// ─── Server Time Verification ──────────────────────────────────────────────────
+// Returns the authoritative server timestamp for clock drift / inaccurate time detection
+app.get([`${BASE_PATH}/api/time`, `${BASE_PATH}/time`, "/time"], (req, res) => {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.json({
+    serverTime: Date.now(),
+    iso: new Date().toISOString(),
+  });
+});
+
 // ─── App Version Policy ────────────────────────────────────────────────────────
 // Returns the version policy JSON that controls in-app update prompts in the
 // mobile app. Edit remote-config/app-version.json to trigger or stop prompts
