@@ -47,6 +47,39 @@ const userAuthEp = require("../end-point/user-ep");
  */
 router.post("/login", userAuthEp.login);
 
+// Refresh Token
+/**
+ * @openapi
+ * /api/auth/refresh-token:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Refresh Access Token
+ *     description: Issue a new access token and rotating refresh token using a valid refresh token
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successfully refreshed token
+ *       400:
+ *         description: Refresh token required
+ *       401:
+ *         description: Invalid or expired refresh token
+ *       403:
+ *         description: Account not approved or rejected
+ */
+router.post("/refresh-token", userAuthEp.refreshToken);
+
 // Get User Details
 /**
  * @openapi
