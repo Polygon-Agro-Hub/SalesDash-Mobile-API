@@ -24,7 +24,15 @@ const updatePasswordSchema = Joi.object({
   }),
 });
 
+// Refresh Token Schema
+const refreshTokenSchema = Joi.object({
+  refreshToken: Joi.string().trim().required().messages({
+    "string.empty": "Refresh token is required",
+  }),
+});
+
 module.exports = {
   loginSchema,
   updatePasswordSchema,
+  refreshTokenSchema,
 };

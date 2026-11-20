@@ -199,3 +199,40 @@ exports.updatePasswordDAO = (id, oldPassword, newPassword) => {
     });
   });
 };
+
+// Verify User for Refresh Token DAO
+exports.verifyUserForRefreshDAO = (id) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const sql =
+        "SELECT id, empId, passwordUpdate, status FROM salesagent WHERE id = ?";
+      const [results] = await db.collectionofficer.promise().query(sql, [id]);
+
+      if (results.length === 0) {
+        return reject(new Error("User not found"));
+      }
+
+      const user = results[0];
+
+      if (user.status === "Rejected") {
+        return reject(new Error("This Employee ID is rejected"));
+      }
+
+      if (user.status === "Not Approved") {
+        return reject(new Error("This Employee ID is not approved"));
+      }
+
+      if (user.status !== "Approved") {
+        return reject(new Error("Account status is pending verification"));
+      }
+
+      resolve({
+        id: user.id,
+        empId: user.empId,
+        passwordUpdate: user.passwordUpdate,
+      });
+    } catch (err) {
+      return reject(new Error("Database error: " + err.message));
+    }
+  });
+};
