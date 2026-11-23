@@ -8,6 +8,7 @@ jest.mock("../../dao/user-dao", () => ({
     getUserProfileDAO: jest.fn(),
     getPasswordDAO: jest.fn(),
     updatePasswordDAO: jest.fn(),
+    verifyUserForRefreshDAO: jest.fn(),
 }));
 
 const mockResponse = () => {
@@ -162,7 +163,9 @@ describe("User Authentication Endpoints (user-ep)", () => {
 
             const mockResult = { empId: "EMP001", id: 1, passwordUpdate: 1 };
             userDao.loginUserDAO.mockResolvedValue(mockResult);
-            jwt.sign.mockReturnValue("mocked_token");
+            jwt.sign
+                .mockReturnValueOnce("mocked_token")
+                .mockReturnValueOnce("mocked_refresh_token");
 
             await userAuthEp.login(req, res);
 
@@ -173,11 +176,21 @@ describe("User Authentication Endpoints (user-ep)", () => {
             expect(jwt.sign).toHaveBeenCalledWith(
                 { empId: "EMP001", id: 1, passwordUpdate: 1 },
                 "test_secret",
-                { expiresIn: "8h" },
+                { expiresIn: "12h" },
+            );
+            expect(jwt.sign).toHaveBeenCalledWith(
+                { empId: "EMP001", id: 1, tokenType: "refresh" },
+                "test_secret",
+                { expiresIn: "14d" },
             );
             expect(res.cookie).toHaveBeenCalledWith(
                 "authToken",
                 "mocked_token",
+                expect.objectContaining({ httpOnly: true, sameSite: "Strict" }),
+            );
+            expect(res.cookie).toHaveBeenCalledWith(
+                "refreshToken",
+                "mocked_refresh_token",
                 expect.objectContaining({ httpOnly: true, sameSite: "Strict" }),
             );
             expect(res.status).toHaveBeenCalledWith(200);
@@ -187,6 +200,7 @@ describe("User Authentication Endpoints (user-ep)", () => {
                 data: {
                     empId: "EMP001",
                     token: "mocked_token",
+                    refreshToken: "mocked_refresh_token",
                     id: 1,
                     passwordUpdate: 1,
                 },
@@ -474,6 +488,113 @@ describe("User Authentication Endpoints (user-ep)", () => {
             expect(res.status).toHaveBeenCalledWith(500);
             expect(res.json).toHaveBeenCalledWith({
                 error: "Failed to update password",
+            });
+        });
+    });
+
+    describe("refreshToken", () => {
+        it("should return 400 when refreshToken is missing", async () => {
+            req = mockRequest({});
+            await userAuthEp.refreshToken(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    success: false,
+                    message: "Refresh token is required",
+                }),
+            );
+        });
+
+        it("should return 401 when refreshToken is invalid or expired", async () => {
+            req = mockRequest({ refreshToken: "invalid_refresh_token" });
+            jwt.verify.mockImplementation(() => {
+                throw new Error("jwt expired");
+            });
+
+            await userAuthEp.refreshToken(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(401);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                message: "Invalid or expired refresh token",
+            });
+        });
+
+        it("should return 401 when tokenType is not refresh", async () => {
+            req = mockRequest({ refreshToken: "access_token_passed_as_refresh" });
+            jwt.verify.mockReturnValue({ id: 1, empId: "EMP001", tokenType: "access" });
+
+            await userAuthEp.refreshToken(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(401);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                message: "Invalid refresh token",
+            });
+        });
+
+        it("should return 401 when user is not found in database", async () => {
+            req = mockRequest({ refreshToken: "valid_refresh_token" });
+            jwt.verify.mockReturnValue({ id: 999, empId: "EMP999", tokenType: "refresh" });
+            userDao.verifyUserForRefreshDAO.mockRejectedValue(new Error("User not found"));
+
+            await userAuthEp.refreshToken(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(401);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                message: "User not found",
+            });
+        });
+
+        it("should return 403 when user is rejected", async () => {
+            req = mockRequest({ refreshToken: "valid_refresh_token" });
+            jwt.verify.mockReturnValue({ id: 1, empId: "EMP001", tokenType: "refresh" });
+            userDao.verifyUserForRefreshDAO.mockRejectedValue(new Error("This Employee ID is rejected"));
+
+            await userAuthEp.refreshToken(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(403);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                message: "This Employee ID is rejected",
+                statusType: "rejected",
+            });
+        });
+
+        it("should return 200 with new access and refresh tokens on success", async () => {
+            req = mockRequest({ refreshToken: "valid_refresh_token" });
+            jwt.verify.mockReturnValue({ id: 1, empId: "EMP001", tokenType: "refresh" });
+            userDao.verifyUserForRefreshDAO.mockResolvedValue({
+                id: 1,
+                empId: "EMP001",
+                passwordUpdate: 1,
+            });
+            jwt.sign
+                .mockReturnValueOnce("new_access_token")
+                .mockReturnValueOnce("new_refresh_token");
+
+            await userAuthEp.refreshToken(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(200);
+            expect(res.cookie).toHaveBeenCalledWith(
+                "authToken",
+                "new_access_token",
+                expect.objectContaining({ httpOnly: true, sameSite: "Strict" }),
+            );
+            expect(res.cookie).toHaveBeenCalledWith(
+                "refreshToken",
+                "new_refresh_token",
+                expect.objectContaining({ httpOnly: true, sameSite: "Strict" }),
+            );
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                message: "Token refreshed successfully",
+                data: {
+                    token: "new_access_token",
+                    refreshToken: "new_refresh_token",
+                },
             });
         });
     });
