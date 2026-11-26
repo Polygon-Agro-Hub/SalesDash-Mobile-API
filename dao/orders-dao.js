@@ -42,6 +42,10 @@ exports.processOrder = async (orderData, salesAgentId) => {
     let processOrderId;
     let processOrderIds = [];
 
+    // NEW: process orders that fall on the EPSD date and qualify for
+    // auto-confirm (used for the Card payment reminder in STEP 7)
+    const epsdProcessOrderIds = [];
+
     const isRecurring =
       normScheduleType === "Once a Week" || normScheduleType === "Twice a Week";
 
@@ -66,7 +70,12 @@ exports.processOrder = async (orderData, salesAgentId) => {
           parseInt(orderData.validityPeriod || orderData.validityWeeks, 10) ||
           4;
         const minDate = new Date();
-        minDate.setDate(minDate.getDate() + 3);
+        const isWholesaleBuyer =
+          String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
+          Number(orderData.isWholesale) === 1;
+        const isAlacarte = !isWholesaleBuyer && Number(orderData.isPackage) !== 1;
+        const recurringExtraDays = isAlacarte || isWholesaleBuyer ? 2 : 3;
+        minDate.setDate(minDate.getDate() + recurringExtraDays);
         minDate.setHours(0, 0, 0, 0);
 
         const allComputed = [];
@@ -110,6 +119,7 @@ exports.processOrder = async (orderData, salesAgentId) => {
           ? orderData
           : {
             ...orderData,
+            isConfirmed: 0,
             isCoupon: 0,
             couponType: null,
             couponValue: 0.0,
@@ -128,25 +138,36 @@ exports.processOrder = async (orderData, salesAgentId) => {
               null,
           };
 
+        // NEW: meta receives qualifiesForAutoConfirm from insertProcessOrder
+        const meta = {};
         const pId = await insertProcessOrder(
           connection,
           orderId,
           currentOrderData,
           sDate,
+          userDetails,
+          meta,
         );
         processOrderIds.push(pId);
+        if (meta.isEpsdDate) epsdProcessOrderIds.push(pId);
       }
       processOrderId = processOrderIds[0];
     } else {
       // One Time
       const date1 = parseDateValue(orderData.sheduleDate);
+
+      // NEW: meta receives qualifiesForAutoConfirm from insertProcessOrder
+      const meta = {};
       processOrderId = await insertProcessOrder(
         connection,
         orderId,
         orderData,
         date1,
+        userDetails,
+        meta,
       );
       processOrderIds = [processOrderId];
+      if (meta.isEpsdDate) epsdProcessOrderIds.push(processOrderId);
     }
 
     await assignCenterToOrder(connection, orderId, orderData, userDetails);
@@ -192,6 +213,40 @@ exports.processOrder = async (orderData, salesAgentId) => {
       }
     }
 
+    // Payment reminder rows (Card + EPSD only) – saved in the same transaction
+    // so the row is guaranteed even if the Polygon webhook call later fails.
+    const isCardPayment =
+      orderData.paymentMethod &&
+      String(orderData.paymentMethod).toLowerCase().includes("card");
+
+    let reminderRows = [];
+    if (isCardPayment && epsdProcessOrderIds.length > 0) {
+      const polygonNotificationService = require("../services/polygon-notification-service");
+
+      const [procRows] = await connection.query(
+        `SELECT id, invNo, sheduleDate FROM processorders WHERE id IN (?)`,
+        [epsdProcessOrderIds],
+      );
+      reminderRows = procRows || [];
+
+      for (const row of reminderRows) {
+        const { title, message } =
+          polygonNotificationService.buildPaymentReminderContent({
+            processOrderId: row.id,
+            invNo: row.invNo,
+            scheduledDate: row.sheduleDate,
+            orderPlacedDate,
+          });
+
+        await connection.query(
+          `INSERT INTO collection_officer.ordernotfication
+             (orderId, Title, message, isRead, createdAt)
+           VALUES (?, ?, ?, 0, NOW())`,
+          [row.id, title, message],
+        );
+      }
+    }
+
     // Commit transaction if everything succeeded
     await connection.commit();
     transactionStarted = false;
@@ -211,52 +266,29 @@ exports.processOrder = async (orderData, salesAgentId) => {
       console.error("Failed to send order confirmation SMS:", smsError);
     }
 
-    // STEP 7: Payment Reminder (push + socket + ordernotfication insert)
-    // ONLY for CARD orders whose schedule date is the earliest possible date (today + 3).
-    // Example: placed on the 16th -> only the order scheduled for the 19th gets it.
-    // isConfirmed = 1 is set in insertProcessOrder exactly for that date.
-    const isCardPayment =
-      orderData.paymentMethod &&
-      String(orderData.paymentMethod).toLowerCase().includes("card");
-
-    if (isCardPayment && processOrderIds && processOrderIds.length > 0) {
+    // STEP 7: Push + Socket only (DB row already inserted inside the transaction above)
+    if (reminderRows.length > 0) {
       try {
         const polygonNotificationService = require("../services/polygon-notification-service");
-
-        if (
-          typeof polygonNotificationService?.notifyPolygonPaymentReminder ===
-          "function"
-        ) {
-          const [procRows] = await db.collectionofficer.promise().query(
-            `SELECT id, invNo, sheduleDate
-               FROM processorders
-              WHERE id IN (?) AND isConfirmed = 1`,
-            [processOrderIds],
-          );
-
-          // Other dates (23rd, 26th, ...) are skipped: no notification, no DB insert
-          for (const row of procRows || []) {
-            polygonNotificationService
-              .notifyPolygonPaymentReminder({
-                processOrderId: row.id,
-                invNo: row.invNo,
-                scheduledDate: row.sheduleDate,
-                orderPlacedDate,
-                userId: orderData.userId,
-              })
-              .catch((err) => {
-                console.warn(
-                  `⚠️ [Payment Reminder] Error notifying Polygon for processOrder ${row.id}:`,
-                  err?.message,
-                );
-              });
-          }
+        for (const row of reminderRows) {
+          polygonNotificationService
+            .notifyPolygonPaymentReminder({
+              processOrderId: row.id,
+              invNo: row.invNo,
+              scheduledDate: row.sheduleDate,
+              orderPlacedDate,
+              userId: orderData.userId,
+              skipDbInsert: true, // row already in DB; Polygon must NOT insert again
+            })
+            .catch((err) =>
+              console.warn(
+                `⚠️ [Payment Reminder] push/socket failed for ${row.id}:`,
+                err?.message,
+              ),
+            );
         }
       } catch (notifErr) {
-        console.warn(
-          "⚠️ [Payment Reminder] Failed to dispatch Polygon card payment reminder:",
-          notifErr?.message,
-        );
+        console.warn("⚠️ [Payment Reminder] dispatch failed:", notifErr?.message);
       }
     }
 
@@ -718,11 +750,37 @@ async function updateUserCreditInfo(connection, userId) {
   };
 }
 
+function getColomboNow(dateObj = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(dateObj);
+  const getPart = (type) =>
+    parseInt(parts.find((p) => p.type === type).value, 10);
+  const hourVal = getPart("hour");
+  const hour = hourVal === 24 ? 0 : hourVal;
+  return {
+    year: getPart("year"),
+    month: getPart("month") - 1,
+    day: getPart("day"),
+    hour,
+    isAfterCutoff: hour >= 18,
+  };
+}
+
 async function insertProcessOrder(
   connection,
   orderId,
   orderData,
   targetScheduleDate = null,
+  userDetails = null,
+  meta = {}, // NEW: output object, we set meta.qualifiesForAutoConfirm
 ) {
   try {
     await connection.query("CALL generate_invoice_number(@new_inv_no)");
@@ -742,30 +800,85 @@ async function insertProcessOrder(
     const isPaidValue = 0;
     const amountValue = 0.0;
 
-    // isConfirmed = 1 only when:
+    // Determine buyer type
+    const isWholesale =
+      String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
+      Number(orderData.isWholesale) === 1;
+
+    const isPackageOrder = Number(orderData.isPackage) === 1;
+    const isAlacarteOnly = !isWholesale && !isPackageOrder;
+
+    // Auto-confirm rules:
     // 1. Order type qualifies:
     //    - Only alacarte items (isPackage === 0)
-    //    - Only packages OR packages + alacarte items (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
-    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, taking into account 6:00 PM cutoff)
-    const now = new Date();
-    const isAfterCutoff = now.getHours() >= 18;
-    const extraDays = isAfterCutoff ? 4 : 3;
+    //    - Packages (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
+    // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, 6:00 PM cutoff
+    //    in Colombo timezone, wholesale/retail/alacarte)
+    // 3. Payment method is NOT Card  (Card orders stay isConfirmed = 0)
+    const colomboNow = getColomboNow();
+    const isAfterCutoff = colomboNow.isAfterCutoff;
+    const extraDays = isAlacarteOnly
+      ? (isAfterCutoff ? 3 : 2)
+      : isWholesale
+        ? (isAfterCutoff ? 3 : 2)
+        : (isAfterCutoff ? 4 : 3);
     const epsd = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + extraDays,
+      colomboNow.year,
+      colomboNow.month,
+      colomboNow.day + extraDays,
     );
     epsd.setHours(0, 0, 0, 0);
 
     const schedDate = targetScheduleDate ? new Date(targetScheduleDate) : null;
-    const isEpsdDate =
-      schedDate &&
-      !isNaN(schedDate.getTime()) &&
-      schedDate.getFullYear() === epsd.getFullYear() &&
-      schedDate.getMonth() === epsd.getMonth() &&
-      schedDate.getDate() === epsd.getDate();
+    let isEpsdDate = false;
+    if (schedDate && !isNaN(schedDate.getTime())) {
+      const schedNormalized = new Date(
+        schedDate.getFullYear(),
+        schedDate.getMonth(),
+        schedDate.getDate(),
+      );
+      schedNormalized.setHours(0, 0, 0, 0);
+      const todayNormalized = new Date(
+        colomboNow.year,
+        colomboNow.month,
+        colomboNow.day,
+      );
+      todayNormalized.setHours(0, 0, 0, 0);
+      const diffDays = Math.round(
+        (schedNormalized.getTime() - todayNormalized.getTime()) /
+        (1000 * 60 * 60 * 24),
+      );
 
-    const isPackageOrder = Number(orderData.isPackage) === 1;
+      if (isAlacarteOnly) {
+        // Alacarte Retail EPSD (1-day gap):
+        // Before 6 PM: Today + 2 days (e.g. today 20 -> 22)
+        // After 6 PM:  Today + 3 days (e.g. today 20 -> 23)
+        if (!isAfterCutoff && diffDays === 2) {
+          isEpsdDate = true;
+        } else if (isAfterCutoff && diffDays === 3) {
+          isEpsdDate = true;
+        }
+      } else if (isWholesale) {
+        // Wholesale EPSD:
+        // Before 6 PM: Today + 2 days
+        // After 6 PM:  Today + 3 days
+        if (!isAfterCutoff && diffDays === 2) {
+          isEpsdDate = true;
+        } else if (isAfterCutoff && diffDays === 3) {
+          isEpsdDate = true;
+        }
+      } else {
+        // Retail Package EPSD (unchanged):
+        // Before 6 PM: Today + 3 days
+        // After 6 PM:  Today + 4 days
+        if (!isAfterCutoff && diffDays === 3) {
+          isEpsdDate = true;
+        } else if (isAfterCutoff && diffDays === 4) {
+          isEpsdDate = true;
+        }
+      }
+    }
+
     const isFinalizeImmediate =
       orderData.isFinalizeImdt !== undefined &&
         orderData.isFinalizeImdt !== null
@@ -774,7 +887,19 @@ async function insertProcessOrder(
 
     const isAutoConfirmType = !isPackageOrder || isFinalizeImmediate;
 
-    const isConfirmedValue = isAutoConfirmType && isEpsdDate ? 1 : 0;
+    // NEW: qualifies for EPSD auto-confirm regardless of payment method.
+    // Reported back to processOrder so the Card payment reminder still fires.
+    const qualifiesForAutoConfirm = isAutoConfirmType && isEpsdDate;
+    if (meta) {
+      meta.qualifiesForAutoConfirm = qualifiesForAutoConfirm;
+      // Payment reminder depends ONLY on the EPSD date (+ Card, checked in processOrder),
+      // not on package / finalize-immediately.
+      meta.isEpsdDate = isEpsdDate;
+    }
+
+    // CHANGED: Card orders must stay isConfirmed = 0 (confirmed after payment)
+    const isConfirmedValue =
+      qualifiesForAutoConfirm && paymentMethodValue !== "Card" ? 1 : 0;
 
     const isCouponVal = orderData.isCoupon ? 1 : 0;
     const couponTypeVal = orderData.couponType || null;
@@ -992,6 +1117,10 @@ async function sendOrderConfirmationSMS(
         : 0;
 
     // Call the dedicated SMS helper function
+    const isWholesaleBuyer =
+      String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
+      Number(orderData.isWholesale) === 1;
+
     const smsResult = await orderSmsHelper.sendOrderConfirmationSMSHelper({
       phoneNumber,
       invoiceNo,
@@ -1000,6 +1129,7 @@ async function sendOrderConfirmationSMS(
       isPackage: isPackageOrder,
       isFinalizeImdt,
       orderPlacedTime: new Date(),
+      isWholesale: isWholesaleBuyer,
     });
 
     if (smsResult && smsResult.success) {
@@ -1035,6 +1165,7 @@ exports.getDataCustomerId = async (customerId) => {
                 lastName,
                 phoneCode,
                 phoneNumber,
+                buyerType,
                 email
             FROM marketplaceusers
             WHERE id = ?
@@ -1160,6 +1291,7 @@ o.phone2 AS orderPhone2,
                 c.firstName,
                 c.lastName,
                 c.phoneNumber,
+                c.buyerType,
                 p.id AS processId,
                 p.invNo AS invoiceNumber,
                 p.status As status,
@@ -1391,6 +1523,7 @@ o.phone2 AS orderPhone2,
       deliveryCharge: order.deliveryCharge,
       fullTotal: order.fullTotal,
       isPackage: order.isPackage,
+      buyerType: order.buyerType,
       delivaryMethod: order.delivaryMethod,
       customerInfo: {
         title: order.orderTitle,
@@ -1402,6 +1535,7 @@ o.phone2 AS orderPhone2,
         phoneCode2: order.orderPhoneCode2 || "",
         phoneNumber2: order.orderPhone2 || "",
         buildingType: buildingType,
+        buyerType: order.buyerType,
       },
       fullAddress: formattedAddress, // single-string address (e.g. for confirm screen)
       buildingDetails: buildingDetails, // raw fields (e.g. for invoice screen)
