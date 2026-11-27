@@ -51,10 +51,14 @@ exports.getItemsForPackage = asyncHandler(async (req, res) => {
   try {
     const items = await packageDAO.getItemsByPackageId(packageId);
 
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     if (!items || items.length === 0) {
       return res
-        .status(404)
-        .json({ message: "No items found for this package" });
+        .status(200)
+        .json({ message: "No items found for this package", data: [] });
     }
 
     res
@@ -138,6 +142,11 @@ exports.getAllCrops = asyncHandler(async (req, res) => {
 
   try {
     const crops = await packageDAO.getAllCrops({ buyerType });
+
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     if (!crops || crops.length === 0) {
       return res.status(404).json({ message: "No crops found" });
     }

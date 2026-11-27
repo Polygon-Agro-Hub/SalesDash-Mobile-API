@@ -88,6 +88,7 @@ function getColomboNow(dateObj = new Date()) {
 function getEarliestPossibleScheduleDate(
   orderPlacedTime = new Date(),
   isWholesale = false,
+  isAlacarteOnly = false,
 ) {
   const now =
     orderPlacedTime instanceof Date
@@ -95,7 +96,9 @@ function getEarliestPossibleScheduleDate(
       : new Date(orderPlacedTime);
   const colomboNow = getColomboNow(now);
   const isAfter6PM = colomboNow.isAfterCutoff; // 6:00 PM cutoff rule in Colombo
-  const extraDays = isWholesale
+  const extraDays = isAlacarteOnly
+    ? (isAfter6PM ? 3 : 2)
+    : isWholesale
     ? (isAfter6PM ? 3 : 2)
     : (isAfter6PM ? 4 : 3);
 
@@ -126,20 +129,24 @@ function generateOrderConfirmationSMS({
   orderPlacedTime = new Date(),
   isWholesale = false,
 }) {
-  const epsd = getEarliestPossibleScheduleDate(orderPlacedTime, isWholesale);
+  const isPackageOrder =
+    isPackage === 1 || isPackage === true || isPackage === "1";
+  const isAlacarteOnly = !isWholesale && !isPackageOrder;
+  const epsd = getEarliestPossibleScheduleDate(
+    orderPlacedTime,
+    isWholesale,
+    isAlacarteOnly,
+  );
   const schedDate = parseDeliveryDate(deliveryDate);
 
   const isCard =
     paymentMethod && String(paymentMethod).toLowerCase().includes("card");
   const isImmediateFinalize =
     isFinalizeImdt === 1 || isFinalizeImdt === true || isFinalizeImdt === "1";
-  const isPackageOrder =
-    isPackage === 1 || isPackage === true || isPackage === "1";
-
   const baseDeliveryDate = schedDate || epsd;
 
-  // Processing Date is lead time before Delivery Date (2 days for Wholesale, 3 days for Retail)
-  const leadDays = isWholesale ? 2 : 3;
+  // Processing Date is lead time before Delivery Date (2 days for Wholesale and Alacarte Retail, 3 days for Package Retail)
+  const leadDays = isWholesale || isAlacarteOnly ? 2 : 3;
   const processingDate = new Date(baseDeliveryDate.getTime());
   processingDate.setDate(processingDate.getDate() - leadDays);
 

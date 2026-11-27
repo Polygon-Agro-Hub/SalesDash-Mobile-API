@@ -70,7 +70,12 @@ exports.processOrder = async (orderData, salesAgentId) => {
           parseInt(orderData.validityPeriod || orderData.validityWeeks, 10) ||
           4;
         const minDate = new Date();
-        minDate.setDate(minDate.getDate() + 3);
+        const isWholesaleBuyer =
+          String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
+          Number(orderData.isWholesale) === 1;
+        const isAlacarte = !isWholesaleBuyer && Number(orderData.isPackage) !== 1;
+        const recurringExtraDays = isAlacarte || isWholesaleBuyer ? 2 : 3;
+        minDate.setDate(minDate.getDate() + recurringExtraDays);
         minDate.setHours(0, 0, 0, 0);
 
         const allComputed = [];
@@ -800,18 +805,23 @@ async function insertProcessOrder(
       String(orderData.buyerType || userDetails?.buyerType || "").toLowerCase() === "wholesale" ||
       Number(orderData.isWholesale) === 1;
 
+    const isPackageOrder = Number(orderData.isPackage) === 1;
+    const isAlacarteOnly = !isWholesale && !isPackageOrder;
+
     // Auto-confirm rules:
     // 1. Order type qualifies:
     //    - Only alacarte items (isPackage === 0)
     //    - Packages (isPackage === 1) WITH "finalize immediately" (isFinalizeImdt === 1)
     // 2. Schedule date is the Earliest Possible Schedule Date (EPSD, 6:00 PM cutoff
-    //    in Colombo timezone, wholesale/retail)
+    //    in Colombo timezone, wholesale/retail/alacarte)
     // 3. Payment method is NOT Card  (Card orders stay isConfirmed = 0)
     const colomboNow = getColomboNow();
     const isAfterCutoff = colomboNow.isAfterCutoff;
-    const extraDays = isWholesale
+    const extraDays = isAlacarteOnly
       ? (isAfterCutoff ? 3 : 2)
-      : (isAfterCutoff ? 4 : 3);
+      : isWholesale
+        ? (isAfterCutoff ? 3 : 2)
+        : (isAfterCutoff ? 4 : 3);
     const epsd = new Date(
       colomboNow.year,
       colomboNow.month,
@@ -839,7 +849,16 @@ async function insertProcessOrder(
         (1000 * 60 * 60 * 24),
       );
 
-      if (isWholesale) {
+      if (isAlacarteOnly) {
+        // Alacarte Retail EPSD (1-day gap):
+        // Before 6 PM: Today + 2 days (e.g. today 20 -> 22)
+        // After 6 PM:  Today + 3 days (e.g. today 20 -> 23)
+        if (!isAfterCutoff && diffDays === 2) {
+          isEpsdDate = true;
+        } else if (isAfterCutoff && diffDays === 3) {
+          isEpsdDate = true;
+        }
+      } else if (isWholesale) {
         // Wholesale EPSD:
         // Before 6 PM: Today + 2 days
         // After 6 PM:  Today + 3 days
@@ -849,7 +868,7 @@ async function insertProcessOrder(
           isEpsdDate = true;
         }
       } else {
-        // Retail EPSD:
+        // Retail Package EPSD (unchanged):
         // Before 6 PM: Today + 3 days
         // After 6 PM:  Today + 4 days
         if (!isAfterCutoff && diffDays === 3) {
@@ -860,7 +879,6 @@ async function insertProcessOrder(
       }
     }
 
-    const isPackageOrder = Number(orderData.isPackage) === 1;
     const isFinalizeImmediate =
       orderData.isFinalizeImdt !== undefined &&
         orderData.isFinalizeImdt !== null

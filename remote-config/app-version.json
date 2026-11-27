@@ -1,12 +1,12 @@
 {
   "android": {
-    "latestVersion": "1.0.13",
-    "minimumVersion": "1.0.13",
+    "latestVersion": "1.0.15",
+    "minimumVersion": "1.0.15",
     "minOsVersion": "24"
   },
   "ios": {
-    "latestVersion": "1.0.13",
-    "minimumVersion": "1.0.13"
+    "latestVersion": "1.0.15",
+    "minimumVersion": "1.0.15"
   },
   "messages": {
     "softTitle": "New Version Available!",
