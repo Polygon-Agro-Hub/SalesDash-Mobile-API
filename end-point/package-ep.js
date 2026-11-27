@@ -142,6 +142,11 @@ exports.getAllCrops = asyncHandler(async (req, res) => {
 
   try {
     const crops = await packageDAO.getAllCrops({ buyerType });
+
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     if (!crops || crops.length === 0) {
       return res.status(404).json({ message: "No crops found" });
     }
